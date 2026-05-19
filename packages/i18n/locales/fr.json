@@ -1,0 +1,128 @@
+{
+  "common": {
+    "loading": "Chargement...",
+    "error": "Une erreur s'est produite",
+    "retry": "Réessayer",
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "confirm": "Confirmer",
+    "back": "Retour",
+    "next": "Suivant",
+    "done": "Terminé",
+    "close": "Fermer",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "add": "Ajouter",
+    "remove": "Retirer",
+    "search": "Rechercher",
+    "noResults": "Aucun résultat"
+  },
+  "auth": {
+    "signIn": "Se connecter",
+    "signUp": "S'inscrire",
+    "signOut": "Se déconnecter",
+    "email": "Adresse e-mail",
+    "password": "Mot de passe",
+    "confirmPassword": "Confirmer le mot de passe",
+    "forgotPassword": "Mot de passe oublié ?",
+    "resetPassword": "Réinitialiser le mot de passe",
+    "displayName": "Nom d'affichage",
+    "alreadyHaveAccount": "Vous avez déjà un compte ?",
+    "noAccount": "Vous n'avez pas de compte ?",
+    "errors": {
+      "invalidCredentials": "Email ou mot de passe invalide",
+      "emailAlreadyExists": "Cet email est déjà enregistré",
+      "weakPassword": "Le mot de passe doit comporter au moins 8 caractères",
+      "sessionExpired": "Votre session a expiré. Veuillez vous reconnecter"
+    }
+  },
+  "stream": {
+    "title": "Titre du stream",
+    "description": "Description (optionnelle)",
+    "goLive": "Démarrer",
+    "endStream": "Terminer le stream",
+    "status": {
+      "created": "Prêt",
+      "starting": "Démarrage...",
+      "live": "En direct",
+      "paused": "En pause",
+      "ending": "Fin en cours...",
+      "ended": "Terminé",
+      "error": "Erreur"
+    },
+    "destinations": "Destinations",
+    "addDestination": "Ajouter une destination",
+    "health": {
+      "bitrate": "Débit",
+      "fps": "FPS",
+      "dropped": "Images perdues",
+      "latency": "Latence"
+    },
+    "errors": {
+      "noDestinations": "Veuillez ajouter au moins une destination",
+      "startFailed": "Échec du démarrage du stream",
+      "endFailed": "Échec de la fin du stream"
+    }
+  },
+  "comments": {
+    "title": "Commentaires en direct",
+    "noComments": "Aucun commentaire pour l'instant",
+    "placeholder": "Les commentaires apparaîtront ici...",
+    "from": "depuis {{platform}}"
+  },
+  "accounts": {
+    "title": "Comptes connectés",
+    "connect": "Connecter un compte",
+    "disconnect": "Déconnecter",
+    "platform": {
+      "tiktok": "TikTok",
+      "facebook": "Facebook"
+    },
+    "status": {
+      "connected": "Connecté",
+      "disconnected": "Déconnecté",
+      "error": "Erreur"
+    },
+    "limit": {
+      "freemium": "Le plan gratuit permet jusqu'à 2 comptes connectés",
+      "upgrade": "Passez au Premium pour des comptes illimités"
+    },
+    "errors": {
+      "connectFailed": "Échec de la connexion du compte",
+      "disconnectFailed": "Échec de la déconnexion du compte",
+      "limitReached": "Limite de comptes atteinte. Passez au Premium pour en connecter davantage"
+    }
+  },
+  "billing": {
+    "title": "Abonnement",
+    "currentPlan": "Plan actuel",
+    "plans": {
+      "free": {
+        "name": "Gratuit",
+        "description": "Commencez à streamer en direct",
+        "features": ["Jusqu'à 2 comptes connectés", "Fonctionnalités de streaming de base"]
+      },
+      "premium": {
+        "name": "Premium",
+        "description": "Tout ce dont vous avez besoin pour streamer professionnellement",
+        "features": [
+          "Comptes connectés illimités",
+          "Tableau de bord analytique",
+          "Modération des commentaires",
+          "Enregistrement du stream"
+        ]
+      }
+    },
+    "upgrade": "Passer au Premium",
+    "manage": "Gérer l'abonnement",
+    "cancelAt": "Se termine le {{date}}",
+    "renewsAt": "Se renouvelle le {{date}}"
+  },
+  "notifications": {
+    "streamStarted": "Votre stream est en direct !",
+    "streamEnded": "Stream terminé",
+    "accountConnected": "Compte {{platform}} connecté",
+    "accountDisconnected": "Compte {{platform}} déconnecté",
+    "paymentFailed": "Paiement échoué — veuillez mettre à jour votre mode de paiement"
+  }
+}

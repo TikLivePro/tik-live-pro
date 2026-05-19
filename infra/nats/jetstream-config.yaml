@@ -1,0 +1,105 @@
+# NATS JetStream stream definitions for TikLivePro
+# Apply with: nats stream add --config infra/nats/jetstream-config.yaml
+
+streams:
+  - name: AUTH
+    subjects:
+      - "auth.>"
+    retention: limits
+    max_msgs: 1000000
+    max_age: 7d
+    storage: file
+    replicas: 1
+    discard: old
+
+  - name: USERS
+    subjects:
+      - "user.>"
+    retention: limits
+    max_msgs: 500000
+    max_age: 30d
+    storage: file
+    replicas: 1
+
+  - name: SESSIONS
+    subjects:
+      - "session.>"
+      - "stream.>"
+    retention: limits
+    max_msgs: 10000000
+    max_age: 90d
+    storage: file
+    replicas: 1
+
+  - name: COMMENTS
+    subjects:
+      - "comment.>"
+    retention: limits
+    max_msgs: 50000000
+    max_age: 30d
+    storage: file
+    replicas: 1
+    # High-throughput: comments can be very frequent
+    max_msg_size: 65536
+
+  - name: BILLING
+    subjects:
+      - "billing.>"
+    retention: limits
+    max_msgs: 500000
+    max_age: 365d
+    storage: file
+    replicas: 1
+    # Billing events are critical — longer retention
+
+  - name: NOTIFICATIONS
+    subjects:
+      - "notification.>"
+    retention: workqueue
+    max_msgs: 100000
+    max_age: 1d
+    storage: file
+    replicas: 1
+
+  - name: ANALYTICS
+    subjects:
+      - "analytics.>"
+    retention: limits
+    max_msgs: 100000000
+    max_age: 90d
+    storage: file
+    replicas: 1
+
+  - name: DLQ
+    subjects:
+      - "dlq.>"
+    retention: limits
+    max_msgs: 1000000
+    max_age: 14d
+    storage: file
+    replicas: 1
+
+consumers:
+  - stream: SESSIONS
+    name: stream-orchestrator
+    durable: stream-orchestrator
+    filter_subject: "session.created"
+    ack_policy: explicit
+    max_deliver: 5
+    ack_wait: 30s
+
+  - stream: COMMENTS
+    name: comments-websocket
+    durable: comments-websocket
+    filter_subject: "comment.received"
+    ack_policy: explicit
+    max_deliver: 3
+    ack_wait: 10s
+
+  - stream: BILLING
+    name: user-service-billing
+    durable: user-service-billing
+    filter_subject: "billing.entitlement.updated"
+    ack_policy: explicit
+    max_deliver: 10
+    ack_wait: 60s

@@ -1,0 +1,128 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "Something went wrong",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "save": "Save",
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next",
+    "done": "Done",
+    "close": "Close",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "remove": "Remove",
+    "search": "Search",
+    "noResults": "No results found"
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "signUp": "Sign up",
+    "signOut": "Sign out",
+    "email": "Email address",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "forgotPassword": "Forgot password?",
+    "resetPassword": "Reset password",
+    "displayName": "Display name",
+    "alreadyHaveAccount": "Already have an account?",
+    "noAccount": "Don't have an account?",
+    "errors": {
+      "invalidCredentials": "Invalid email or password",
+      "emailAlreadyExists": "This email is already registered",
+      "weakPassword": "Password must be at least 8 characters",
+      "sessionExpired": "Your session has expired. Please sign in again"
+    }
+  },
+  "stream": {
+    "title": "Stream title",
+    "description": "Description (optional)",
+    "goLive": "Go Live",
+    "endStream": "End Stream",
+    "status": {
+      "created": "Ready",
+      "starting": "Starting...",
+      "live": "Live",
+      "paused": "Paused",
+      "ending": "Ending...",
+      "ended": "Ended",
+      "error": "Error"
+    },
+    "destinations": "Destinations",
+    "addDestination": "Add destination",
+    "health": {
+      "bitrate": "Bitrate",
+      "fps": "FPS",
+      "dropped": "Dropped frames",
+      "latency": "Latency"
+    },
+    "errors": {
+      "noDestinations": "Please add at least one destination",
+      "startFailed": "Failed to start the stream",
+      "endFailed": "Failed to end the stream"
+    }
+  },
+  "comments": {
+    "title": "Live Comments",
+    "noComments": "No comments yet",
+    "placeholder": "Comments will appear here...",
+    "from": "from {{platform}}"
+  },
+  "accounts": {
+    "title": "Connected Accounts",
+    "connect": "Connect account",
+    "disconnect": "Disconnect",
+    "platform": {
+      "tiktok": "TikTok",
+      "facebook": "Facebook"
+    },
+    "status": {
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "error": "Error"
+    },
+    "limit": {
+      "freemium": "Free plan allows up to 2 connected accounts",
+      "upgrade": "Upgrade to Premium for unlimited accounts"
+    },
+    "errors": {
+      "connectFailed": "Failed to connect account",
+      "disconnectFailed": "Failed to disconnect account",
+      "limitReached": "Account limit reached. Upgrade to connect more accounts"
+    }
+  },
+  "billing": {
+    "title": "Subscription",
+    "currentPlan": "Current plan",
+    "plans": {
+      "free": {
+        "name": "Free",
+        "description": "Get started with live streaming",
+        "features": ["Up to 2 connected accounts", "Basic streaming features"]
+      },
+      "premium": {
+        "name": "Premium",
+        "description": "Everything you need for professional streaming",
+        "features": [
+          "Unlimited connected accounts",
+          "Analytics dashboard",
+          "Comment moderation",
+          "Stream recording"
+        ]
+      }
+    },
+    "upgrade": "Upgrade to Premium",
+    "manage": "Manage subscription",
+    "cancelAt": "Cancels on {{date}}",
+    "renewsAt": "Renews on {{date}}"
+  },
+  "notifications": {
+    "streamStarted": "Your stream is live!",
+    "streamEnded": "Stream ended",
+    "accountConnected": "{{platform}} account connected",
+    "accountDisconnected": "{{platform}} account disconnected",
+    "paymentFailed": "Payment failed — please update your payment method"
+  }
+}
