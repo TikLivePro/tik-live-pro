@@ -82,7 +82,7 @@
     "title": "Live Comments",
     "noComments": "No comments yet",
     "placeholder": "Comments will appear here...",
-    "from": "from {{platform}}"
+    "from": "from {platform}"
   },
   "accounts": {
     "title": "Connected Accounts",
@@ -129,14 +129,36 @@
     },
     "upgrade": "Upgrade to Premium",
     "manage": "Manage subscription",
-    "cancelAt": "Cancels on {{date}}",
-    "renewsAt": "Renews on {{date}}"
+    "cancelAt": "Cancels on {date}",
+    "renewsAt": "Renews on {date}"
   },
   "notifications": {
     "streamStarted": "Your stream is live!",
     "streamEnded": "Stream ended",
-    "accountConnected": "{{platform}} account connected",
-    "accountDisconnected": "{{platform}} account disconnected",
+    "accountConnected": "{platform} account connected",
+    "accountDisconnected": "{platform} account disconnected",
     "paymentFailed": "Payment failed — please update your payment method"
+  },
+  "settings": {
+    "title": "Settings",
+    "subscription": {
+      "sectionTitle": "SUBSCRIPTION",
+      "status": "Status",
+      "statusActive": "Active",
+      "statusInactive": "Inactive",
+      "nextRenewal": "Next renewal",
+      "monthlyRate": "Monthly rate"
+    },
+    "security": {
+      "sectionTitle": "SECURITY",
+      "password": "Password",
+      "passwordChangedDaysAgo": "Changed {days} days ago",
+      "changePassword": "Edit"
+    },
+    "connectedAccounts": {
+      "sectionTitle": "CONNECTED TIKTOK ACCOUNTS",
+      "add": "+ Add",
+      "noAccounts": "No connected TikTok accounts"
+    }
   }
 }

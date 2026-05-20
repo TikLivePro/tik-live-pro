@@ -6,6 +6,7 @@ export type AuthStackParamList = {
 
 export type AppStackParamList = {
   Live: undefined;
+  Settings: undefined;
 };
 
 export type AuthScreenProps<T extends keyof AuthStackParamList> =

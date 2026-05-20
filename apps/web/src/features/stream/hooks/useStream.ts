@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { useStreamStore } from '@/store/stream.store';
-import { useAuthStore } from '@/store/auth.store';
+import { useStreamStore } from '../store/stream.store';
+import { useAuthStore } from '@/features/auth/store/auth.store';
+import { API_BASE } from '@/lib/api';
 import type { LiveSessionId, SocialAccountId } from '@tik-live-pro/shared-types';
-
-const API_BASE = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3000';
 
 export function useStream() {
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +30,7 @@ export function useStream() {
           }),
         });
         if (!res.ok) throw new Error('Failed to create session');
-        const { data } = await res.json() as { data: { sessionId: LiveSessionId } };
+        const { data } = (await res.json()) as { data: { sessionId: LiveSessionId } };
         return data.sessionId;
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
@@ -91,5 +90,6 @@ export function useStream() {
     createSession,
     startSession,
     endSession,
+    setSession,
   };
 }

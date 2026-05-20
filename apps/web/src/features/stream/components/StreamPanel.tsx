@@ -1,22 +1,21 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useStream } from '@/hooks/useStream';
-import { useStreamStore } from '@/store/stream.store';
+import { useStream } from '../hooks/useStream';
+import { useStreamStore } from '../store/stream.store';
+import { StatusBadge } from './StatusBadge';
 import { cn } from '@/lib/utils';
 
 export function StreamPanel() {
   const t = useTranslations('stream');
   const { currentSession, isStarting, isEnding, error, startSession, endSession } = useStream();
-  const isLive = currentSession?.status === 'live';
+  const isLive = useStreamStore((s) => s.currentSession?.status === 'live');
 
   return (
     <div className="rounded-xl border border-border bg-background p-6 shadow-sm space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">{t('title')}</h2>
-        {currentSession && (
-          <StatusBadge status={currentSession.status} />
-        )}
+        {currentSession && <StatusBadge status={currentSession.status} />}
       </div>
 
       {error && (
@@ -59,35 +58,20 @@ export function StreamPanel() {
                 key={dest.socialAccountId}
                 className={cn(
                   'inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium',
-                  dest.status === 'live' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-muted text-muted-foreground',
+                  dest.status === 'live'
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                    : 'bg-muted text-muted-foreground',
                 )}
               >
                 {dest.platform}
-                {dest.status === 'live' && <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />}
+                {dest.status === 'live' && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                )}
               </span>
             ))}
           </div>
         </div>
       )}
     </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const t = useTranslations('stream.status');
-  const isLive = status === 'live';
-
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full',
-        isLive
-          ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200'
-          : 'bg-muted text-muted-foreground',
-      )}
-    >
-      {isLive && <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />}
-      {t(status as Parameters<typeof t>[0])}
-    </span>
   );
 }

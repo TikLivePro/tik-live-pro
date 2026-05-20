@@ -203,6 +203,59 @@ await fastify.register(fastifySwaggerUi, { routePrefix: '/docs' }); // ← befor
 registerMyRoutes(fastify);  // ← after swagger
 ```
 
+## Frontend Feature Architecture
+
+All frontend code (web and mobile) follows a **feature-first, modular structure**. Every feature is self-contained under `src/features/<feature>/` with these standard subdirectories:
+
+```
+src/features/<feature>/
+├── components/     # UI components — one component per file, no inline sub-components
+├── hooks/          # Custom hooks — one hook per file, co-located with the feature that owns it
+├── store/          # Zustand stores — only for state owned by this feature
+├── consts/         # Constants (colors, keys, configs) — no magic values in components
+├── interfaces/     # TypeScript types and interfaces specific to this feature
+└── index.ts        # Barrel file — re-exports everything the feature exposes
+```
+
+### Rules
+
+- **No global `hooks/` or `store/` dirs** — hooks and stores live inside their owning feature.
+- **Pages are thin** — app pages/screens only import and compose feature components; no data fetching, hooks, or business logic directly in page files.
+- **No inline sub-components** — every named component that renders UI lives in its own file under `components/`.
+- **No magic strings or values** — all constants (colors, prices, API paths, etc.) go in `consts/<feature>.consts.ts`.
+- **Shared utilities** belong in `src/lib/` (e.g., `utils.ts`, `api.ts`, `text.utils.ts`).
+- **Cross-feature imports** are fine; import from the feature's `index.ts` barrel when possible.
+- **Each feature has an `index.ts`** that re-exports everything the feature exposes to the rest of the app.
+
+### Web-specific layout (`apps/web/src/`)
+
+```
+src/
+├── app/            # Next.js App Router pages — thin wrappers only
+├── features/
+│   ├── auth/       # store, hooks (useAuth, useTheme), components (LoginView, AuthIcons)
+│   ├── accounts/   # hooks (useSocialAccounts), components (AccountList, AccountCard)
+│   ├── comments/   # hooks (useComments), components (CommentFeed, CommentItem)
+│   ├── stream/     # store, hooks (useStream, useElapsedTime), components (LiveDashboard, StreamPanel, StatusBadge, StatsCard)
+│   └── settings/   # hooks (useSubscription, useTikTokAccounts, …), components (SettingsView, sections)
+├── lib/            # api.ts (API_BASE, COMMENTS_WS_URL), utils.ts (cn), text.utils.ts (getInitials)
+└── types/
+```
+
+### Mobile-specific layout (`apps/mobile/src/`)
+
+```
+src/
+├── features/
+│   ├── auth/       # hooks (useSocialAuth), components (SocialLoginButton), consts (OAUTH_CONFIGS)
+│   ├── stream/     # hooks (useElapsedTime, useStopSession), components, consts (AVATAR_COLORS)
+│   └── settings/   # hooks (useSubscription, useConnectedAccounts), components (cards)
+├── navigation/     # Stack navigators and param list types
+├── store/          # Cross-feature stores only (auth.store — used by auth, stream, settings)
+├── lib/            # api.ts (API_BASE), text.utils.ts (getInitials)
+└── theme/
+```
+
 ## UI / Responsiveness
 
 All web UI (Next.js app) **must be responsive**. Use mobile-first Tailwind breakpoints (`sm:`, `md:`, `lg:`) on every screen and component. Target widths: 375 px (mobile), 768 px (tablet), 1280 px (desktop). Never ship a web component that is only tested at a single viewport.

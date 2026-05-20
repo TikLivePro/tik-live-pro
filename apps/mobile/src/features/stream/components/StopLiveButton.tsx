@@ -1,13 +1,10 @@
 import React from 'react';
-import { ActivityIndicator, TouchableOpacity } from 'react-native';
+import { ActivityIndicator } from 'react-native';
 import styled from 'styled-components/native';
 import type { LiveSessionId } from '@tik-live-pro/shared-types';
-import { useStreamStore } from '@/store/stream.store';
-import { useAuthStore } from '@/store/auth.store';
+import { useStopSession } from '../hooks/useStopSession';
 
-const API_BASE = process.env['API_URL'] ?? 'http://localhost:3000';
-
-const Button = styled(TouchableOpacity)<{ disabled?: boolean }>`
+const Button = styled.TouchableOpacity<{ disabled?: boolean }>`
   flex-direction: row;
   align-items: center;
   justify-content: center;
@@ -38,25 +35,10 @@ interface Props {
 }
 
 export function StopLiveButton({ sessionId }: Props): React.ReactElement {
-  const { isEnding, setEnding, updateSessionStatus } = useStreamStore();
-  const { accessToken } = useAuthStore();
-
-  async function handleStop(): Promise<void> {
-    if (isEnding) return;
-    setEnding(true);
-    try {
-      const res = await fetch(`${API_BASE}/sessions/${sessionId}/end`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken ?? ''}` },
-      });
-      if (res.ok) updateSessionStatus('ending');
-    } finally {
-      setEnding(false);
-    }
-  }
+  const { isEnding, stopSession } = useStopSession();
 
   return (
-    <Button onPress={() => void handleStop()} disabled={isEnding}>
+    <Button onPress={() => void stopSession(sessionId)} disabled={isEnding}>
       {isEnding ? (
         <ActivityIndicator color="white" size="small" />
       ) : (

@@ -3,10 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import styled from 'styled-components/native';
 import type { PlatformStreamDestination, SocialAccount } from '@tik-live-pro/shared-types';
 import { useAuthStore } from '@/store/auth.store';
-
-const API_BASE = process.env['API_URL'] ?? 'http://localhost:3000';
-
-const AVATAR_COLORS = ['#8b5cf6', '#f97316', '#14b8a6', '#3b82f6', '#ec4899', '#6366f1'];
+import { AVATAR_COLORS } from '../consts/stream.consts';
+import { getInitials } from '@/lib/text.utils';
+import { API_BASE } from '@/lib/api';
 
 const SectionLabel = styled.Text`
   font-size: 11px;
@@ -70,23 +69,9 @@ const OkBadge = styled.Text`
   color: #4ade80;
 `;
 
-function getInitials(name: string): string {
-  return name
-    .replace(/^@/, '')
-    .split(/[\s_]/)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? '')
-    .join('');
-}
-
-interface Props {
-  destinations: PlatformStreamDestination[];
-}
-
-export function AccountStatusList({ destinations }: Props): React.ReactElement | null {
+function useSocialAccounts() {
   const { accessToken } = useAuthStore();
-
-  const { data: accounts } = useQuery<SocialAccount[]>({
+  return useQuery<SocialAccount[]>({
     queryKey: ['social-accounts'],
     queryFn: async () => {
       const res = await fetch(`${API_BASE}/integrations/accounts`, {
@@ -98,6 +83,14 @@ export function AccountStatusList({ destinations }: Props): React.ReactElement |
     },
     enabled: !!accessToken,
   });
+}
+
+interface Props {
+  destinations: PlatformStreamDestination[];
+}
+
+export function AccountStatusList({ destinations }: Props): React.ReactElement | null {
+  const { data: accounts } = useSocialAccounts();
 
   if (destinations.length === 0) return null;
 

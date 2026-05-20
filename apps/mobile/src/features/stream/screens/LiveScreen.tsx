@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import styled from 'styled-components/native';
 import { useStreamStore } from '@/store/stream.store';
+import { useElapsedTime } from '../hooks/useElapsedTime';
 import { AccountStatusList } from '../components/AccountStatusList';
 import { StopLiveButton } from '../components/StopLiveButton';
+import type { AppScreenProps } from '@/navigation/types';
 
 const Screen = styled.SafeAreaView`
   flex: 1;
@@ -73,6 +75,15 @@ const LiveBadgeText = styled.Text`
   letter-spacing: 0.3px;
 `;
 
+const SettingsButton = styled.TouchableOpacity`
+  padding: 6px;
+`;
+
+const SettingsIcon = styled.Text`
+  font-size: 20px;
+  color: #94a3b8;
+`;
+
 const Content = styled.ScrollView`
   flex: 1;
 `;
@@ -90,6 +101,10 @@ const StatsCard = styled.View`
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
+`;
+
+const StatBlock = styled.View`
+  gap: 4px;
 `;
 
 const StatLabel = styled.Text`
@@ -110,42 +125,16 @@ const LiveCountValue = styled(StatValue)`
   color: #4ade80;
 `;
 
-const StatBlock = styled.View`
-  gap: 4px;
-`;
-
 const Footer = styled.View`
   padding-horizontal: 16px;
   padding-bottom: 16px;
   padding-top: 8px;
 `;
 
-function useElapsedTime(startedAt: Date | null): string {
-  const [elapsed, setElapsed] = useState(0);
-
-  useEffect(() => {
-    if (!startedAt) {
-      setElapsed(0);
-      return;
-    }
-    const origin = new Date(startedAt).getTime();
-    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - origin) / 1000)));
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [startedAt]);
-
-  const h = Math.floor(elapsed / 3600).toString().padStart(2, '0');
-  const m = Math.floor((elapsed % 3600) / 60).toString().padStart(2, '0');
-  const s = (elapsed % 60).toString().padStart(2, '0');
-  return `${h}:${m}:${s}`;
-}
-
-export function LiveScreen(): React.ReactElement {
+export function LiveScreen({ navigation }: AppScreenProps<'Live'>): React.ReactElement {
   const { currentSession } = useStreamStore();
   const isLive = currentSession?.status === 'live';
   const elapsed = useElapsedTime(isLive ? (currentSession?.startedAt ?? null) : null);
-
   const destinations = currentSession?.destinations ?? [];
   const liveCount = destinations.filter((d) => d.status === 'live').length;
 
@@ -158,11 +147,15 @@ export function LiveScreen(): React.ReactElement {
           </BrandIcon>
           <BrandText>TikLive Pro</BrandText>
         </BrandRow>
-        {isLive && (
+        {isLive ? (
           <LiveBadge>
             <LiveDot />
             <LiveBadgeText>En direct</LiveBadgeText>
           </LiveBadge>
+        ) : (
+          <SettingsButton onPress={() => navigation.navigate('Settings')}>
+            <SettingsIcon>⚙</SettingsIcon>
+          </SettingsButton>
         )}
       </Header>
 
@@ -183,7 +176,11 @@ export function LiveScreen(): React.ReactElement {
         </Inner>
       </Content>
 
-      {isLive && currentSession && <Footer><StopLiveButton sessionId={currentSession.id} /></Footer>}
+      {isLive && currentSession && (
+        <Footer>
+          <StopLiveButton sessionId={currentSession.id} />
+        </Footer>
+      )}
     </Screen>
   );
 }

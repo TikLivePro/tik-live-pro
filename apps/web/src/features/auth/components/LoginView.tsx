@@ -1,0 +1,175 @@
+'use client';
+
+import { useState, type FormEvent } from 'react';
+import { useTranslations } from 'next-intl';
+import { useAuth } from '../hooks/useAuth';
+import { useTheme } from '../hooks/useTheme';
+import { cn } from '@/lib/utils';
+import {
+  BroadcastIcon,
+  LogInIcon,
+  EyeIcon,
+  EyeOffIcon,
+  SunIcon,
+  MoonIcon,
+  GoogleIcon,
+  FacebookIcon,
+  TikTokIcon,
+} from './AuthIcons';
+import type { OAuthProvider } from '../interfaces/auth.interfaces';
+
+const SOCIAL_PROVIDERS: { provider: OAuthProvider; icon: React.ReactNode; labelKey: string }[] = [
+  { provider: 'google', icon: <GoogleIcon className="w-5 h-5" />, labelKey: 'socialGoogle' },
+  { provider: 'facebook', icon: <FacebookIcon className="w-5 h-5" />, labelKey: 'socialFacebook' },
+  { provider: 'tiktok', icon: <TikTokIcon className="w-5 h-5" />, labelKey: 'socialTikTok' },
+];
+
+export function LoginView() {
+  const t = useTranslations('auth');
+  const { login, loginWithProvider, isLoading, error } = useAuth();
+  const { theme, toggle } = useTheme();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await login({ email, password });
+  }
+
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
+      <button
+        onClick={toggle}
+        aria-label="Toggle theme"
+        className={cn(
+          'absolute top-4 right-4 w-9 h-9 rounded-lg flex items-center justify-center',
+          'text-muted-foreground hover:text-foreground',
+          'bg-card border border-border',
+          'hover:border-brand/50 transition-colors',
+        )}
+      >
+        {theme === 'dark' ? <SunIcon className="w-4 h-4" /> : <MoonIcon className="w-4 h-4" />}
+      </button>
+
+      <div className="w-full max-w-sm">
+        <div className="bg-card rounded-2xl p-8 shadow-2xl border border-border/50">
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-16 h-16 bg-brand rounded-2xl flex items-center justify-center mb-5 shadow-lg shadow-brand/25">
+              <BroadcastIcon className="w-8 h-8 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">TikLive Pro</h1>
+            <p className="text-muted-foreground text-sm mt-1.5">{t('subtitle')}</p>
+          </div>
+
+          <div className="space-y-3">
+            {SOCIAL_PROVIDERS.map(({ provider, icon, labelKey }) => (
+              <button
+                key={provider}
+                type="button"
+                disabled={isLoading}
+                onClick={() => loginWithProvider(provider)}
+                className={cn(
+                  'w-full flex items-center justify-center gap-3',
+                  'py-2.5 px-4 rounded-lg text-sm font-medium',
+                  'bg-card border border-border text-foreground',
+                  'hover:border-brand/40 hover:bg-muted/40 transition-colors',
+                  'disabled:opacity-50 disabled:cursor-not-allowed',
+                )}
+              >
+                {icon}
+                {t(labelKey as Parameters<typeof t>[0])}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3 my-5">
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-xs text-muted-foreground">{t('orContinueWith')}</span>
+            <div className="flex-1 h-px bg-border" />
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground" htmlFor="email">
+                {t('email')}
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                autoComplete="email"
+                placeholder={t('emailPlaceholder')}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={cn(
+                  'w-full px-4 py-2.5 rounded-lg text-sm',
+                  'bg-input border border-border text-foreground',
+                  'placeholder:text-muted-foreground',
+                  'focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand/60',
+                  'transition-colors',
+                )}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground" htmlFor="password">
+                {t('password')}
+              </label>
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={cn(
+                    'w-full px-4 py-2.5 pr-11 rounded-lg text-sm',
+                    'bg-input border border-border text-foreground',
+                    'placeholder:text-muted-foreground',
+                    'focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand/60',
+                    'transition-colors',
+                  )}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOffIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <p className="text-destructive text-sm bg-destructive/10 px-3 py-2 rounded-lg border border-destructive/20">
+                {error}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className={cn(
+                'w-full flex items-center justify-center gap-2.5',
+                'py-3 px-6 rounded-lg font-semibold text-sm text-white',
+                'bg-brand hover:bg-brand/90 active:scale-[0.98]',
+                'disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100',
+                'transition-all shadow-md shadow-brand/30',
+              )}
+            >
+              <LogInIcon className="w-4 h-4 shrink-0" />
+              {isLoading ? t('signingIn') : t('signIn')}
+            </button>
+
+            <p className="text-center text-xs text-muted-foreground leading-relaxed">
+              {t('forgotPasswordContact')}
+            </p>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}

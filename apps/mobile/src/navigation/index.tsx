@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuthStore } from '@/store/auth.store';
 import { LiveScreen } from '@/features/stream/screens/LiveScreen';
 import { LoginScreen } from '@/features/auth/screens/LoginScreen';
+import { SettingsScreen } from '@/features/settings/screens/SettingsScreen';
 import type { AuthStackParamList, AppStackParamList } from './types';
 
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
@@ -21,6 +22,7 @@ function AppNavigator() {
   return (
     <AppStack.Navigator screenOptions={{ headerShown: false }}>
       <AppStack.Screen name="Live" component={LiveScreen} />
+      <AppStack.Screen name="Settings" component={SettingsScreen} />
     </AppStack.Navigator>
   );
 }

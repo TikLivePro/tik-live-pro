@@ -82,7 +82,7 @@
     "title": "Commentaires en direct",
     "noComments": "Aucun commentaire pour l'instant",
     "placeholder": "Les commentaires apparaîtront ici...",
-    "from": "depuis {{platform}}"
+    "from": "depuis {platform}"
   },
   "accounts": {
     "title": "Comptes connectés",
@@ -129,14 +129,36 @@
     },
     "upgrade": "Passer au Premium",
     "manage": "Gérer l'abonnement",
-    "cancelAt": "Se termine le {{date}}",
-    "renewsAt": "Se renouvelle le {{date}}"
+    "cancelAt": "Se termine le {date}",
+    "renewsAt": "Se renouvelle le {date}"
   },
   "notifications": {
     "streamStarted": "Votre stream est en direct !",
     "streamEnded": "Stream terminé",
-    "accountConnected": "Compte {{platform}} connecté",
-    "accountDisconnected": "Compte {{platform}} déconnecté",
+    "accountConnected": "Compte {platform} connecté",
+    "accountDisconnected": "Compte {platform} déconnecté",
     "paymentFailed": "Paiement échoué — veuillez mettre à jour votre mode de paiement"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "subscription": {
+      "sectionTitle": "ABONNEMENT",
+      "status": "Statut",
+      "statusActive": "Actif",
+      "statusInactive": "Inactif",
+      "nextRenewal": "Prochain renouvellement",
+      "monthlyRate": "Tarif mensuel"
+    },
+    "security": {
+      "sectionTitle": "SÉCURITÉ",
+      "password": "Mot de passe",
+      "passwordChangedDaysAgo": "Modifié il y a {days} jours",
+      "changePassword": "Modifier"
+    },
+    "connectedAccounts": {
+      "sectionTitle": "COMPTES TIKTOK CONNECTÉS",
+      "add": "+ Ajouter",
+      "noAccounts": "Aucun compte TikTok connecté"
+    }
   }
 }
