@@ -203,6 +203,10 @@ await fastify.register(fastifySwaggerUi, { routePrefix: '/docs' }); // ← befor
 registerMyRoutes(fastify);  // ← after swagger
 ```
 
+## UI / Responsiveness
+
+All web UI (Next.js app) **must be responsive**. Use mobile-first Tailwind breakpoints (`sm:`, `md:`, `lg:`) on every screen and component. Target widths: 375 px (mobile), 768 px (tablet), 1280 px (desktop). Never ship a web component that is only tested at a single viewport.
+
 ## Coding Standards
 
 - **No `any`**: use `unknown` and narrow with type guards

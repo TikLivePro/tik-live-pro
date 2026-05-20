@@ -77,7 +77,7 @@ async function main(): Promise<void> {
   const streamArrivalHandler = new HandleStreamArrivedUseCase(
     sessionRepo,
     eventPublisher,
-    () => new FfmpegStreamWorker(),
+    () => new FfmpegStreamWorker(logger),
     localRtmpBase,
     logger,
   );

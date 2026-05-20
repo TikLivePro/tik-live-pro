@@ -9,6 +9,7 @@ export default getRequestConfig(async () => {
 
   return {
     locale,
-    messages: (await import(`@tik-live-pro/i18n/locales/${locale}.json`)).default as Record<string, unknown>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    messages: (await import(`@tik-live-pro/i18n/locales/${locale}.json`)).default as any,
   };
 });

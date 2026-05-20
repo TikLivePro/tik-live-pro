@@ -1,9 +1,12 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth.store';
 import type { SubscriptionTier, UserId } from '@tik-live-pro/shared-types';
+
+export type OAuthProvider = 'google' | 'facebook' | 'tiktok';
 
 const API_BASE = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3000';
 
@@ -79,10 +82,21 @@ export function useAuth() {
     [setAuth, router],
   );
 
+  const loginWithProvider = useCallback(
+    async (provider: OAuthProvider) => {
+      setIsLoading(true);
+      setError(null);
+      await signIn(provider, { callbackUrl: '/auth/social-callback' });
+      // signIn() redirects — code below only runs on error
+      setIsLoading(false);
+    },
+    [],
+  );
+
   const logout = useCallback(() => {
     clearAuth();
     router.push('/auth/login');
   }, [clearAuth, router]);
 
-  return { register, login, logout, isLoading, error, isAuthenticated };
+  return { register, login, loginWithProvider, logout, isLoading, error, isAuthenticated };
 }

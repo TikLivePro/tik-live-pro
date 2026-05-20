@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { KeyboardAvoidingView, Platform, ActivityIndicator, View, Text } from 'react-native';
 import styled from 'styled-components/native';
 import type { AppTheme } from '@/theme/theme';
 import type { AuthScreenProps } from '@/navigation/types';
+import { useSocialAuth } from '../hooks/useSocialAuth';
 
 const Screen = styled.SafeAreaView<{ theme: AppTheme }>`
   flex: 1;
@@ -49,18 +50,63 @@ const ButtonText = styled.Text`
   font-weight: 700;
 `;
 
+const SocialButton = styled.TouchableOpacity<{ theme: AppTheme; disabled?: boolean }>`
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background-color: ${({ theme }) => theme.colors.surface};
+  border-width: 1px;
+  border-color: ${({ theme }) => theme.colors.border};
+  border-radius: ${({ theme }) => theme.radius.md}px;
+  padding-vertical: ${({ theme }) => theme.spacing.md}px;
+  opacity: ${({ disabled }) => (disabled ? 0.5 : 1)};
+`;
+
+const SocialButtonText = styled.Text<{ theme: AppTheme }>`
+  color: ${({ theme }) => theme.colors.foreground};
+  font-size: 15px;
+  font-weight: 600;
+`;
+
+const Divider = styled.View<{ theme: AppTheme }>`
+  flex-direction: row;
+  align-items: center;
+  gap: ${({ theme }) => theme.spacing.sm}px;
+  margin-vertical: ${({ theme }) => theme.spacing.sm}px;
+`;
+
+const DividerLine = styled.View<{ theme: AppTheme }>`
+  flex: 1;
+  height: 1px;
+  background-color: ${({ theme }) => theme.colors.border};
+`;
+
+const DividerText = styled.Text<{ theme: AppTheme }>`
+  color: ${({ theme }) => theme.colors.muted};
+  font-size: 12px;
+`;
+
+const ErrorText = styled.Text`
+  color: #ef4444;
+  font-size: 13px;
+  text-align: center;
+`;
+
 export function LoginScreen(_props: AuthScreenProps<'Login'>) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [emailLoading, setEmailLoading] = useState(false);
+  const { loginWithProvider, loading: socialLoading, error: socialError } = useSocialAuth();
 
-  const canSubmit = email.trim().length > 0 && password.length >= 6 && !loading;
+  const isLoading = emailLoading || socialLoading;
+  const canSubmit = email.trim().length > 0 && password.length >= 6 && !isLoading;
 
   const handleLogin = async () => {
     if (!canSubmit) return;
-    setLoading(true);
+    setEmailLoading(true);
     // TODO: call auth service via React Query mutation
-    setLoading(false);
+    setEmailLoading(false);
   };
 
   return (
@@ -71,6 +117,53 @@ export function LoginScreen(_props: AuthScreenProps<'Login'>) {
       >
         <Inner>
           <Logo>TikLivePro</Logo>
+
+          {/* Social sign-in */}
+          <SocialButton
+            disabled={isLoading}
+            onPress={() => loginWithProvider('google')}
+            activeOpacity={0.7}
+          >
+            {socialLoading ? (
+              <ActivityIndicator color="#4285F4" size="small" />
+            ) : (
+              <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#4285F4', alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: 'white', fontWeight: '700', fontSize: 12 }}>G</Text>
+              </View>
+            )}
+            <SocialButtonText>Continue with Google</SocialButtonText>
+          </SocialButton>
+
+          <SocialButton
+            disabled={isLoading}
+            onPress={() => loginWithProvider('facebook')}
+            activeOpacity={0.7}
+          >
+            <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: '#1877F2', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: 'white', fontWeight: '700', fontSize: 13 }}>f</Text>
+            </View>
+            <SocialButtonText>Continue with Facebook</SocialButtonText>
+          </SocialButton>
+
+          <SocialButton
+            disabled={isLoading}
+            onPress={() => loginWithProvider('tiktok')}
+            activeOpacity={0.7}
+          >
+            <View style={{ width: 20, height: 20, borderRadius: 4, backgroundColor: '#010101', alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ color: 'white', fontWeight: '700', fontSize: 11 }}>T</Text>
+            </View>
+            <SocialButtonText>Continue with TikTok</SocialButtonText>
+          </SocialButton>
+
+          {socialError && <ErrorText>{socialError}</ErrorText>}
+
+          <Divider>
+            <DividerLine />
+            <DividerText>or sign in with email</DividerText>
+            <DividerLine />
+          </Divider>
+
           <Input
             placeholder="Email"
             value={email}
@@ -79,6 +172,7 @@ export function LoginScreen(_props: AuthScreenProps<'Login'>) {
             keyboardType="email-address"
             returnKeyType="next"
             autoComplete="email"
+            editable={!isLoading}
           />
           <Input
             placeholder="Password"
@@ -88,9 +182,10 @@ export function LoginScreen(_props: AuthScreenProps<'Login'>) {
             returnKeyType="done"
             onSubmitEditing={handleLogin}
             autoComplete="current-password"
+            editable={!isLoading}
           />
-          <SubmitButton disabled={!canSubmit} onPress={handleLogin}>
-            {loading ? (
+          <SubmitButton disabled={!canSubmit} onPress={handleLogin} activeOpacity={0.8}>
+            {emailLoading ? (
               <ActivityIndicator color="white" />
             ) : (
               <ButtonText>Sign In</ButtonText>

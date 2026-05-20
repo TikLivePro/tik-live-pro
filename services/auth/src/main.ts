@@ -16,6 +16,7 @@ import { JwtTokenService } from './infrastructure/jwt/jwt-token.service.js';
 import { RegisterUseCase } from './application/use-cases/register.use-case.js';
 import { LoginUseCase } from './application/use-cases/login.use-case.js';
 import { RefreshTokenUseCase } from './application/use-cases/refresh-token.use-case.js';
+import { OAuthSocialLoginUseCase } from './application/use-cases/oauth-social-login.use-case.js';
 import { registerAuthRoutes } from './interfaces/http/auth.routes.js';
 
 const envSchema = baseEnvSchema.extend({
@@ -124,19 +125,26 @@ Authorization: Bearer <accessToken>
   // ---------------------------------------------------------------------------
   // Dependencies
   // ---------------------------------------------------------------------------
-  const userRepo = new PgAuthUserRepository(db);
+  const userRepo = new PgAuthUserRepository(db, logger);
   const tokenService = new JwtTokenService(
     fastify,
     db,
     env.JWT_ACCESS_EXPIRES_IN,
     env.JWT_REFRESH_EXPIRES_IN,
+    logger,
   );
 
-  const registerUseCase = new RegisterUseCase(userRepo, tokenService, nats);
-  const loginUseCase = new LoginUseCase(userRepo, tokenService, nats);
-  const refreshTokenUseCase = new RefreshTokenUseCase(userRepo, tokenService);
+  const registerUseCase = new RegisterUseCase(userRepo, tokenService, nats, logger);
+  const loginUseCase = new LoginUseCase(userRepo, tokenService, nats, logger);
+  const refreshTokenUseCase = new RefreshTokenUseCase(userRepo, tokenService, logger);
+  const oauthSocialLoginUseCase = new OAuthSocialLoginUseCase(userRepo, tokenService, nats, logger);
 
-  registerAuthRoutes(fastify, { registerUseCase, loginUseCase, refreshTokenUseCase });
+  registerAuthRoutes(fastify, {
+    registerUseCase,
+    loginUseCase,
+    refreshTokenUseCase,
+    oauthSocialLoginUseCase,
+  });
 
   // ---------------------------------------------------------------------------
   // Health endpoints
@@ -147,7 +155,8 @@ Authorization: Bearer <accessToken>
       schema: {
         tags: ['Health'],
         summary: 'Liveness probe',
-        description: 'Returns `ok` immediately. Used by Kubernetes to determine if the pod is alive.',
+        description:
+          'Returns `ok` immediately. Used by Kubernetes to determine if the pod is alive.',
         response: {
           200: {
             description: 'Service is alive.',
@@ -211,8 +220,12 @@ Authorization: Bearer <accessToken>
     process.exit(0);
   };
 
-  process.on('SIGTERM', () => { void shutdown(); });
-  process.on('SIGINT', () => { void shutdown(); });
+  process.on('SIGTERM', () => {
+    void shutdown();
+  });
+  process.on('SIGINT', () => {
+    void shutdown();
+  });
 }
 
 bootstrap().catch((err: unknown) => {

@@ -39,6 +39,7 @@ export class TikTokAdapter implements IPlatformAdapter {
 
     if (!response.ok) {
       const text = await response.text();
+      this.logger.error({ status: response.status, body: text }, 'TikTok: token exchange failed');
       throw new Error(`TikTok token exchange failed: ${text}`);
     }
 
@@ -50,6 +51,7 @@ export class TikTokAdapter implements IPlatformAdapter {
     };
 
     const expiresAt = new Date(Date.now() + data.expires_in * 1000);
+    this.logger.info({ expiresAt }, 'TikTok: auth code exchanged successfully');
 
     return {
       accessToken: data.access_token,
@@ -60,6 +62,7 @@ export class TikTokAdapter implements IPlatformAdapter {
   }
 
   async refreshTokens(refreshToken: string): Promise<OAuthTokens> {
+    this.logger.debug('TikTok: refreshing tokens');
     const response = await fetch(`${this.baseUrl}/oauth/token/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -72,6 +75,7 @@ export class TikTokAdapter implements IPlatformAdapter {
     });
 
     if (!response.ok) {
+      this.logger.warn({ status: response.status }, 'TikTok: token refresh failed');
       throw new Error('TikTok token refresh failed');
     }
 
@@ -82,33 +86,42 @@ export class TikTokAdapter implements IPlatformAdapter {
       scope: string;
     };
 
+    const expiresAt = new Date(Date.now() + data.expires_in * 1000);
+    this.logger.info({ expiresAt }, 'TikTok: tokens refreshed');
     return {
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
-      expiresAt: new Date(Date.now() + data.expires_in * 1000),
+      expiresAt,
       scope: data.scope,
     };
   }
 
   async revokeTokens(accessToken: string): Promise<void> {
+    this.logger.debug('TikTok: revoking tokens');
     await fetch(`${this.baseUrl}/oauth/revoke/`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+    this.logger.info('TikTok: tokens revoked');
   }
 
   async getUser(accessToken: string): Promise<PlatformUser> {
+    this.logger.debug('TikTok: fetching user info');
     const response = await fetch(
       `${this.baseUrl}/user/info/?fields=open_id,display_name,avatar_url`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
 
-    if (!response.ok) throw new Error('Failed to fetch TikTok user');
+    if (!response.ok) {
+      this.logger.error({ status: response.status }, 'TikTok: failed to fetch user');
+      throw new Error('Failed to fetch TikTok user');
+    }
 
     const data = await response.json() as {
       data: { user: { open_id: string; display_name: string; avatar_url: string } };
     };
 
+    this.logger.debug({ platformUserId: data.data.user.open_id }, 'TikTok: user fetched');
     return {
       platformUserId: data.data.user.open_id,
       displayName: data.data.user.display_name,
@@ -121,6 +134,7 @@ export class TikTokAdapter implements IPlatformAdapter {
     title: string,
     _description: string | null,
   ): Promise<StreamTarget> {
+    this.logger.debug({ title }, 'TikTok: creating live stream');
     const response = await fetch(`${this.baseUrl}/live/stream/create/`, {
       method: 'POST',
       headers: {
@@ -130,12 +144,16 @@ export class TikTokAdapter implements IPlatformAdapter {
       body: JSON.stringify({ title }),
     });
 
-    if (!response.ok) throw new Error('Failed to create TikTok live stream');
+    if (!response.ok) {
+      this.logger.error({ status: response.status, title }, 'TikTok: failed to create live stream');
+      throw new Error('Failed to create TikTok live stream');
+    }
 
     const data = await response.json() as {
       data: { rtmp_url: string; stream_key: string };
     };
 
+    this.logger.info({ rtmpUrl: data.data.rtmp_url }, 'TikTok: live stream created');
     return {
       rtmpUrl: data.data.rtmp_url,
       streamKey: data.data.stream_key,
@@ -144,10 +162,12 @@ export class TikTokAdapter implements IPlatformAdapter {
   }
 
   async endLiveStream(accessToken: string, _streamId: string): Promise<void> {
+    this.logger.debug('TikTok: ending live stream');
     await fetch(`${this.baseUrl}/live/stream/end/`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+    this.logger.info('TikTok: live stream ended');
   }
 
   async pollComments(
@@ -156,6 +176,7 @@ export class TikTokAdapter implements IPlatformAdapter {
     _socialAccountId: SocialAccountId,
     cursor: string | null,
   ): Promise<CommentPage> {
+    this.logger.debug({ sessionId, cursor }, 'TikTok: polling comments');
     const params = new URLSearchParams({ limit: '50' });
     if (cursor) params.set('cursor', cursor);
 
@@ -163,7 +184,10 @@ export class TikTokAdapter implements IPlatformAdapter {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
-    if (!response.ok) return { comments: [], nextCursor: null };
+    if (!response.ok) {
+      this.logger.warn({ sessionId, status: response.status }, 'TikTok: comment poll returned non-OK, returning empty');
+      return { comments: [], nextCursor: null };
+    }
 
     const data = await response.json() as {
       data: {
@@ -183,6 +207,7 @@ export class TikTokAdapter implements IPlatformAdapter {
       receivedAt: new Date(c.create_time * 1000),
     }));
 
+    this.logger.debug({ sessionId, count: comments.length, nextCursor: data.data.next_cursor }, 'TikTok: comments polled');
     return { comments, nextCursor: data.data.next_cursor };
   }
 }

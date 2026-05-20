@@ -20,6 +20,7 @@
     "i18n-js": "^4.4.0",
     "react": "19.0.0",
     "react-native": "0.85.0",
+    "react-native-app-auth": "^8.0.0",
     "react-native-bootsplash": "^6.0.0",
     "react-native-gesture-handler": "^2.22.0",
     "react-native-keychain": "^9.0.0",

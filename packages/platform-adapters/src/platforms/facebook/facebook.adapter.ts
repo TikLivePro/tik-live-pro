@@ -34,7 +34,10 @@ export class FacebookAdapter implements IPlatformAdapter {
     });
 
     const response = await fetch(`${this.graphBase}/oauth/access_token?${params.toString()}`);
-    if (!response.ok) throw new Error('Facebook token exchange failed');
+    if (!response.ok) {
+      this.logger.error({ status: response.status }, 'Facebook: token exchange failed');
+      throw new Error('Facebook token exchange failed');
+    }
 
     const data = await response.json() as {
       access_token: string;
@@ -42,6 +45,7 @@ export class FacebookAdapter implements IPlatformAdapter {
       expires_in: number;
     };
 
+    this.logger.info({ expiresAt: new Date(Date.now() + data.expires_in * 1000) }, 'Facebook: auth code exchanged successfully');
     return {
       accessToken: data.access_token,
       refreshToken: null,
@@ -51,21 +55,28 @@ export class FacebookAdapter implements IPlatformAdapter {
   }
 
   async refreshTokens(_refreshToken: string): Promise<OAuthTokens> {
+    this.logger.warn('Facebook: refreshTokens called — not supported');
     throw new Error('Facebook does not support refresh tokens — re-authorize instead');
   }
 
   async revokeTokens(accessToken: string): Promise<void> {
+    this.logger.debug('Facebook: revoking tokens');
     const me = await this.getMeId(accessToken);
     await fetch(`${this.graphBase}/${me}/permissions?access_token=${accessToken}`, {
       method: 'DELETE',
     });
+    this.logger.info('Facebook: tokens revoked');
   }
 
   async getUser(accessToken: string): Promise<PlatformUser> {
+    this.logger.debug('Facebook: fetching user info');
     const response = await fetch(
       `${this.graphBase}/me?fields=id,name,picture&access_token=${accessToken}`,
     );
-    if (!response.ok) throw new Error('Failed to fetch Facebook user');
+    if (!response.ok) {
+      this.logger.error({ status: response.status }, 'Facebook: failed to fetch user');
+      throw new Error('Failed to fetch Facebook user');
+    }
 
     const data = await response.json() as {
       id: string;
@@ -73,6 +84,7 @@ export class FacebookAdapter implements IPlatformAdapter {
       picture: { data: { url: string } };
     };
 
+    this.logger.debug({ platformUserId: data.id }, 'Facebook: user fetched');
     return {
       platformUserId: data.id,
       displayName: data.name,
@@ -85,6 +97,7 @@ export class FacebookAdapter implements IPlatformAdapter {
     title: string,
     description: string | null,
   ): Promise<StreamTarget> {
+    this.logger.debug({ title }, 'Facebook: creating live stream');
     const me = await this.getMeId(accessToken);
     const response = await fetch(`${this.graphBase}/${me}/live_videos`, {
       method: 'POST',
@@ -97,7 +110,10 @@ export class FacebookAdapter implements IPlatformAdapter {
       }),
     });
 
-    if (!response.ok) throw new Error('Failed to create Facebook live video');
+    if (!response.ok) {
+      this.logger.error({ status: response.status, title }, 'Facebook: failed to create live video');
+      throw new Error('Failed to create Facebook live video');
+    }
 
     const data = await response.json() as {
       id: string;
@@ -108,6 +124,7 @@ export class FacebookAdapter implements IPlatformAdapter {
     const url = new URL(data.secure_stream_url || data.stream_url);
     const streamKey = url.pathname.split('/').pop() ?? data.id;
 
+    this.logger.info({ platformStreamId: data.id, rtmpUrl: `${url.protocol}//${url.host}` }, 'Facebook: live stream created');
     return {
       rtmpUrl: `${url.protocol}//${url.host}${url.pathname.replace(`/${streamKey}`, '')}`,
       streamKey,
@@ -117,10 +134,12 @@ export class FacebookAdapter implements IPlatformAdapter {
   }
 
   async endLiveStream(accessToken: string, streamId: string): Promise<void> {
+    this.logger.debug({ streamId }, 'Facebook: ending live stream');
     await fetch(`${this.graphBase}/${streamId}`, {
       method: 'POST',
       body: new URLSearchParams({ end_live_video: 'true', access_token: accessToken }),
     });
+    this.logger.info({ streamId }, 'Facebook: live stream ended');
   }
 
   async pollComments(
@@ -129,6 +148,7 @@ export class FacebookAdapter implements IPlatformAdapter {
     socialAccountId: SocialAccountId,
     cursor: string | null,
   ): Promise<CommentPage> {
+    this.logger.debug({ sessionId, socialAccountId, cursor }, 'Facebook: polling comments');
     const params = new URLSearchParams({
       fields: 'id,from,message,created_time',
       access_token: accessToken,
@@ -140,7 +160,10 @@ export class FacebookAdapter implements IPlatformAdapter {
       `${this.graphBase}/${socialAccountId}/comments?${params.toString()}`,
     );
 
-    if (!response.ok) return { comments: [], nextCursor: null };
+    if (!response.ok) {
+      this.logger.warn({ sessionId, status: response.status }, 'Facebook: comment poll returned non-OK, returning empty');
+      return { comments: [], nextCursor: null };
+    }
 
     const data = await response.json() as {
       data: Array<{ id: string; from: { name: string }; message: string; created_time: string }>;
@@ -158,6 +181,7 @@ export class FacebookAdapter implements IPlatformAdapter {
       receivedAt: new Date(c.created_time),
     }));
 
+    this.logger.debug({ sessionId, count: comments.length }, 'Facebook: comments polled');
     return {
       comments,
       nextCursor: data.paging?.cursors?.after ?? null,

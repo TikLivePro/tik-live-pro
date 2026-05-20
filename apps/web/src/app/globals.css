@@ -1,26 +1,47 @@
 @import "tailwindcss";
 
+@theme {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-brand: hsl(var(--brand));
+  --color-brand-foreground: hsl(var(--brand-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-destructive: hsl(var(--destructive));
+}
+
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --brand: 259 94% 61%;
+    --background: 220 13% 95%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --brand: 4 82% 55%;
     --brand-foreground: 0 0% 100%;
     --destructive: 0 84% 60%;
     --muted: 210 40% 96%;
     --muted-foreground: 215 16% 47%;
     --border: 214 32% 91%;
+    --input: 220 14% 98%;
     --radius: 0.5rem;
   }
 
   .dark {
-    --background: 222 47% 11%;
+    --background: 220 17% 8%;
     --foreground: 210 40% 98%;
-    --brand: 263 90% 70%;
+    --card: 220 16% 13%;
+    --card-foreground: 210 40% 98%;
+    --brand: 4 82% 55%;
     --brand-foreground: 0 0% 100%;
     --muted: 217 33% 17%;
     --muted-foreground: 215 20% 65%;
-    --border: 217 33% 25%;
+    --border: 217 33% 22%;
+    --input: 220 14% 17%;
+    --destructive: 0 84% 60%;
   }
 
   * {

@@ -3,8 +3,14 @@ import { z } from 'zod';
 import type { RegisterUseCase } from '../../application/use-cases/register.use-case.js';
 import type { LoginUseCase } from '../../application/use-cases/login.use-case.js';
 import type { RefreshTokenUseCase } from '../../application/use-cases/refresh-token.use-case.js';
-import { DomainError } from '@tik-live-pro/domain';
+import type { OAuthSocialLoginUseCase } from '../../application/use-cases/oauth-social-login.use-case.js';
+import { DomainError, UnauthorizedError } from '@tik-live-pro/domain';
 import { emailSchema, passwordSchema, displayNameSchema } from '@tik-live-pro/validation';
+
+const oauthSocialSchema = z.object({
+  provider: z.enum(['google', 'facebook', 'tiktok']),
+  accessToken: z.string().min(1),
+});
 
 const registerSchema = z.object({
   email: emailSchema,
@@ -104,9 +110,10 @@ export function registerAuthRoutes(
     registerUseCase: RegisterUseCase;
     loginUseCase: LoginUseCase;
     refreshTokenUseCase: RefreshTokenUseCase;
+    oauthSocialLoginUseCase: OAuthSocialLoginUseCase;
   },
 ): void {
-  const { registerUseCase, loginUseCase, refreshTokenUseCase } = deps;
+  const { registerUseCase, loginUseCase, refreshTokenUseCase, oauthSocialLoginUseCase } = deps;
 
   // POST /auth/register -------------------------------------------------------
   fastify.post(
@@ -245,6 +252,87 @@ Authenticates a registered user with email + password and returns a fresh JWT ac
         );
         return reply.send({ data: result });
       } catch (err) {
+        if (err instanceof DomainError) {
+          return reply.status(401).send({ error: { code: err.code, message: err.message } });
+        }
+        throw err;
+      }
+    },
+  );
+
+  // POST /auth/oauth/social ---------------------------------------------------
+  fastify.post(
+    '/auth/oauth/social',
+    {
+      schema: {
+        tags: ['Authentication'],
+        summary: 'Social OAuth login (Google / Facebook / TikTok)',
+        description: `
+Exchanges a provider OAuth access token for a TikLivePro JWT token pair.
+
+**Client flow**
+1. Complete the OAuth flow with the provider (web: NextAuth, mobile: react-native-app-auth).
+2. Send the provider's access token to this endpoint.
+3. The service verifies the token with the provider's API, creates or finds the user, and returns a JWT pair.
+
+**Account linking:** if the OAuth email matches an existing email/password account, the OAuth identity is automatically linked to that account.
+
+> **No authorization required.** This endpoint is public.
+        `.trim(),
+        body: {
+          type: 'object',
+          required: ['provider', 'accessToken'],
+          additionalProperties: false,
+          properties: {
+            provider: {
+              type: 'string',
+              enum: ['google', 'facebook', 'tiktok'],
+              description: 'OAuth provider identifier.',
+              example: 'google',
+            },
+            accessToken: {
+              type: 'string',
+              description: "The access token issued by the provider's OAuth flow.",
+              example: 'ya29.a0AfH6...',
+            },
+          },
+        },
+        response: {
+          200: {
+            description: 'OAuth login successful. Token pair issued.',
+            type: 'object',
+            required: ['data'],
+            properties: {
+              data: {
+                type: 'object',
+                required: ['userId', 'accessToken', 'refreshToken', 'subscriptionTier'],
+                properties: {
+                  ...tokenPairProperties,
+                  subscriptionTier: {
+                    type: 'string',
+                    description: 'User subscription tier.',
+                    example: 'free',
+                  },
+                },
+              },
+            },
+          },
+          401: errorResponse('Provider token is invalid or expired.'),
+          422: errorResponse('Validation error — request body failed schema checks.'),
+        },
+      },
+    },
+    async (request, reply) => {
+      const body = oauthSocialSchema.parse(request.body);
+      const correlationId =
+        (request.headers['x-correlation-id'] as string) ?? crypto.randomUUID();
+      try {
+        const result = await oauthSocialLoginUseCase.execute(body, correlationId);
+        return reply.send({ data: result });
+      } catch (err) {
+        if (err instanceof UnauthorizedError) {
+          return reply.status(401).send({ error: { code: err.code, message: err.message } });
+        }
         if (err instanceof DomainError) {
           return reply.status(401).send({ error: { code: err.code, message: err.message } });
         }

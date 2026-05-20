@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, timestamp, varchar } from 'drizzle-orm/pg-core';
+import { pgTable, text, boolean, timestamp, varchar, unique } from 'drizzle-orm/pg-core';
 
 export const authUsers = pgTable('auth_users', {
   id: text('id').primaryKey(),
@@ -20,3 +20,18 @@ export const refreshTokens = pgTable('refresh_tokens', {
   revokedAt: timestamp('revoked_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
+
+export const oauthAccounts = pgTable(
+  'oauth_accounts',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => authUsers.id, { onDelete: 'cascade' }),
+    provider: varchar('provider', { length: 20 }).notNull(),
+    providerUserId: varchar('provider_user_id', { length: 255 }).notNull(),
+    providerEmail: varchar('provider_email', { length: 254 }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqueProviderAccount: unique().on(t.provider, t.providerUserId),
+  }),
+);
