@@ -3,14 +3,14 @@
 import { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useAuthStore } from '@/store/auth.store';
+import { useAuthStore } from '@/features/auth/store/auth.store';
 import type { UserId, SubscriptionTier } from '@tik-live-pro/shared-types';
 
 export default function SocialCallbackPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const setAuth = useAuthStore((s) => s.setAuth);
+  const setAuth = useAuthStore((s: ReturnType<typeof useAuthStore.getState>) => s.setAuth);
 
   useEffect(() => {
     if (status === 'loading') return;

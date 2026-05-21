@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 // ---------------------------------------------------------------------------
 // Reusable schema fragments
@@ -64,7 +65,7 @@ const notificationSchema = {
 
 // ---------------------------------------------------------------------------
 
-export function registerNotificationsRoutes(fastify: FastifyInstance): void {
+export function registerNotificationsRoutes(fastify: FastifyInstance, _deps: { db: NodePgDatabase }): void {
   // GET /notifications -------------------------------------------------------
   fastify.get(
     '/notifications',

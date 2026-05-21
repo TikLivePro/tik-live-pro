@@ -1,11 +1,9 @@
 import React from 'react';
-import { useQuery } from '@tanstack/react-query';
 import styled from 'styled-components/native';
-import type { PlatformStreamDestination, SocialAccount } from '@tik-live-pro/shared-types';
-import { useAuthStore } from '@/store/auth.store';
+import type { PlatformStreamDestination } from '@tik-live-pro/shared-types';
 import { AVATAR_COLORS } from '../consts/stream.consts';
 import { getInitials } from '@/lib/text.utils';
-import { API_BASE } from '@/lib/api';
+import { useSocialAccounts } from '../hooks/useSocialAccounts';
 
 const SectionLabel = styled.Text`
   font-size: 11px;
@@ -68,22 +66,6 @@ const OkBadge = styled.Text`
   font-weight: 700;
   color: #4ade80;
 `;
-
-function useSocialAccounts() {
-  const { accessToken } = useAuthStore();
-  return useQuery<SocialAccount[]>({
-    queryKey: ['social-accounts'],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/integrations/accounts`, {
-        headers: { Authorization: `Bearer ${accessToken ?? ''}` },
-      });
-      if (!res.ok) throw new Error('Failed to load accounts');
-      const { data } = (await res.json()) as { data: SocialAccount[] };
-      return data;
-    },
-    enabled: !!accessToken,
-  });
-}
 
 interface Props {
   destinations: PlatformStreamDestination[];

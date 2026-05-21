@@ -1,0 +1,6 @@
+{
+  "name": "tik-live-pro-plugin",
+  "version": "1.0.0",
+  "description": "Premium Antigravity workspace plugin encapsulating rules, skills, MCP servers, and hooks for the TikLivePro monorepo.",
+  "author": "Tokiarivelo"
+}

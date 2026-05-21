@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
+import { getInitials } from '@/lib/text.utils';
 import { PLATFORM_COLORS } from '../consts/comments.consts';
 import type { Comment } from '@tik-live-pro/shared-types';
 
@@ -27,7 +28,7 @@ export function CommentItem({ comment }: CommentItemProps) {
         />
       ) : (
         <div className="w-7 h-7 rounded-full bg-muted shrink-0 mt-0.5 flex items-center justify-center text-xs font-medium">
-          {comment.authorName[0]?.toUpperCase()}
+          {getInitials(comment.authorName)}
         </div>
       )}
       <div className="min-w-0">

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 // ---------------------------------------------------------------------------
 // Reusable schema fragments
@@ -67,7 +68,7 @@ const entitlementSchema = {
 
 // ---------------------------------------------------------------------------
 
-export function registerBillingRoutes(fastify: FastifyInstance): void {
+export function registerBillingRoutes(fastify: FastifyInstance, _deps: { db: NodePgDatabase }): void {
   // GET /billing/entitlements ------------------------------------------------
   fastify.get(
     '/billing/entitlements',

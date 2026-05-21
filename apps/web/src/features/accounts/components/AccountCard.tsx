@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
+import { getInitials } from '@/lib/text.utils';
 import type { SocialAccount } from '@tik-live-pro/shared-types';
 
 interface AccountCardProps {
@@ -24,7 +25,7 @@ export function AccountCard({ account }: AccountCardProps) {
         />
       ) : (
         <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-sm font-medium">
-          {account.displayName[0]?.toUpperCase()}
+          {getInitials(account.displayName)}
         </div>
       )}
       <div className="flex-1 min-w-0">

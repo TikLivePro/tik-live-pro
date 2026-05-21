@@ -1,17 +1,17 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useTikTokAccounts } from '../hooks/useTikTokAccounts';
+import { useSocialAccounts } from '@/features/accounts/hooks/useSocialAccounts';
 import { useRemoveAccount } from '../hooks/useRemoveAccount';
 import { useConnectTikTok } from '../hooks/useConnectTikTok';
-import { AVATAR_COLORS } from '../consts/settings.consts';
+import { AVATAR_COLORS } from '@/lib/avatar.consts';
 import { getInitials } from '@/lib/text.utils';
 import { TrashIcon } from '@/features/auth/components/AuthIcons';
 import { cn } from '@/lib/utils';
 
 export function ConnectedAccountsSection() {
   const t = useTranslations('settings');
-  const { data: tiktokAccounts, isLoading } = useTikTokAccounts();
+  const { data: tiktokAccounts, isLoading } = useSocialAccounts('tiktok');
   const { mutate: removeAccount, isPending: removing } = useRemoveAccount();
   const connectTikTok = useConnectTikTok();
 

@@ -1,0 +1,42 @@
+{
+  "mcpServers": {
+    "postgres-inspector": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres"
+      ],
+      "env": {
+        "PGHOST": "localhost",
+        "PGPORT": "5432",
+        "PGUSER": "postgres",
+        "PGPASSWORD": "password",
+        "PGDATABASE": "tik_live_pro_dev"
+      }
+    },
+    "nats-monitor": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-server-nats"
+      ],
+      "env": {
+        "NATS_URL": "nats://localhost:4222"
+      }
+    },
+    "docker-manager": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-server-docker"
+      ]
+    },
+    "git-assistant": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-git"
+      ]
+    }
+  }
+}

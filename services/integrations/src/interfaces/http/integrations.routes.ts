@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 // ---------------------------------------------------------------------------
 // Reusable schema fragments
@@ -65,7 +66,7 @@ const socialAccountSchema = {
 
 // ---------------------------------------------------------------------------
 
-export function registerIntegrationsRoutes(fastify: FastifyInstance): void {
+export function registerIntegrationsRoutes(fastify: FastifyInstance, _deps: { db: NodePgDatabase }): void {
   // GET /integrations/accounts -----------------------------------------------
   fastify.get(
     '/integrations/accounts',

@@ -5,5 +5,6 @@ export { DestinationStatus } from './components/DestinationStatus';
 export { StopLiveButton } from './components/StopLiveButton';
 export { StreamControls } from './components/StreamControls';
 export { useElapsedTime } from './hooks/useElapsedTime';
+export { useSocialAccounts } from './hooks/useSocialAccounts';
 export { useStopSession } from './hooks/useStopSession';
 export * from './consts/stream.consts';

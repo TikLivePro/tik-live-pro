@@ -1,4 +1,7 @@
 import { z } from 'zod';
+import { config } from 'dotenv';
+
+config();
 
 /**
  * Validates process.env against a Zod schema and throws with a descriptive

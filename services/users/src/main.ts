@@ -4,6 +4,8 @@ import fastifyCors from '@fastify/cors';
 import fastifyHelmet from '@fastify/helmet';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
+import { Pool } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
 import { z } from 'zod';
 import { parseEnv, baseEnvSchema } from '@tik-live-pro/config';
 import { createLogger } from '@tik-live-pro/logger';
@@ -20,6 +22,9 @@ const env = parseEnv(envSchema);
 const logger = createLogger('users-service', { level: env.LOG_LEVEL });
 
 async function bootstrap(): Promise<void> {
+  const pool = new Pool({ connectionString: env.DATABASE_URL });
+  const db = drizzle(pool);
+
   const nats = new NatsJetStreamClient();
   await nats.connect({ servers: [env.NATS_URL], name: 'users-service' });
   logger.info({ natsUrl: env.NATS_URL }, 'Connected to NATS');
@@ -93,7 +98,7 @@ All endpoints require a JWT Bearer token.
     staticCSP: true,
   });
 
-  registerUsersRoutes(fastify);
+  registerUsersRoutes(fastify, { db });
 
   fastify.get(
     '/health',
@@ -117,10 +122,18 @@ All endpoints require a JWT Bearer token.
         summary: 'Readiness probe',
         response: {
           200: { description: 'Service is ready.', type: 'object', properties: { status: { type: 'string', enum: ['ready'] } } },
+          503: { description: 'Service is not ready.', type: 'object', properties: { status: { type: 'string' }, message: { type: 'string' } } },
         },
       },
     },
-    async () => ({ status: 'ready' }),
+    async (_req, reply) => {
+      try {
+        await pool.query('SELECT 1');
+        return { status: 'ready' };
+      } catch {
+        return reply.status(503).send({ status: 'error', message: 'Database connection failed' });
+      }
+    },
   );
 
   await fastify.listen({ port: env.PORT, host: '0.0.0.0' });
@@ -129,6 +142,7 @@ All endpoints require a JWT Bearer token.
   const shutdown = async (): Promise<void> => {
     await fastify.close();
     await nats.drain();
+    await pool.end();
     process.exit(0);
   };
   process.on('SIGTERM', () => { void shutdown(); });

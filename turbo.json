@@ -8,6 +8,7 @@
       "outputs": ["dist/**", ".next/**"]
     },
     "dev": {
+      "dependsOn": ["^build"],
       "cache": false,
       "persistent": true
     },
@@ -25,6 +26,18 @@
     },
     "clean": {
       "cache": false
+    },
+    "db:generate": {
+      "cache": false,
+      "inputs": ["src/infrastructure/db/schema.ts", "drizzle.config.ts"],
+      "outputs": ["src/infrastructure/db/migrations/**"]
+    },
+    "db:migrate": {
+      "cache": false
+    },
+    "db:studio": {
+      "cache": false,
+      "persistent": true
     }
   }
 }

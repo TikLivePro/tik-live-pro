@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 // ---------------------------------------------------------------------------
 // Reusable schema fragments
@@ -36,7 +37,7 @@ const streamHealthSnapshotSchema = {
 
 // ---------------------------------------------------------------------------
 
-export function registerAnalyticsRoutes(fastify: FastifyInstance): void {
+export function registerAnalyticsRoutes(fastify: FastifyInstance, _deps: { db: NodePgDatabase }): void {
   // GET /analytics/overview --------------------------------------------------
   fastify.get(
     '/analytics/overview',

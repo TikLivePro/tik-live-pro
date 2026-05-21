@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 // ---------------------------------------------------------------------------
 // Reusable schema fragments
@@ -66,7 +67,7 @@ const commentSchema = {
 
 // ---------------------------------------------------------------------------
 
-export function registerCommentsRoutes(fastify: FastifyInstance): void {
+export function registerCommentsRoutes(fastify: FastifyInstance, _deps: { db: NodePgDatabase }): void {
   // GET /comments ------------------------------------------------------------
   fastify.get(
     '/comments',

@@ -1,4 +1,5 @@
 export { useAuth } from './hooks/useAuth';
+export { useLoginForm } from './hooks/useLoginForm';
 export { useTheme } from './hooks/useTheme';
 export { useAuthStore } from './store/auth.store';
 export { LoginView } from './components/LoginView';

@@ -8,7 +8,10 @@
     "start": "node dist/main.js",
     "test": "jest",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@tik-live-pro/shared-types": "workspace:*",

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
 import { useTranslations } from 'next-intl';
+import { useLoginForm } from '../hooks/useLoginForm';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '@/lib/utils';
@@ -26,16 +26,12 @@ const SOCIAL_PROVIDERS: { provider: OAuthProvider; icon: React.ReactNode; labelK
 
 export function LoginView() {
   const t = useTranslations('auth');
-  const { login, loginWithProvider, isLoading, error } = useAuth();
+  const { loginWithProvider, isLoading: authLoading } = useAuth();
   const { theme, toggle } = useTheme();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const { email, setEmail, password, setPassword, showPassword, setShowPassword, handleSubmit, isLoading, error } =
+    useLoginForm();
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    await login({ email, password });
-  }
+  const loading = isLoading || authLoading;
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
@@ -67,7 +63,7 @@ export function LoginView() {
               <button
                 key={provider}
                 type="button"
-                disabled={isLoading}
+                disabled={loading}
                 onClick={() => loginWithProvider(provider)}
                 className={cn(
                   'w-full flex items-center justify-center gap-3',
@@ -151,7 +147,7 @@ export function LoginView() {
 
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={loading}
               className={cn(
                 'w-full flex items-center justify-center gap-2.5',
                 'py-3 px-6 rounded-lg font-semibold text-sm text-white',
@@ -161,7 +157,7 @@ export function LoginView() {
               )}
             >
               <LogInIcon className="w-4 h-4 shrink-0" />
-              {isLoading ? t('signingIn') : t('signIn')}
+              {loading ? t('signingIn') : t('signIn')}
             </button>
 
             <p className="text-center text-xs text-muted-foreground leading-relaxed">

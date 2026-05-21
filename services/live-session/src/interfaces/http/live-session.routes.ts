@@ -1,5 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import type { CreateSessionUseCase } from '../../application/use-cases/create-session.use-case.js';
+import type { StartSessionUseCase } from '../../application/use-cases/start-session.use-case.js';
+import type { EndSessionUseCase } from '../../application/use-cases/end-session.use-case.js';
+import type { ILiveSessionRepository } from '../../domain/repositories/live-session.repository.js';
+import { NotFoundError, ForbiddenError, ConflictError } from '@tik-live-pro/domain';
+import type { LiveSessionId, UserId } from '@tik-live-pro/shared-types';
+
+export interface LiveSessionRouteDeps {
+  createSession: CreateSessionUseCase;
+  startSession: StartSessionUseCase;
+  endSession: EndSessionUseCase;
+  sessionRepo: ILiveSessionRepository;
+}
 
 // ---------------------------------------------------------------------------
 // Reusable schema fragments
@@ -66,7 +79,10 @@ const createSessionBody = z.object({
 
 // ---------------------------------------------------------------------------
 
-export function registerLiveSessionRoutes(fastify: FastifyInstance): void {
+export function registerLiveSessionRoutes(
+  fastify: FastifyInstance,
+  deps: LiveSessionRouteDeps,
+): void {
   // POST /sessions -----------------------------------------------------------
   fastify.post(
     '/sessions',
@@ -141,10 +157,26 @@ Creates a new live session that will broadcast simultaneously to one or more con
     },
     async (request, reply) => {
       const body = createSessionBody.parse(request.body);
-      const userId = (request as { user?: { sub?: string } }).user?.sub ?? '';
-      const correlationId = (request.headers['x-correlation-id'] as string) ?? crypto.randomUUID();
-      void body; void userId; void correlationId;
-      return reply.status(201).send({ data: { sessionId: crypto.randomUUID() } });
+      const userId = (request.user as { sub: string }).sub as UserId;
+      const correlationId = (request.headers['x-correlation-id'] as string | undefined) ?? crypto.randomUUID();
+
+      try {
+        const result = await deps.createSession.execute(
+          {
+            userId,
+            title: body.title,
+            description: body.description,
+            destinationAccountIds: body.destinationAccountIds as import('@tik-live-pro/shared-types').SocialAccountId[],
+          },
+          correlationId,
+        );
+        return reply.status(201).send({ data: { sessionId: result.sessionId } });
+      } catch (err) {
+        if (err instanceof ConflictError) {
+          return reply.status(409).send({ error: { code: 'CONFLICT', message: err.message } });
+        }
+        throw err;
+      }
     },
   );
 
@@ -189,8 +221,31 @@ A session can also transition to \`error\` at any point if a fatal problem occur
         },
       },
     },
-    async (_request, reply) => {
-      return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Session not found' } });
+    async (request, reply) => {
+      const userId = (request.user as { sub: string }).sub as UserId;
+      const sessionId = request.params.sessionId as LiveSessionId;
+
+      const session = await deps.sessionRepo.findById(sessionId);
+      if (!session) {
+        return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Session not found' } });
+      }
+      if (session.userId !== userId) {
+        return reply.status(403).send({ error: { code: 'FORBIDDEN', message: 'Forbidden' } });
+      }
+
+      return reply.send({
+        data: {
+          id: session.id,
+          userId: session.userId,
+          title: session.title,
+          description: session.description,
+          status: session.status,
+          destinations: session.destinations,
+          startedAt: session.startedAt?.toISOString() ?? null,
+          endedAt: session.endedAt?.toISOString() ?? null,
+          createdAt: session.createdAt.toISOString(),
+        },
+      });
     },
   );
 
@@ -233,8 +288,26 @@ Transitions the session from \`created\` → \`starting\` and emits a \`session.
         },
       },
     },
-    async (_request, reply) => {
-      return reply.status(204).send();
+    async (request, reply) => {
+      const userId = (request.user as { sub: string }).sub as UserId;
+      const sessionId = request.params.sessionId as LiveSessionId;
+      const correlationId = (request.headers['x-correlation-id'] as string | undefined) ?? crypto.randomUUID();
+
+      try {
+        await deps.startSession.execute(sessionId, userId, correlationId);
+        return reply.status(204).send();
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          return reply.status(404).send({ error: { code: 'NOT_FOUND', message: err.message } });
+        }
+        if (err instanceof ForbiddenError) {
+          return reply.status(403).send({ error: { code: 'FORBIDDEN', message: 'Forbidden' } });
+        }
+        if (err instanceof ConflictError) {
+          return reply.status(409).send({ error: { code: 'CONFLICT', message: err.message } });
+        }
+        throw err;
+      }
     },
   );
 
@@ -249,7 +322,7 @@ Transitions the session from \`created\` → \`starting\` and emits a \`session.
 Gracefully terminates the live session: transitions to \`ending\`, stops all ffmpeg broadcast workers, and finalizes the stream on each platform.
 
 **Side effects:**
-- A \`session.ending\` NATS event is emitted.
+- A \`session.ended\` NATS event is emitted.
 - The \`stream-orchestrator\` stops ffmpeg workers and calls the platform stop APIs.
 - Analytics ingestion is finalized.
 - Destination statuses are set to \`ended\`.
@@ -278,8 +351,26 @@ Gracefully terminates the live session: transitions to \`ending\`, stops all ffm
         },
       },
     },
-    async (_request, reply) => {
-      return reply.status(204).send();
+    async (request, reply) => {
+      const userId = (request.user as { sub: string }).sub as UserId;
+      const sessionId = request.params.sessionId as LiveSessionId;
+      const correlationId = (request.headers['x-correlation-id'] as string | undefined) ?? crypto.randomUUID();
+
+      try {
+        await deps.endSession.execute(sessionId, userId, correlationId);
+        return reply.status(204).send();
+      } catch (err) {
+        if (err instanceof NotFoundError) {
+          return reply.status(404).send({ error: { code: 'NOT_FOUND', message: err.message } });
+        }
+        if (err instanceof ForbiddenError) {
+          return reply.status(403).send({ error: { code: 'FORBIDDEN', message: 'Forbidden' } });
+        }
+        if (err instanceof ConflictError) {
+          return reply.status(409).send({ error: { code: 'CONFLICT', message: err.message } });
+        }
+        throw err;
+      }
     },
   );
 }

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 // ---------------------------------------------------------------------------
 // Reusable schema fragments
@@ -55,7 +56,7 @@ const userProfileSchema = {
 
 // ---------------------------------------------------------------------------
 
-export function registerUsersRoutes(fastify: FastifyInstance): void {
+export function registerUsersRoutes(fastify: FastifyInstance, _deps: { db: NodePgDatabase }): void {
   // GET /users/me ------------------------------------------------------------
   fastify.get(
     '/users/me',

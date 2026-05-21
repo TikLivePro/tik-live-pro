@@ -1,0 +1,29 @@
+{
+  "tik-live-pro-hooks": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": "replace_file_content|write_to_file|multi_replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.agents/scripts/validate-dependencies.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pnpm typecheck",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
