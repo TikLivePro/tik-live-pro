@@ -1,36 +1,138 @@
+# ==============================================================================
+# OpenTelemetry Collector Configuration — tik-live-pro
+#
+# Used by:
+#   Development:  docker-compose.dev.yml  (otel-collector container)
+#   Production:   infra/kubernetes/observability.yaml  (otel-collector Deployment)
+#
+# Pipeline overview:
+#
+#   Services ──OTLP/gRPC:4317──▶ receivers.otlp
+#   Services ──OTLP/HTTP:4318──▶ receivers.otlp
+#                                     │
+#                              ┌──────┴──────┐
+#                          processors         processors
+#                        (resourcedetection  (memory_limiter
+#                         + memory_limiter    + batch)
+#                         + batch)            │
+#                              │              │
+#                        traces pipeline   metrics pipeline
+#                              │              │
+#                       exporters.otlp/    exporters.prometheus
+#                       jaeger            (scraped by Prometheus
+#                       (Jaeger UI:16686)   on :8889)
+#
+# Ports exposed by this container:
+#   4317  — OTLP gRPC receiver  (services push traces/metrics here)
+#   4318  — OTLP HTTP receiver  (alternative transport)
+#   8888  — Collector's own Prometheus metrics
+#   8889  — Prometheus exporter endpoint (Prometheus scrapes this)
+#
+# Environment variables (optional overrides):
+#   JAEGER_ENDPOINT  — override Jaeger OTLP endpoint (default: jaeger:4317)
+# ==============================================================================
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
 receivers:
+  # ── OTLP — receives traces and metrics from all microservices ──────────────
   otlp:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
+        # Increase max message size for large trace batches
+        max_recv_msg_size_mib: 32
       http:
         endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - "http://localhost:3000"
+            - "https://*.tiklive.pro"
+
+  # ── Prometheus — scrape the collector's own metrics ────────────────────────
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: otel-collector
+          scrape_interval: 10s
+          static_configs:
+            - targets: [localhost:8888]
 
 processors:
-  batch:
-    timeout: 1s
-    send_batch_size: 1024
+  # ── memory_limiter — must be FIRST to prevent OOM ─────────────────────────
+  # Soft limit: 400 MiB — collector starts dropping data before hitting hard limit
+  # Hard limit: 512 MiB — matches the Kubernetes memory limit for this container
   memory_limiter:
-    limit_mib: 512
     check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  # ── resourcedetection — auto-tag spans/metrics with host & container info ──
+  resourcedetection:
+    detectors: [env, docker, system]
+    timeout: 5s
+    override: false
+
+  # ── batch — buffer before exporting to reduce network calls ───────────────
+  batch:
+    # Send every 5 s OR when 1 000 items accumulate, whichever comes first
+    timeout: 5s
+    send_batch_size: 1000
+    send_batch_max_size: 2000
 
 exporters:
+  # ── Jaeger — receives OTLP traces (Jaeger ≥ 1.35 supports OTLP natively) ──
   otlp/jaeger:
-    endpoint: jaeger:4317
+    endpoint: ${env:JAEGER_ENDPOINT:-jaeger:4317}
     tls:
       insecure: true
+
+  # ── Prometheus — exposes aggregated metrics for Prometheus to scrape ───────
   prometheus:
     endpoint: 0.0.0.0:8889
-  logging:
-    verbosity: basic
+    namespace: tiklive
+    # Adds build_info metric with collector version
+    send_timestamps: true
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # ── debug — structured log output for troubleshooting ─────────────────────
+  # Replaces deprecated `logging` exporter. Set verbosity: detailed during
+  # troubleshooting, normal or basic in steady-state.
+  debug:
+    verbosity: normal
 
 service:
-  pipelines:
-    traces:
-      receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [otlp/jaeger, logging]
+  extensions: [health_check]
+
+  telemetry:
+    # Collector's own metrics (scraped by the prometheus receiver above)
     metrics:
-      receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [prometheus]
+      level: detailed
+      address: 0.0.0.0:8888
+    logs:
+      level: info
+
+  pipelines:
+    # ── Traces ─────────────────────────────────────────────────────────────
+    traces:
+      receivers:  [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters:  [otlp/jaeger, debug]
+
+    # ── Metrics ────────────────────────────────────────────────────────────
+    metrics:
+      receivers:  [otlp, prometheus]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters:  [prometheus]
+
+    # ── Logs ───────────────────────────────────────────────────────────────
+    # Services that emit structured OTLP logs will land here.
+    # Exported to debug console; add an OTLP/HTTP log exporter to ship to
+    # Loki or another log backend when needed.
+    logs:
+      receivers:  [otlp]
+      processors: [memory_limiter, resourcedetection, batch]
+      exporters:  [debug]

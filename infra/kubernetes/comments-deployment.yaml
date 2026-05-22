@@ -1,62 +1,61 @@
 # ==============================================================================
-# Auth Service — Deployment + Service + HPA
-# Port: 3001
+# Comments Service — Deployment + Service + HPA
+# Port: 3006
 # ==============================================================================
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: auth-service
+  name: comments-service
   namespace: tik-live-pro
   labels:
-    app: auth-service
+    app: comments-service
     tier: backend
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: auth-service
+      app: comments-service
   template:
     metadata:
       labels:
-        app: auth-service
+        app: comments-service
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: "/metrics"
-        prometheus.io/port: "3001"
+        prometheus.io/port: "3006"
     spec:
       containers:
-        - name: auth-service
-          image: ghcr.io/tik-live-pro/auth-service:latest
+        - name: comments-service
+          image: ghcr.io/tik-live-pro/comments-service:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 3001
+            - containerPort: 3006
           env:
             - name: NODE_ENV
               value: production
             - name: PORT
-              value: "3001"
+              value: "3006"
             - name: LOG_LEVEL
               value: "info"
             - name: NATS_URL
               value: nats://nats-service:4222
+            # Poll interval in ms — reduce in production for lower latency
+            - name: COMMENT_POLL_INTERVAL_MS
+              value: "2000"
             - name: CORRELATION_ID_HEADER
               value: x-correlation-id
             - name: TRACE_ID_HEADER
               value: x-trace-id
-            - name: JWT_ACCESS_EXPIRES_IN
-              value: "15m"
-            - name: JWT_REFRESH_EXPIRES_IN
-              value: "30d"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: auth-service-secrets
+                  name: comments-service-secrets
                   key: database-url
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: auth-service-secrets
+                  name: comments-service-secrets
                   key: jwt-secret
           resources:
             requests:
@@ -68,14 +67,14 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 3001
+              port: 3006
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /ready
-              port: 3001
+              port: 3006
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 3
@@ -84,41 +83,41 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: auth-service
+  name: comments-service
   namespace: tik-live-pro
   labels:
-    app: auth-service
+    app: comments-service
 spec:
   selector:
-    app: auth-service
+    app: comments-service
   ports:
-    - port: 3001
-      targetPort: 3001
+    - port: 3006
+      targetPort: 3006
       name: http
 
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: auth-service-hpa
+  name: comments-service-hpa
   namespace: tik-live-pro
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: auth-service
+    name: comments-service
   minReplicas: 2
-  maxReplicas: 10
+  maxReplicas: 15
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 70
+          averageUtilization: 65
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: 80
+          averageUtilization: 75

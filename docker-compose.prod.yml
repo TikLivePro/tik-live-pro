@@ -1,0 +1,373 @@
+# ==============================================================================
+# docker-compose.prod.yml — Production-like compose for local E2E testing
+#
+# This file runs the pre-built container images (from ghcr.io or local build).
+# It does NOT mount source code — it mirrors the production deployment.
+#
+# Workflow:
+#   1. Build images:    bash infra/docker/build.sh all
+#   2. Copy .env file:  cp .env.example .env.prod  # fill in real values
+#   3. Start stack:     docker compose -f docker-compose.prod.yml up -d
+#   4. Check health:    docker compose -f docker-compose.prod.yml ps
+#   5. Tear down:       docker compose -f docker-compose.prod.yml down -v
+#
+# Note: For development use docker-compose.dev.yml instead.
+# ==============================================================================
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks:
+    - tik-live-pro
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-backend-env: &backend-env
+  NODE_ENV: production
+  LOG_LEVEL: info
+  NATS_URL: nats://nats:4222
+  CORRELATION_ID_HEADER: x-correlation-id
+  TRACE_ID_HEADER: x-trace-id
+
+services:
+
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  nats:
+    <<: *service-defaults
+    image: nats:2.10-alpine
+    command: ["-js", "-m", "8222", "--name", "tik-live-pro-prod"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    <<: *service-defaults
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: tiklive
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    <<: *service-defaults
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Observability ───────────────────────────────────────────────────────────
+
+  jaeger:
+    <<: *service-defaults
+    image: jaegertracing/all-in-one:latest
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+
+  otel-collector:
+    <<: *service-defaults
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel/otel-collector-config.yaml"]
+    volumes:
+      - ./infra/observability/otel-collector-config.yaml:/etc/otel/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    depends_on:
+      - jaeger
+
+  prometheus:
+    <<: *service-defaults
+    image: prom/prometheus:latest
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+    volumes:
+      - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    <<: *service-defaults
+    image: grafana/grafana:latest
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD is required}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
+  # ── Microservices ───────────────────────────────────────────────────────────
+
+  api-gateway:
+    <<: *service-defaults
+    image: ghcr.io/tik-live-pro/api-gateway:${IMAGE_TAG:-latest}
+    environment:
+      <<: *backend-env
+      PORT: "3000"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      AUTH_SERVICE_URL: http://auth:3001
+      USER_SERVICE_URL: http://users:3002
+      SESSION_SERVICE_URL: http://live-session:3003
+      BILLING_SERVICE_URL: http://billing:3004
+      INTEGRATION_SERVICE_URL: http://integrations:3005
+      COMMENTS_SERVICE_URL: http://comments:3006
+      NOTIFICATIONS_SERVICE_URL: http://notifications:3007
+      ANALYTICS_SERVICE_URL: http://analytics:3008
+      STREAM_ORCHESTRATOR_URL: http://stream-orchestrator:3009
+    ports:
+      - "3000:3000"
+    depends_on:
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  auth:
+    <<: *service-defaults
+    image: ghcr.io/tik-live-pro/auth-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: *backend-env
+      PORT: "3001"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklive_auth
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ACCESS_EXPIRES_IN: "15m"
+      JWT_REFRESH_EXPIRES_IN: "30d"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  users:
+    <<: *service-defaults
+    image: ghcr.io/tik-live-pro/users-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: *backend-env
+      PORT: "3002"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklive_users
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CDN_BASE_URL: ${CDN_BASE_URL:-https://cdn.tiklive.pro}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  live-session:
+    <<: *service-defaults
+    image: ghcr.io/tik-live-pro/live-session-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: *backend-env
+      PORT: "3003"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklive_sessions
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3003/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  billing:
+    <<: *service-defaults
+    image: ghcr.io/tik-live-pro/billing-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: *backend-env
+      PORT: "3004"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklive_billing
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY is required}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:?STRIPE_WEBHOOK_SECRET is required}
+      STRIPE_PREMIUM_PRICE_ID: ${STRIPE_PREMIUM_PRICE_ID:?STRIPE_PREMIUM_PRICE_ID is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3004/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  integrations:
+    <<: *service-defaults
+    image: ghcr.io/tik-live-pro/integrations-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: *backend-env
+      PORT: "3005"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklive_integrations
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      TIKTOK_CLIENT_KEY: ${TIKTOK_CLIENT_KEY:?TIKTOK_CLIENT_KEY is required}
+      TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:?TIKTOK_CLIENT_SECRET is required}
+      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:?FACEBOOK_APP_ID is required}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:?FACEBOOK_APP_SECRET is required}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?TOKEN_ENCRYPTION_KEY is required}
+      OAUTH_REDIRECT_BASE_URL: ${OAUTH_REDIRECT_BASE_URL:-http://localhost:3005}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3005/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  comments:
+    <<: *service-defaults
+    image: ghcr.io/tik-live-pro/comments-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: *backend-env
+      PORT: "3006"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklive_comments
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      COMMENT_POLL_INTERVAL_MS: "2000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3006/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  notifications:
+    <<: *service-defaults
+    image: ghcr.io/tik-live-pro/notifications-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: *backend-env
+      PORT: "3007"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklive_notifications
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3007/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  analytics:
+    <<: *service-defaults
+    image: ghcr.io/tik-live-pro/analytics-service:${IMAGE_TAG:-latest}
+    environment:
+      <<: *backend-env
+      PORT: "3008"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklive_analytics
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3008/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  stream-orchestrator:
+    <<: *service-defaults
+    image: ghcr.io/tik-live-pro/stream-orchestrator:${IMAGE_TAG:-latest}
+    environment:
+      <<: *backend-env
+      PORT: "3009"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklive_stream
+      RTMP_INGEST_PORT: "1935"
+      RTMP_INGEST_HOST: "0.0.0.0"
+      INTEGRATIONS_SERVICE_URL: http://integrations:3005
+      TIKTOK_CLIENT_KEY: ${TIKTOK_CLIENT_KEY:?TIKTOK_CLIENT_KEY is required}
+      TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:?TIKTOK_CLIENT_SECRET is required}
+      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:?FACEBOOK_APP_ID is required}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:?FACEBOOK_APP_SECRET is required}
+    ports:
+      - "3009:3009"
+      - "1935:1935"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3009/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+# ── Networks & Volumes ─────────────────────────────────────────────────────────
+
+networks:
+  tik-live-pro:
+    driver: bridge
+
+volumes:
+  nats_data:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:

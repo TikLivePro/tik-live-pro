@@ -1,0 +1,57 @@
+# ==============================================================================
+# Grafana Datasource Provisioning — tik-live-pro
+#
+# Grafana loads this file at startup from /etc/grafana/provisioning/datasources/
+# which is mounted from infra/observability/grafana/provisioning/datasources/
+#
+# Datasources provisioned:
+#   1. Prometheus  — metrics store (scraped from services + OTel collector)
+#   2. Jaeger      — distributed trace viewer
+#
+# To add a Loki datasource for log aggregation, uncomment the Loki block below.
+# ==============================================================================
+
+apiVersion: 1
+
+datasources:
+  # ── Prometheus ──────────────────────────────────────────────────────────────
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      # Increase query timeout for large range queries
+      timeInterval: 15s
+      queryTimeout: 60s
+
+  # ── Jaeger ───────────────────────────────────────────────────────────────────
+  - name: Jaeger
+    type: jaeger
+    uid: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    editable: false
+    jsonData:
+      # Enable trace-to-metrics linking (requires Prometheus datasource uid above)
+      tracesToMetrics:
+        datasourceUid: prometheus
+        tags:
+          - { key: service.name, value: service }
+      # Enable trace-to-logs linking (uncomment when Loki is added)
+      # tracesToLogs:
+      #   datasourceUid: loki
+      #   tags: [service.name]
+      nodeGraph:
+        enabled: true
+
+  # ── Loki (optional — uncomment to enable log aggregation) ────────────────────
+  # - name: Loki
+  #   type: loki
+  #   uid: loki
+  #   access: proxy
+  #   url: http://loki:3100
+  #   editable: false

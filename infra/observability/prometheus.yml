@@ -1,48 +1,175 @@
+# ==============================================================================
+# Prometheus Configuration — tik-live-pro
+#
+# Used by:
+#   Development:  docker-compose.dev.yml  (prometheus container)
+#   Production:   infra/kubernetes/observability.yaml  (Prometheus Deployment)
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  Scrape architecture                                                    │
+# │                                                                         │
+# │  Services expose /metrics on their HTTP port (via Fastify prom-client) │
+# │                                                                         │
+# │  Dev:  Prometheus → host.docker.internal:<port>/metrics                │
+# │        (host.docker.internal works on Docker Desktop; on Linux use     │
+# │         172.17.0.1 or run services in compose network)                 │
+# │                                                                         │
+# │  Prod: Prometheus uses kubernetes_sd to auto-discover pods annotated   │
+# │        with prometheus.io/scrape: "true"  (see observability.yaml)     │
+# │                                                                         │
+# │  Metrics from OTel Collector (aggregated from services) are available  │
+# │  at otel-collector:8889 and scraped as the `otel` job.                 │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# Alerting rules are defined in:
+#   infra/observability/alerts/service-alerts.yml
+#   infra/observability/alerts/nats-alerts.yml
+# ==============================================================================
+
 global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+  scrape_interval:     15s   # Default poll frequency for all jobs
+  evaluation_interval: 15s   # How often rules are evaluated
+  scrape_timeout:      10s
 
+  # Labels added to every time series produced by this Prometheus instance
+  external_labels:
+    cluster: tik-live-pro
+    env: development
+
+# ── Alerting ───────────────────────────────────────────────────────────────────
+# Uncomment when Alertmanager is running:
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+# ── Alert / Recording Rules ────────────────────────────────────────────────────
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
+# ==============================================================================
+# Scrape Configs
+# ==============================================================================
 scrape_configs:
-  - job_name: api-gateway
+
+  # ── Prometheus self-monitoring ───────────────────────────────────────────────
+  - job_name: prometheus
     static_configs:
-      - targets: ['host.docker.internal:3000']
+      - targets: [localhost:9090]
+
+  # ── OTel Collector — aggregated metrics from all services ────────────────────
+  # The collector aggregates OTLP metrics and exposes them on :8889.
+  - job_name: otel-collector
+    static_configs:
+      - targets: [otel-collector:8889]
     metrics_path: /metrics
 
-  - job_name: auth-service
-    static_configs:
-      - targets: ['host.docker.internal:3001']
-    metrics_path: /metrics
-
-  - job_name: user-service
-    static_configs:
-      - targets: ['host.docker.internal:3002']
-    metrics_path: /metrics
-
-  - job_name: live-session-service
-    static_configs:
-      - targets: ['host.docker.internal:3003']
-    metrics_path: /metrics
-
-  - job_name: billing-service
-    static_configs:
-      - targets: ['host.docker.internal:3004']
-    metrics_path: /metrics
-
-  - job_name: integrations-service
-    static_configs:
-      - targets: ['host.docker.internal:3005']
-    metrics_path: /metrics
-
-  - job_name: comments-service
-    static_configs:
-      - targets: ['host.docker.internal:3006']
-    metrics_path: /metrics
-
+  # ── NATS JetStream — server varz endpoint ────────────────────────────────────
+  # NATS exposes JSON varz at :8222 but not native Prometheus format.
+  # The nats-exporter sidecar (defined in nats-deployment.yaml) converts
+  # varz → Prometheus format on port 7777 of the nats pods.
+  # In dev (docker-compose) the nats monitoring port is exposed directly.
   - job_name: nats
     static_configs:
-      - targets: ['nats:8222']
+      - targets: [nats:8222]
+    metrics_path: /varz
+    # Transform NATS JSON varz to Prometheus metrics via metric_relabel_configs
+    # When using the prometheus-nats-exporter sidecar, point to port 7777 instead.
+
+  # ── API Gateway (port 3000) ──────────────────────────────────────────────────
+  - job_name: api-gateway
+    static_configs:
+      - targets: [host.docker.internal:3000]
+        labels:
+          service: api-gateway
     metrics_path: /metrics
 
+  # ── Auth Service (port 3001) ─────────────────────────────────────────────────
+  - job_name: auth-service
+    static_configs:
+      - targets: [host.docker.internal:3001]
+        labels:
+          service: auth-service
+    metrics_path: /metrics
+
+  # ── Users Service (port 3002) ────────────────────────────────────────────────
+  - job_name: users-service
+    static_configs:
+      - targets: [host.docker.internal:3002]
+        labels:
+          service: users-service
+    metrics_path: /metrics
+
+  # ── Live-Session Service (port 3003) ─────────────────────────────────────────
+  - job_name: live-session-service
+    static_configs:
+      - targets: [host.docker.internal:3003]
+        labels:
+          service: live-session-service
+    metrics_path: /metrics
+
+  # ── Billing Service (port 3004) ──────────────────────────────────────────────
+  - job_name: billing-service
+    static_configs:
+      - targets: [host.docker.internal:3004]
+        labels:
+          service: billing-service
+    metrics_path: /metrics
+
+  # ── Integrations Service (port 3005) ─────────────────────────────────────────
+  - job_name: integrations-service
+    static_configs:
+      - targets: [host.docker.internal:3005]
+        labels:
+          service: integrations-service
+    metrics_path: /metrics
+
+  # ── Comments Service (port 3006) ─────────────────────────────────────────────
+  - job_name: comments-service
+    static_configs:
+      - targets: [host.docker.internal:3006]
+        labels:
+          service: comments-service
+    metrics_path: /metrics
+
+  # ── Notifications Service (port 3007) ────────────────────────────────────────
+  - job_name: notifications-service
+    static_configs:
+      - targets: [host.docker.internal:3007]
+        labels:
+          service: notifications-service
+    metrics_path: /metrics
+
+  # ── Analytics Service (port 3008) ────────────────────────────────────────────
+  - job_name: analytics-service
+    static_configs:
+      - targets: [host.docker.internal:3008]
+        labels:
+          service: analytics-service
+    metrics_path: /metrics
+
+  # ── Stream Orchestrator (port 3009) ──────────────────────────────────────────
+  - job_name: stream-orchestrator
+    static_configs:
+      - targets: [host.docker.internal:3009]
+        labels:
+          service: stream-orchestrator
+    metrics_path: /metrics
+
+  # ── Node Exporter — host OS metrics (CPU, memory, disk, network) ─────────────
+  # Add to docker-compose.dev.yml:
+  #   node-exporter:
+  #     image: prom/node-exporter:latest
+  #     pid: host
+  #     volumes:
+  #       - /proc:/host/proc:ro
+  #       - /sys:/host/sys:ro
+  #       - /:/rootfs:ro
+  #     command:
+  #       - --path.procfs=/host/proc
+  #       - --path.sysfs=/host/sys
+  #     ports:
+  #       - "9100:9100"
   - job_name: node-exporter
     static_configs:
-      - targets: ['node-exporter:9100']
+      - targets: [node-exporter:9100]

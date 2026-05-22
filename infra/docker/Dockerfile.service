@@ -1,25 +1,115 @@
-FROM node:22-alpine AS base
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# ==============================================================================
+# Dockerfile.service — multi-stage template for Node.js microservices
+#
+# This file is a BUILD-ARG-driven template. Each service passes its own
+# SERVICE_NAME and SERVICE_PORT at build time — no manual sed substitution
+# required.
+#
+# Usage (from repo root):
+#   docker build \
+#     -f infra/docker/Dockerfile.service \
+#     --build-arg SERVICE_NAME=auth \
+#     --build-arg SERVICE_PORT=3001 \
+#     --build-arg PACKAGE_NAME=auth-service \
+#     -t ghcr.io/tik-live-pro/auth-service:latest \
+#     .
+#
+# Or use the helper script:
+#   bash infra/docker/build.sh auth
+# ==============================================================================
 
+ARG NODE_VERSION=22
+ARG PNPM_VERSION=9.15.0
+
+# ── Stage 1: base image ───────────────────────────────────────────────────────
+FROM node:${NODE_VERSION}-alpine AS base
+ARG PNPM_VERSION
+RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
+# Shared OS dependencies (certificates, timezone data)
+RUN apk add --no-cache dumb-init
+
+# ── Stage 2: install production dependencies ──────────────────────────────────
 FROM base AS deps
+ARG SERVICE_NAME
+ARG PACKAGE_NAME=${SERVICE_NAME}-service
+
 WORKDIR /app
+
+# Copy manifests — pnpm needs workspace root + every package's package.json
+# to resolve the dependency graph before installing.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/*/package.json ./packages/
-COPY services/SERVICE_NAME/package.json ./services/SERVICE_NAME/
-RUN pnpm install --frozen-lockfile --filter @tik-live-pro/SERVICE_NAME... --prod
 
-FROM base AS build
+# Shared packages manifests
+COPY packages/config/package.json       ./packages/config/
+COPY packages/domain/package.json       ./packages/domain/
+COPY packages/events/package.json       ./packages/events/
+COPY packages/i18n/package.json         ./packages/i18n/
+COPY packages/logger/package.json       ./packages/logger/
+COPY packages/platform-adapters/package.json ./packages/platform-adapters/
+COPY packages/shared-types/package.json ./packages/shared-types/
+COPY packages/validation/package.json  ./packages/validation/
+
+# Target service manifest
+COPY services/${SERVICE_NAME}/package.json ./services/${SERVICE_NAME}/
+
+# Install ONLY production dependencies for the target service and its workspace deps
+RUN pnpm install --frozen-lockfile \
+      --filter "@tik-live-pro/${PACKAGE_NAME}..." \
+      --prod
+
+# ── Stage 3: build ────────────────────────────────────────────────────────────
+FROM base AS builder
+ARG SERVICE_NAME
+ARG PACKAGE_NAME=${SERVICE_NAME}-service
+
 WORKDIR /app
+
+# Bring in production node_modules from deps stage
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-RUN pnpm --filter @tik-live-pro/SERVICE_NAME... build
 
-FROM node:22-alpine AS runtime
-RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nodeuser
+# Copy full source so TypeScript can resolve cross-package imports
+COPY . .
+
+# Rebuild any native addons for the build environment
+RUN pnpm install --frozen-lockfile \
+      --filter "@tik-live-pro/${PACKAGE_NAME}..." \
+      --prod=false
+
+# Compile: builds the target package AND all workspace dependencies it needs
+RUN pnpm --filter "@tik-live-pro/${PACKAGE_NAME}..." build
+
+# ── Stage 4: runtime (minimal production image) ───────────────────────────────
+FROM node:${NODE_VERSION}-alpine AS runtime
+ARG SERVICE_NAME
+ARG PACKAGE_NAME=${SERVICE_NAME}-service
+ARG SERVICE_PORT=3000
+
+# Non-root user for security
+RUN addgroup --system --gid 1001 nodejs \
+ && adduser  --system --uid 1001 nodeuser \
+ && apk add --no-cache dumb-init wget
+
 WORKDIR /app
-COPY --from=build --chown=nodeuser:nodejs /app/services/SERVICE_NAME/dist ./dist
-COPY --from=build --chown=nodeuser:nodejs /app/node_modules ./node_modules
+
+# Copy compiled service output
+COPY --from=builder --chown=nodeuser:nodejs \
+  /app/services/${SERVICE_NAME}/dist ./dist
+
+# Copy the FULL node_modules (includes built workspace package dist files)
+# Using the builder stage so workspace symlinks resolve correctly.
+COPY --from=builder --chown=nodeuser:nodejs \
+  /app/node_modules ./node_modules
+
+# Drop to non-root
 USER nodeuser
-EXPOSE 3000
-HEALTHCHECK --interval=10s --timeout=3s --start-period=10s CMD wget -qO- http://localhost:3000/health || exit 1
+
+# Declare the port this service listens on
+EXPOSE ${SERVICE_PORT}
+
+# Health-check against the service's own /health endpoint
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget -qO- http://localhost:${SERVICE_PORT}/health || exit 1
+
+# dumb-init ensures PID-1 signal handling (graceful shutdown)
+ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "dist/main.js"]

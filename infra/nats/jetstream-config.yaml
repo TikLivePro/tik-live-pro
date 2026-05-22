@@ -1,85 +1,201 @@
-# NATS JetStream stream definitions for TikLivePro
-# Apply with: nats stream add --config infra/nats/jetstream-config.yaml
+# ==============================================================================
+# NATS JetStream Stream & Consumer Definitions — tik-live-pro
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  HOW TO APPLY                                                           │
+# │                                                                         │
+# │  Dev (docker-compose):                                                  │
+# │    make nats-streams                                                    │
+# │    # or directly:                                                       │
+# │    bash infra/nats/setup-streams.sh                                     │
+# │                                                                         │
+# │  Production (k8s): run from a temporary pod that has `nats` CLI:        │
+# │    kubectl run nats-setup --rm -it --restart=Never \                    │
+# │      --image=natsio/nats-box:latest -n tik-live-pro -- \               │
+# │      /bin/sh -c "bash /scripts/setup-streams.sh"                        │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# Subject routing:
+#   auth.*           → AUTH stream      (auth-service)
+#   user.*           → USERS stream     (users-service)
+#   session.*        → SESSIONS stream  (live-session-service, stream-orchestrator)
+#   stream.*         → SESSIONS stream  (stream-orchestrator co-subscribes)
+#   billing.*        → BILLING stream   (billing-service → users-service)
+#   integration.*    → INTEGRATIONS stream (integrations-service)
+#   comment.*        → COMMENTS stream  (comments-service → websocket gateway)
+#   notification.*   → NOTIFICATIONS stream (notifications-service, workqueue)
+#   analytics.*      → ANALYTICS stream (analytics-service)
+#   dlq.*            → DLQ stream       (dead-letter queue for all services)
+#
+# Retention policies:
+#   limits    — keep up to max_msgs / max_age, evict oldest when full
+#   workqueue — each message delivered to exactly one consumer; auto-deleted
+#               when acknowledged (ideal for job queues like notifications)
+#
+# Replica count:
+#   All streams use replicas: 3 to match the 3-node NATS cluster and ensure
+#   HA with no single point of failure. Reduce to 1 for single-node dev.
+#
+# Duration format: NATS uses Go duration strings (e.g. 168h = 7 days).
+# ==============================================================================
 
 streams:
+
+  # ── AUTH ────────────────────────────────────────────────────────────────────
+  # Published by: auth-service (user.registered, token.refreshed, …)
+  # Consumed by:  users-service, analytics-service
   - name: AUTH
     subjects:
       - "auth.>"
     retention: limits
     max_msgs: 1000000
-    max_age: 7d
+    max_age: 168h        # 7 days
+    max_msg_size: 65536  # 64 KiB — auth payloads are small
     storage: file
-    replicas: 1
+    replicas: 3
     discard: old
+    duplicate_window: 2m
 
+  # ── USERS ───────────────────────────────────────────────────────────────────
+  # Published by: users-service (user.updated, user.deleted, …)
+  # Consumed by:  auth-service (entitlement checks), analytics-service
   - name: USERS
     subjects:
       - "user.>"
     retention: limits
     max_msgs: 500000
-    max_age: 30d
+    max_age: 720h        # 30 days
+    max_msg_size: 131072 # 128 KiB — may include avatar metadata
     storage: file
-    replicas: 1
+    replicas: 3
+    discard: old
+    duplicate_window: 2m
 
+  # ── SESSIONS ────────────────────────────────────────────────────────────────
+  # Published by: live-session-service, stream-orchestrator
+  # Consumed by:  stream-orchestrator (session.created → start RTMP)
+  #               analytics-service (session.ended → compute metrics)
+  #               notifications-service (session.started → fan-out)
   - name: SESSIONS
     subjects:
       - "session.>"
       - "stream.>"
     retention: limits
     max_msgs: 10000000
-    max_age: 90d
+    max_age: 2160h       # 90 days
+    max_msg_size: 131072
     storage: file
-    replicas: 1
+    replicas: 3
+    discard: old
+    duplicate_window: 5m
 
-  - name: COMMENTS
-    subjects:
-      - "comment.>"
-    retention: limits
-    max_msgs: 50000000
-    max_age: 30d
-    storage: file
-    replicas: 1
-    # High-throughput: comments can be very frequent
-    max_msg_size: 65536
-
+  # ── BILLING ─────────────────────────────────────────────────────────────────
+  # Published by: billing-service (billing.subscribed, billing.cancelled, …)
+  # Consumed by:  users-service (entitlement.updated → feature flags)
+  # Critical: 365-day retention; replicate to all nodes
   - name: BILLING
     subjects:
       - "billing.>"
     retention: limits
     max_msgs: 500000
-    max_age: 365d
+    max_age: 8760h       # 365 days
+    max_msg_size: 65536
     storage: file
-    replicas: 1
-    # Billing events are critical — longer retention
+    replicas: 3
+    discard: old
+    duplicate_window: 5m
 
+  # ── INTEGRATIONS ────────────────────────────────────────────────────────────
+  # Published by: integrations-service (integration.connected, token.rotated, …)
+  # Consumed by:  stream-orchestrator (needs OAuth tokens to push to TikTok/FB)
+  - name: INTEGRATIONS
+    subjects:
+      - "integration.>"
+    retention: limits
+    max_msgs: 500000
+    max_age: 720h        # 30 days
+    max_msg_size: 65536
+    storage: file
+    replicas: 3
+    discard: old
+    duplicate_window: 2m
+
+  # ── COMMENTS ────────────────────────────────────────────────────────────────
+  # Published by: comments-service (comment.received from TikTok/FB pollers)
+  # Consumed by:  comments-service WebSocket gateway (fan-out to viewers)
+  # High-throughput: 50M message cap; small per-message size
+  - name: COMMENTS
+    subjects:
+      - "comment.>"
+    retention: limits
+    max_msgs: 50000000
+    max_age: 720h        # 30 days
+    max_msg_size: 65536  # 64 KiB
+    storage: file
+    replicas: 3
+    discard: old
+    duplicate_window: 30s
+
+  # ── NOTIFICATIONS ────────────────────────────────────────────────────────────
+  # Published by: any service that needs to notify users
+  # Consumed by:  notifications-service (exactly-once delivery)
+  # workqueue: each notification delivered to exactly one consumer instance
   - name: NOTIFICATIONS
     subjects:
       - "notification.>"
     retention: workqueue
-    max_msgs: 100000
-    max_age: 1d
+    max_msgs: 1000000
+    max_age: 24h         # 1 day — stale notifications are useless
+    max_msg_size: 65536
     storage: file
-    replicas: 1
+    replicas: 3
+    discard: old
+    duplicate_window: 1m
 
+  # ── ANALYTICS ───────────────────────────────────────────────────────────────
+  # Published by: all services (analytics.event.*)
+  # Consumed by:  analytics-service (batch aggregation)
   - name: ANALYTICS
     subjects:
       - "analytics.>"
     retention: limits
     max_msgs: 100000000
-    max_age: 90d
+    max_age: 2160h       # 90 days
+    max_msg_size: 32768  # 32 KiB — analytics events are small
     storage: file
-    replicas: 1
+    replicas: 3
+    discard: old
+    duplicate_window: 1m
 
+  # ── DLQ (Dead Letter Queue) ──────────────────────────────────────────────────
+  # Any service that exhausts its delivery attempts republishes here.
+  # Consumed by: ops team / alerting; no auto-consumer defined.
   - name: DLQ
     subjects:
       - "dlq.>"
     retention: limits
     max_msgs: 1000000
-    max_age: 14d
+    max_age: 336h        # 14 days
+    max_msg_size: 131072 # include original payload + headers
     storage: file
-    replicas: 1
+    replicas: 3
+    discard: old
+
+# ==============================================================================
+# Durable Consumers
+#
+# Consumers are pre-created so services can start without race conditions.
+# Each consumer is named after the service that owns it.
+#
+# ack_policy: explicit   — service must call msg.Ack(); no auto-ack
+# max_deliver             — max retry count before routing to DLQ
+# ack_wait                — how long to wait for Ack before redelivery
+# ==============================================================================
 
 consumers:
+
+  # ── SESSIONS consumers ──────────────────────────────────────────────────────
+
   - stream: SESSIONS
     name: stream-orchestrator
     durable: stream-orchestrator
@@ -87,6 +203,47 @@ consumers:
     ack_policy: explicit
     max_deliver: 5
     ack_wait: 30s
+    deliver_policy: all
+
+  - stream: SESSIONS
+    name: analytics-sessions
+    durable: analytics-sessions
+    filter_subject: "session.ended"
+    ack_policy: explicit
+    max_deliver: 5
+    ack_wait: 60s
+    deliver_policy: all
+
+  - stream: SESSIONS
+    name: notifications-session-started
+    durable: notifications-session-started
+    filter_subject: "session.started"
+    ack_policy: explicit
+    max_deliver: 3
+    ack_wait: 10s
+    deliver_policy: all
+
+  # ── BILLING consumers ───────────────────────────────────────────────────────
+
+  - stream: BILLING
+    name: users-entitlement
+    durable: users-entitlement
+    filter_subject: "billing.entitlement.updated"
+    ack_policy: explicit
+    max_deliver: 10
+    ack_wait: 60s
+    deliver_policy: all
+
+  - stream: BILLING
+    name: analytics-billing
+    durable: analytics-billing
+    filter_subject: "billing.>"
+    ack_policy: explicit
+    max_deliver: 5
+    ack_wait: 30s
+    deliver_policy: all
+
+  # ── COMMENTS consumers ──────────────────────────────────────────────────────
 
   - stream: COMMENTS
     name: comments-websocket
@@ -95,11 +252,39 @@ consumers:
     ack_policy: explicit
     max_deliver: 3
     ack_wait: 10s
+    deliver_policy: all
 
-  - stream: BILLING
-    name: user-service-billing
-    durable: user-service-billing
-    filter_subject: "billing.entitlement.updated"
+  # ── INTEGRATIONS consumers ──────────────────────────────────────────────────
+
+  - stream: INTEGRATIONS
+    name: stream-orchestrator-tokens
+    durable: stream-orchestrator-tokens
+    filter_subject: "integration.token.rotated"
     ack_policy: explicit
-    max_deliver: 10
-    ack_wait: 60s
+    max_deliver: 5
+    ack_wait: 30s
+    deliver_policy: all
+
+  # ── AUTH consumers ──────────────────────────────────────────────────────────
+
+  - stream: AUTH
+    name: analytics-auth
+    durable: analytics-auth
+    filter_subject: "auth.>"
+    ack_policy: explicit
+    max_deliver: 3
+    ack_wait: 15s
+    deliver_policy: all
+
+  # ── NOTIFICATIONS consumers ─────────────────────────────────────────────────
+
+  - stream: NOTIFICATIONS
+    name: notifications-worker
+    durable: notifications-worker
+    filter_subject: "notification.>"
+    ack_policy: explicit
+    max_deliver: 5
+    ack_wait: 30s
+    deliver_policy: all
+    # workqueue stream — max_waiting limits pending pulls per consumer
+    max_waiting: 100

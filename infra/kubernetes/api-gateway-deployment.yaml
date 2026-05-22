@@ -1,62 +1,66 @@
 # ==============================================================================
-# Auth Service — Deployment + Service + HPA
-# Port: 3001
+# API Gateway — Deployment + Service + HPA
+# Port: 3000 (public-facing — exposed via Ingress)
 # ==============================================================================
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: auth-service
+  name: api-gateway
   namespace: tik-live-pro
   labels:
-    app: auth-service
-    tier: backend
+    app: api-gateway
+    tier: gateway
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: auth-service
+      app: api-gateway
   template:
     metadata:
       labels:
-        app: auth-service
+        app: api-gateway
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: "/metrics"
-        prometheus.io/port: "3001"
+        prometheus.io/port: "3000"
     spec:
       containers:
-        - name: auth-service
-          image: ghcr.io/tik-live-pro/auth-service:latest
+        - name: api-gateway
+          image: ghcr.io/tik-live-pro/api-gateway:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 3001
+            - containerPort: 3000
           env:
             - name: NODE_ENV
               value: production
             - name: PORT
-              value: "3001"
+              value: "3000"
             - name: LOG_LEVEL
               value: "info"
-            - name: NATS_URL
-              value: nats://nats-service:4222
-            - name: CORRELATION_ID_HEADER
-              value: x-correlation-id
-            - name: TRACE_ID_HEADER
-              value: x-trace-id
-            - name: JWT_ACCESS_EXPIRES_IN
-              value: "15m"
-            - name: JWT_REFRESH_EXPIRES_IN
-              value: "30d"
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: auth-service-secrets
-                  key: database-url
+            # Internal cluster URLs for upstream services
+            - name: AUTH_SERVICE_URL
+              value: http://auth-service:3001
+            - name: USER_SERVICE_URL
+              value: http://users-service:3002
+            - name: SESSION_SERVICE_URL
+              value: http://live-session-service:3003
+            - name: BILLING_SERVICE_URL
+              value: http://billing-service:3004
+            - name: INTEGRATION_SERVICE_URL
+              value: http://integrations-service:3005
+            - name: COMMENTS_SERVICE_URL
+              value: http://comments-service:3006
+            - name: NOTIFICATIONS_SERVICE_URL
+              value: http://notifications-service:3007
+            - name: ANALYTICS_SERVICE_URL
+              value: http://analytics-service:3008
+            - name: STREAM_ORCHESTRATOR_URL
+              value: http://stream-orchestrator:3009
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: auth-service-secrets
+                  name: api-gateway-secrets
                   key: jwt-secret
           resources:
             requests:
@@ -68,14 +72,14 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 3001
+              port: 3000
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /ready
-              port: 3001
+              port: 3000
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 3
@@ -84,31 +88,31 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: auth-service
+  name: api-gateway
   namespace: tik-live-pro
   labels:
-    app: auth-service
+    app: api-gateway
 spec:
   selector:
-    app: auth-service
+    app: api-gateway
   ports:
-    - port: 3001
-      targetPort: 3001
+    - port: 3000
+      targetPort: 3000
       name: http
 
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: auth-service-hpa
+  name: api-gateway-hpa
   namespace: tik-live-pro
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: auth-service
+    name: api-gateway
   minReplicas: 2
-  maxReplicas: 10
+  maxReplicas: 15
   metrics:
     - type: Resource
       resource:

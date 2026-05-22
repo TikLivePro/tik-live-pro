@@ -1,0 +1,49 @@
+# ==============================================================================
+# .dockerignore — applied to every Docker build in this monorepo
+#
+# Keep the build context lean: exclude dev artifacts, secrets, and generated
+# files that are not needed inside the image.
+# ==============================================================================
+
+# Version control
+.git
+.gitignore
+
+# All node_modules — Docker build installs its own via pnpm
+node_modules
+**/node_modules
+
+# Compiled output from local dev — image builds from source
+dist
+**/.next
+**/.turbo
+
+# Test & coverage artefacts
+coverage
+**/*.test.ts
+**/*.spec.ts
+tests
+**/__tests__
+
+# Local secrets — NEVER bake into images
+.env
+.env.*
+!.env.example
+**/secrets.local.yaml
+
+# Editor & OS files
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp
+temp
+*.log
+*.tsbuildinfo
+
+# CI / docs
+docs
+*.md
+!README.md

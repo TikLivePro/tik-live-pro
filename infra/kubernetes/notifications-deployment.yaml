@@ -1,41 +1,41 @@
 # ==============================================================================
-# Auth Service — Deployment + Service + HPA
-# Port: 3001
+# Notifications Service — Deployment + Service + HPA
+# Port: 3007
 # ==============================================================================
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: auth-service
+  name: notifications-service
   namespace: tik-live-pro
   labels:
-    app: auth-service
+    app: notifications-service
     tier: backend
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: auth-service
+      app: notifications-service
   template:
     metadata:
       labels:
-        app: auth-service
+        app: notifications-service
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: "/metrics"
-        prometheus.io/port: "3001"
+        prometheus.io/port: "3007"
     spec:
       containers:
-        - name: auth-service
-          image: ghcr.io/tik-live-pro/auth-service:latest
+        - name: notifications-service
+          image: ghcr.io/tik-live-pro/notifications-service:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 3001
+            - containerPort: 3007
           env:
             - name: NODE_ENV
               value: production
             - name: PORT
-              value: "3001"
+              value: "3007"
             - name: LOG_LEVEL
               value: "info"
             - name: NATS_URL
@@ -44,19 +44,15 @@ spec:
               value: x-correlation-id
             - name: TRACE_ID_HEADER
               value: x-trace-id
-            - name: JWT_ACCESS_EXPIRES_IN
-              value: "15m"
-            - name: JWT_REFRESH_EXPIRES_IN
-              value: "30d"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: auth-service-secrets
+                  name: notifications-service-secrets
                   key: database-url
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: auth-service-secrets
+                  name: notifications-service-secrets
                   key: jwt-secret
           resources:
             requests:
@@ -68,14 +64,14 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 3001
+              port: 3007
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /ready
-              port: 3001
+              port: 3007
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 3
@@ -84,29 +80,29 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: auth-service
+  name: notifications-service
   namespace: tik-live-pro
   labels:
-    app: auth-service
+    app: notifications-service
 spec:
   selector:
-    app: auth-service
+    app: notifications-service
   ports:
-    - port: 3001
-      targetPort: 3001
+    - port: 3007
+      targetPort: 3007
       name: http
 
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: auth-service-hpa
+  name: notifications-service-hpa
   namespace: tik-live-pro
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: auth-service
+    name: notifications-service
   minReplicas: 2
   maxReplicas: 10
   metrics:

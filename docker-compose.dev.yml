@@ -1,4 +1,33 @@
+# ==============================================================================
+# docker-compose.dev.yml — Local development infrastructure
+#
+# Starts only the infrastructure services needed by microservices running
+# directly on the host (via `make dev`). Does NOT run the application services
+# themselves — those are started by Turborepo with hot-reload.
+#
+# Services:
+#   nats        NATS JetStream          4222 (client)  8222 (monitoring)
+#   postgres    PostgreSQL 16           5432
+#   redis       Redis 7                 6379
+#   otel        OpenTelemetry Collector 4317 (gRPC)    4318 (HTTP)
+#   jaeger      Jaeger all-in-one       16686 (UI)
+#   prometheus  Prometheus              9090
+#   grafana     Grafana                 3001 → 3000
+#
+# Quickstart:
+#   make infra-up     # start all containers (detached)
+#   make dev          # start all microservices with hot-reload
+#   make nats-streams # create JetStream streams (run once after infra-up)
+#
+# Notes:
+#   - On Linux, host.docker.internal is not available by default.
+#     Services running on the host are accessible via 172.17.0.1 (default
+#     bridge gateway). The `extra_hosts` block below handles this.
+#   - On Docker Desktop (Mac/Win), host.docker.internal resolves automatically.
+# ==============================================================================
+
 services:
+
   nats:
     image: nats:2.10-alpine
     command: ["-js", "-m", "8222", "--name", "tik-live-pro-dev"]
@@ -12,6 +41,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
@@ -23,16 +53,17 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./infra/docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./infra/docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     volumes:
@@ -42,46 +73,70 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
-    command: ["--config=/etc/otel-collector-config.yaml"]
-    volumes:
-      - ./infra/observability/otel-collector-config.yaml:/etc/otel-collector-config.yaml
-    ports:
-      - "4317:4317"
-      - "4318:4318"
-      - "8888:8888"
-    depends_on:
-      - jaeger
+    restart: unless-stopped
 
   jaeger:
     image: jaegertracing/all-in-one:latest
-    ports:
-      - "16686:16686"
-      - "14268:14268"
     environment:
       - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "14268:14268"   # Jaeger HTTP collector (legacy)
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel/otel-collector-config.yaml"]
+    volumes:
+      - ./infra/observability/otel-collector-config.yaml:/etc/otel/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC — services push traces here
+      - "4318:4318"   # OTLP HTTP — alternative transport
+      - "8888:8888"   # Collector self-metrics (scraped by Prometheus)
+      - "8889:8889"   # Prometheus exporter endpoint
+    depends_on:
+      - jaeger
+    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:latest
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"   # allows POST /-/reload to reload config
     volumes:
-      - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/observability/alerts:/etc/prometheus/alerts:ro
       - prometheus_data:/prometheus
     ports:
       - "9090:9090"
+    # ── Linux host access fix ───────────────────────────────────────────────
+    # On Linux, host.docker.internal does not resolve inside containers.
+    # This adds it as an alias for the Docker bridge gateway (172.17.0.1)
+    # so prometheus.yml can scrape services running on the host with
+    # the same config used on Docker Desktop (Mac/Win).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - otel-collector
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:latest
     environment:
+      - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning
+      # Provisioning directory — auto-configures datasources on startup
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
-      - "3001:3000"
+      - "3001:3000"   # Grafana UI — http://localhost:3001 (admin/admin)
     depends_on:
       - prometheus
+      - jaeger
+    restart: unless-stopped
 
 volumes:
   nats_data:

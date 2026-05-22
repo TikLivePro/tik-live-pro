@@ -16,8 +16,10 @@
 
 # -- Config --------------------------------------------------------------------
 
-TURBO   := pnpm turbo run --concurrency=15
-DOCKER  := docker compose -f docker-compose.dev.yml
+TURBO        := pnpm turbo run --concurrency=15
+DOCKER       := docker compose -f docker-compose.dev.yml
+DOCKER_PROD  := docker compose -f docker-compose.prod.yml
+IMAGE_TAG    ?= latest
 
 # Turbo --filter flags for every backend service
 SERVICES := \
@@ -56,10 +58,11 @@ PACKAGES := \
   format \
   clean clean-dist clean-deps \
   db-generate db-migrate db-studio \
-  db-logs nats-logs \
+  db-logs nats-logs nats-streams nats-streams-prod \
   logs-gateway logs-auth logs-users logs-integrations logs-live-session \
   logs-orchestrator logs-comments logs-billing logs-notifications logs-analytics \
-  k8s-apply k8s-delete \
+  docker-image docker-images prod-up prod-down prod-logs prod-ps \
+  k8s-apply k8s-delete k8s-status k8s-rollout \
   help
 
 # ==============================================================================
@@ -151,6 +154,20 @@ db-logs:
 nats-logs:
 	$(DOCKER) logs -f nats
 
+## nats-streams: Create / update JetStream streams and consumers (dev)
+##   Requires NATS to be running: make infra-up
+##   Requires nats CLI: https://github.com/nats-io/natscli/releases
+nats-streams:
+	bash infra/nats/setup-streams.sh
+
+## nats-streams-prod: Apply JetStream config against production NATS
+##   Usage: NATS_URL=nats://nats-service.tik-live-pro.svc.cluster.local:4222 make nats-streams-prod
+nats-streams-prod:
+ifndef NATS_URL
+	$(error NATS_URL is required. Usage: NATS_URL=nats://... make nats-streams-prod)
+endif
+	bash infra/nats/setup-streams.sh
+
 # ==============================================================================
 # BUILD
 # ==============================================================================
@@ -175,6 +192,53 @@ build-web:
 ##        Run `make build` first.
 start:
 	$(TURBO) start $(SERVICES) --filter=@tik-live-pro/web
+
+# ==============================================================================
+# DOCKER IMAGES
+# ==============================================================================
+
+## docker-image: Build the Docker image for a single service
+##   Usage: make docker-image svc=auth        (builds auth-service image)
+##          make docker-image svc=auth tag=1.0.0
+docker-image:
+ifndef svc
+	$(error svc is required. Usage: make docker-image svc=auth)
+endif
+	IMAGE_TAG=$(or $(tag),$(IMAGE_TAG)) bash infra/docker/build.sh $(svc)
+
+## docker-images: Build Docker images for ALL services
+##   Usage: make docker-images
+##          make docker-images tag=1.2.3 PUSH=1
+docker-images:
+	IMAGE_TAG=$(IMAGE_TAG) bash infra/docker/build.sh all
+
+# ==============================================================================
+# PRODUCTION COMPOSE  (uses pre-built images from docker-compose.prod.yml)
+# ==============================================================================
+
+## prod-up: Start the full production stack with pre-built images
+##   Requires IMAGE_TAG and credentials in environment or .env.prod.
+##   Usage: IMAGE_TAG=1.2.3 make prod-up
+prod-up:
+	$(DOCKER_PROD) up -d
+	@echo ""
+	@echo "  API Gateway → http://localhost:3000"
+	@echo "  Grafana     → http://localhost:3001"
+	@echo "  Prometheus  → http://localhost:9090"
+	@echo "  Jaeger      → http://localhost:16686"
+	@echo ""
+
+## prod-down: Stop the production stack (keep volumes)
+prod-down:
+	$(DOCKER_PROD) down
+
+## prod-logs: Stream logs from all production containers
+prod-logs:
+	$(DOCKER_PROD) logs -f
+
+## prod-ps: Show running production containers
+prod-ps:
+	$(DOCKER_PROD) ps
 
 # ==============================================================================
 # TESTING
@@ -338,13 +402,56 @@ logs-analytics:
 # KUBERNETES
 # ==============================================================================
 
-## k8s-apply: Apply all Kubernetes manifests in infra/kubernetes/
+## k8s-apply: Apply all Kubernetes manifests in the correct dependency order
 k8s-apply:
-	kubectl apply -f infra/kubernetes/
+	@echo "→ Creating namespace…"
+	kubectl apply -f infra/kubernetes/namespace.yaml
+	@echo "→ Applying secrets template (edit secrets.yaml with real values first)…"
+	kubectl apply -f infra/kubernetes/secrets.yaml
+	@echo "→ Deploying infrastructure (NATS, Postgres, Redis)…"
+	kubectl apply -f infra/kubernetes/nats-deployment.yaml
+	kubectl apply -f infra/kubernetes/postgres-deployment.yaml
+	kubectl apply -f infra/kubernetes/redis-deployment.yaml
+	@echo "→ Deploying microservices…"
+	kubectl apply -f infra/kubernetes/api-gateway-deployment.yaml
+	kubectl apply -f infra/kubernetes/auth-deployment.yaml
+	kubectl apply -f infra/kubernetes/users-deployment.yaml
+	kubectl apply -f infra/kubernetes/live-session-deployment.yaml
+	kubectl apply -f infra/kubernetes/billing-deployment.yaml
+	kubectl apply -f infra/kubernetes/integrations-deployment.yaml
+	kubectl apply -f infra/kubernetes/comments-deployment.yaml
+	kubectl apply -f infra/kubernetes/notifications-deployment.yaml
+	kubectl apply -f infra/kubernetes/analytics-deployment.yaml
+	kubectl apply -f infra/kubernetes/stream-orchestrator-deployment.yaml
+	@echo "→ Deploying observability stack…"
+	kubectl apply -f infra/kubernetes/observability.yaml
+	@echo "→ Applying Ingress…"
+	kubectl apply -f infra/kubernetes/ingress.yaml
+	@echo ""
+	@echo "  Done. Use 'make k8s-status' to check pod health."
 
 ## k8s-delete: Delete all resources defined in infra/kubernetes/
 k8s-delete:
-	kubectl delete -f infra/kubernetes/
+	kubectl delete -f infra/kubernetes/ --ignore-not-found=true
+
+## k8s-status: Show pod and service status in the tik-live-pro namespace
+k8s-status:
+	@echo "=== Pods ==="
+	kubectl get pods -n tik-live-pro -o wide
+	@echo ""
+	@echo "=== Services ==="
+	kubectl get svc -n tik-live-pro
+	@echo ""
+	@echo "=== HPA ==="
+	kubectl get hpa -n tik-live-pro
+
+## k8s-rollout: Trigger a rolling restart of all microservice deployments
+k8s-rollout:
+	kubectl rollout restart deployment \
+	  api-gateway auth-service users-service live-session-service \
+	  billing-service integrations-service comments-service \
+	  notifications-service analytics-service stream-orchestrator \
+	  -n tik-live-pro
 
 # ==============================================================================
 # HELP

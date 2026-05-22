@@ -1,41 +1,41 @@
 # ==============================================================================
-# Auth Service — Deployment + Service + HPA
-# Port: 3001
+# Live Session Service — Deployment + Service + HPA
+# Port: 3003
 # ==============================================================================
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: auth-service
+  name: live-session-service
   namespace: tik-live-pro
   labels:
-    app: auth-service
+    app: live-session-service
     tier: backend
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: auth-service
+      app: live-session-service
   template:
     metadata:
       labels:
-        app: auth-service
+        app: live-session-service
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: "/metrics"
-        prometheus.io/port: "3001"
+        prometheus.io/port: "3003"
     spec:
       containers:
-        - name: auth-service
-          image: ghcr.io/tik-live-pro/auth-service:latest
+        - name: live-session-service
+          image: ghcr.io/tik-live-pro/live-session-service:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 3001
+            - containerPort: 3003
           env:
             - name: NODE_ENV
               value: production
             - name: PORT
-              value: "3001"
+              value: "3003"
             - name: LOG_LEVEL
               value: "info"
             - name: NATS_URL
@@ -44,19 +44,15 @@ spec:
               value: x-correlation-id
             - name: TRACE_ID_HEADER
               value: x-trace-id
-            - name: JWT_ACCESS_EXPIRES_IN
-              value: "15m"
-            - name: JWT_REFRESH_EXPIRES_IN
-              value: "30d"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: auth-service-secrets
+                  name: live-session-secrets
                   key: database-url
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: auth-service-secrets
+                  name: live-session-secrets
                   key: jwt-secret
           resources:
             requests:
@@ -68,14 +64,14 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 3001
+              port: 3003
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /ready
-              port: 3001
+              port: 3003
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 3
@@ -84,41 +80,41 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: auth-service
+  name: live-session-service
   namespace: tik-live-pro
   labels:
-    app: auth-service
+    app: live-session-service
 spec:
   selector:
-    app: auth-service
+    app: live-session-service
   ports:
-    - port: 3001
-      targetPort: 3001
+    - port: 3003
+      targetPort: 3003
       name: http
 
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: auth-service-hpa
+  name: live-session-service-hpa
   namespace: tik-live-pro
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: auth-service
+    name: live-session-service
   minReplicas: 2
-  maxReplicas: 10
+  maxReplicas: 20
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 70
+          averageUtilization: 60
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: 80
+          averageUtilization: 75

@@ -1,0 +1,82 @@
+# ==============================================================================
+# Ingress — routes external traffic into the cluster
+#
+# Requires an Ingress controller to be installed (e.g. ingress-nginx):
+#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+#
+# For local development (minikube):
+#   minikube addons enable ingress
+#
+# Replace `tiklive.pro` with your real domain or set up local /etc/hosts entries
+# ==============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tik-live-pro-ingress
+  namespace: tik-live-pro
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # Uncomment to enable TLS via cert-manager:
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  # Uncomment and adjust when TLS cert is ready:
+  # tls:
+  #   - hosts:
+  #       - api.tiklive.pro
+  #       - tiklive.pro
+  #     secretName: tiklive-tls
+  rules:
+    # All API traffic routes through the gateway
+    - host: api.tiklive.pro
+      http:
+        paths:
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 3000
+
+    # Grafana dashboard
+    - host: grafana.tiklive.pro
+      http:
+        paths:
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: grafana-service
+                port:
+                  number: 3000
+
+    # Jaeger UI
+    - host: jaeger.tiklive.pro
+      http:
+        paths:
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: jaeger-service
+                port:
+                  number: 16686
+
+    # Prometheus
+    - host: prometheus.tiklive.pro
+      http:
+        paths:
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: prometheus-service
+                port:
+                  number: 9090

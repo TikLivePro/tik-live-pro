@@ -38,10 +38,12 @@ tik-live-pro/
 │   ├── nats/            # NATS JetStream configuration
 │   └── observability/   # Prometheus, Grafana, OpenTelemetry
 └── docs/
-    ├── architecture.md
-    ├── events.md
-    ├── setup.md
-    └── decisions/       # Architecture Decision Records
+    ├── architecture.md  # System overview, service catalogue, data flows, security, deployment
+    ├── events.md        # NATS stream catalogue, consumer catalogue, event schemas
+    ├── setup.md         # Full local + production setup guide
+    ├── infra.md         # Docker, Kubernetes, secrets management reference
+    ├── observability.md # OTel, Prometheus, Grafana, Jaeger, alert rules
+    └── decisions/       # Architecture Decision Records (ADRs)
 ```
 
 ## Architecture Principles
@@ -302,3 +304,49 @@ Never check subscription status directly in other services — call the billing 
 - Platform OAuth tokens are encrypted at rest using AES-256-GCM before storage
 - All user input is validated with Zod schemas before reaching use cases
 - Rate limiting is applied at the API Gateway level
+
+## Documentation Maintenance — MANDATORY RULE
+
+**Every code change that affects architecture, infrastructure, services, events, or APIs must be accompanied by a documentation update.** Do not defer documentation; update it in the same change.
+
+### Which doc to update
+
+| Change type | File(s) to update |
+|-------------|------------------|
+| New service or port change | `docs/architecture.md` (Service Catalogue, Deployment Architecture) · `docs/setup.md` (ports table) |
+| New or changed NATS stream / event | `docs/events.md` (Stream Catalogue, Consumer Catalogue, Event Reference) · `infra/nats/jetstream-config.yaml` |
+| New Docker file, ARG, or compose change | `docs/infra.md` (Docker section) |
+| Kubernetes manifest added or changed | `docs/infra.md` (Kubernetes section) |
+| Prometheus scrape target added | `docs/observability.md` (Prometheus → Scrape jobs) · `infra/observability/prometheus.yml` |
+| New alert rule | `docs/observability.md` (Alert Rules table) · `infra/observability/alerts/service-alerts.yml` |
+| New OTel pipeline or exporter | `docs/observability.md` (OTel Collector section) |
+| New Makefile target | `docs/setup.md` (relevant section) |
+| Security model change | `docs/architecture.md` (Security Model) |
+| New environment variable | `docs/setup.md` (env vars table) · relevant `.env.example` |
+| Architectural decision | `docs/decisions/` (new ADR file, e.g. `003-topic.md`) |
+
+### How to update
+
+1. **Edit the existing file** — never create a duplicate.
+2. **Update the `> Last updated:` date** at the top of the file.
+3. **Tables must stay complete** — if you add a service, add it to every table in the relevant docs that lists services.
+4. **Code examples must match reality** — if you rename a Make target, update every `make <target>` reference in the docs.
+5. **Do not remove existing sections** — append or edit; deletion is only appropriate when a feature is fully removed.
+
+### ADR format (`docs/decisions/NNN-title.md`)
+
+```markdown
+# NNN. Short title
+
+**Date:** YYYY-MM-DD
+**Status:** Accepted | Deprecated | Superseded by [NNN](./NNN-title.md)
+
+## Context
+What is the problem or situation requiring a decision?
+
+## Decision
+What did we decide?
+
+## Consequences
+What are the trade-offs, known downsides, or future work this implies?
+```

@@ -1,10 +1,58 @@
+# ==============================================================================
+# NATS JetStream — StatefulSet + Services
+# ==============================================================================
+
+# Headless service required for stable DNS names used in cluster routes
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats
+  namespace: tik-live-pro
+  labels:
+    app: nats
+spec:
+  clusterIP: None   # headless — for StatefulSet pod DNS (nats-0.nats, nats-1.nats, ...)
+  selector:
+    app: nats
+  ports:
+    - port: 4222
+      name: client
+    - port: 6222
+      name: cluster
+    - port: 8222
+      name: monitoring
+
+---
+# Client-facing ClusterIP service used by all microservices (nats://nats-service:4222)
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats-service
+  namespace: tik-live-pro
+  labels:
+    app: nats
+spec:
+  selector:
+    app: nats
+  ports:
+    - port: 4222
+      targetPort: 4222
+      name: client
+    - port: 8222
+      targetPort: 8222
+      name: monitoring
+
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: nats
   namespace: tik-live-pro
+  labels:
+    app: nats
+    tier: messaging
 spec:
-  serviceName: nats
+  serviceName: nats   # must match the headless service name above
   replicas: 3
   selector:
     matchLabels:
@@ -13,7 +61,12 @@ spec:
     metadata:
       labels:
         app: nats
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "7777"
     spec:
+      terminationGracePeriodSeconds: 60
       containers:
         - name: nats
           image: nats:2.10-alpine
@@ -21,9 +74,10 @@ spec:
             - nats-server
             - --cluster_name=tik-live-pro
             - --js
+            - --sd=/data
             - --cluster=nats://0.0.0.0:6222
             - --routes=nats://nats-0.nats:6222,nats://nats-1.nats:6222,nats://nats-2.nats:6222
-            - --store_dir=/data
+            - --http_port=8222
           ports:
             - containerPort: 4222
               name: client
@@ -45,6 +99,31 @@ spec:
             httpGet:
               path: /healthz
               port: 8222
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8222
+            initialDelaySeconds: 5
+            periodSeconds: 5
+        # NATS Prometheus exporter sidecar
+        - name: nats-exporter
+          image: natsio/prometheus-nats-exporter:latest
+          args:
+            - -varz
+            - -jsz=all
+            - http://localhost:8222
+          ports:
+            - containerPort: 7777
+              name: metrics
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "10m"
+            limits:
+              memory: "64Mi"
+              cpu: "50m"
   volumeClaimTemplates:
     - metadata:
         name: nats-data
@@ -53,17 +132,3 @@ spec:
         resources:
           requests:
             storage: 10Gi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: nats-service
-  namespace: tik-live-pro
-spec:
-  selector:
-    app: nats
-  ports:
-    - port: 4222
-      name: client
-    - port: 8222
-      name: monitoring

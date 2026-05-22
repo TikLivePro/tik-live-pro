@@ -1,41 +1,41 @@
 # ==============================================================================
-# Auth Service — Deployment + Service + HPA
-# Port: 3001
+# Billing Service — Deployment + Service + HPA
+# Port: 3004
 # ==============================================================================
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: auth-service
+  name: billing-service
   namespace: tik-live-pro
   labels:
-    app: auth-service
+    app: billing-service
     tier: backend
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: auth-service
+      app: billing-service
   template:
     metadata:
       labels:
-        app: auth-service
+        app: billing-service
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: "/metrics"
-        prometheus.io/port: "3001"
+        prometheus.io/port: "3004"
     spec:
       containers:
-        - name: auth-service
-          image: ghcr.io/tik-live-pro/auth-service:latest
+        - name: billing-service
+          image: ghcr.io/tik-live-pro/billing-service:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 3001
+            - containerPort: 3004
           env:
             - name: NODE_ENV
               value: production
             - name: PORT
-              value: "3001"
+              value: "3004"
             - name: LOG_LEVEL
               value: "info"
             - name: NATS_URL
@@ -44,20 +44,31 @@ spec:
               value: x-correlation-id
             - name: TRACE_ID_HEADER
               value: x-trace-id
-            - name: JWT_ACCESS_EXPIRES_IN
-              value: "15m"
-            - name: JWT_REFRESH_EXPIRES_IN
-              value: "30d"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: auth-service-secrets
+                  name: billing-service-secrets
                   key: database-url
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: auth-service-secrets
+                  name: billing-service-secrets
                   key: jwt-secret
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: billing-service-secrets
+                  key: stripe-secret-key
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: billing-service-secrets
+                  key: stripe-webhook-secret
+            - name: STRIPE_PREMIUM_PRICE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: billing-service-secrets
+                  key: stripe-premium-price-id
           resources:
             requests:
               memory: "128Mi"
@@ -68,14 +79,14 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 3001
+              port: 3004
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /ready
-              port: 3001
+              port: 3004
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 3
@@ -84,31 +95,31 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: auth-service
+  name: billing-service
   namespace: tik-live-pro
   labels:
-    app: auth-service
+    app: billing-service
 spec:
   selector:
-    app: auth-service
+    app: billing-service
   ports:
-    - port: 3001
-      targetPort: 3001
+    - port: 3004
+      targetPort: 3004
       name: http
 
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: auth-service-hpa
+  name: billing-service-hpa
   namespace: tik-live-pro
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: auth-service
+    name: billing-service
   minReplicas: 2
-  maxReplicas: 10
+  maxReplicas: 8
   metrics:
     - type: Resource
       resource:

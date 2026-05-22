@@ -1,63 +1,87 @@
 # ==============================================================================
-# Auth Service — Deployment + Service + HPA
-# Port: 3001
+# Integrations Service — Deployment + Service + HPA
+# Port: 3005
 # ==============================================================================
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: auth-service
+  name: integrations-service
   namespace: tik-live-pro
   labels:
-    app: auth-service
+    app: integrations-service
     tier: backend
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: auth-service
+      app: integrations-service
   template:
     metadata:
       labels:
-        app: auth-service
+        app: integrations-service
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: "/metrics"
-        prometheus.io/port: "3001"
+        prometheus.io/port: "3005"
     spec:
       containers:
-        - name: auth-service
-          image: ghcr.io/tik-live-pro/auth-service:latest
+        - name: integrations-service
+          image: ghcr.io/tik-live-pro/integrations-service:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 3001
+            - containerPort: 3005
           env:
             - name: NODE_ENV
               value: production
             - name: PORT
-              value: "3001"
+              value: "3005"
             - name: LOG_LEVEL
               value: "info"
             - name: NATS_URL
               value: nats://nats-service:4222
+            # Must be the public-facing URL for OAuth callbacks
+            - name: OAUTH_REDIRECT_BASE_URL
+              value: https://api.tiklive.pro/integrations
             - name: CORRELATION_ID_HEADER
               value: x-correlation-id
             - name: TRACE_ID_HEADER
               value: x-trace-id
-            - name: JWT_ACCESS_EXPIRES_IN
-              value: "15m"
-            - name: JWT_REFRESH_EXPIRES_IN
-              value: "30d"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: auth-service-secrets
+                  name: integrations-service-secrets
                   key: database-url
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: auth-service-secrets
+                  name: integrations-service-secrets
                   key: jwt-secret
+            - name: TIKTOK_CLIENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: integrations-service-secrets
+                  key: tiktok-client-key
+            - name: TIKTOK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: integrations-service-secrets
+                  key: tiktok-client-secret
+            - name: FACEBOOK_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: integrations-service-secrets
+                  key: facebook-app-id
+            - name: FACEBOOK_APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: integrations-service-secrets
+                  key: facebook-app-secret
+            - name: TOKEN_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: integrations-service-secrets
+                  key: token-encryption-key
           resources:
             requests:
               memory: "128Mi"
@@ -68,14 +92,14 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 3001
+              port: 3005
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /ready
-              port: 3001
+              port: 3005
             initialDelaySeconds: 5
             periodSeconds: 5
             failureThreshold: 3
@@ -84,29 +108,29 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: auth-service
+  name: integrations-service
   namespace: tik-live-pro
   labels:
-    app: auth-service
+    app: integrations-service
 spec:
   selector:
-    app: auth-service
+    app: integrations-service
   ports:
-    - port: 3001
-      targetPort: 3001
+    - port: 3005
+      targetPort: 3005
       name: http
 
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: auth-service-hpa
+  name: integrations-service-hpa
   namespace: tik-live-pro
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: auth-service
+    name: integrations-service
   minReplicas: 2
   maxReplicas: 10
   metrics:

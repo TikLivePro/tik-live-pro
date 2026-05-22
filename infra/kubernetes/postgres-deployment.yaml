@@ -1,0 +1,130 @@
+# ==============================================================================
+# PostgreSQL 16 — StatefulSet + Service + ConfigMap (init SQL)
+# ==============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-sql
+  namespace: tik-live-pro
+data:
+  init.sql: |
+    -- Create all service databases in a single init pass
+    SELECT 'CREATE DATABASE tiklive_auth'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tiklive_auth')\gexec
+
+    SELECT 'CREATE DATABASE tiklive_users'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tiklive_users')\gexec
+
+    SELECT 'CREATE DATABASE tiklive_sessions'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tiklive_sessions')\gexec
+
+    SELECT 'CREATE DATABASE tiklive_billing'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tiklive_billing')\gexec
+
+    SELECT 'CREATE DATABASE tiklive_integrations'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tiklive_integrations')\gexec
+
+    SELECT 'CREATE DATABASE tiklive_comments'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tiklive_comments')\gexec
+
+    SELECT 'CREATE DATABASE tiklive_notifications'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tiklive_notifications')\gexec
+
+    SELECT 'CREATE DATABASE tiklive_analytics'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tiklive_analytics')\gexec
+
+    SELECT 'CREATE DATABASE tiklive_stream'
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tiklive_stream')\gexec
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: tik-live-pro
+  labels:
+    app: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: tik-live-pro
+  labels:
+    app: postgres
+    tier: database
+spec:
+  serviceName: postgres-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: postgres-user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: postgres-password
+            - name: POSTGRES_DB
+              value: tiklive
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: init-sql
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: init-sql
+          configMap:
+            name: postgres-init-sql
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 20Gi
