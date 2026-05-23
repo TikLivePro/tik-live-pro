@@ -9,7 +9,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { z } from 'zod';
 import { parseEnv, baseEnvSchema } from '@tik-live-pro/config';
 import { createLogger } from '@tik-live-pro/logger';
-import { NatsJetStreamClient } from '@tik-live-pro/events';
+import { NatsJetStreamClient, ensureStreams } from '@tik-live-pro/events';
 import { DrizzleLiveSessionRepository } from './infrastructure/db/live-session.repo.impl.js';
 import { CreateSessionUseCase } from './application/use-cases/create-session.use-case.js';
 import { StartSessionUseCase } from './application/use-cases/start-session.use-case.js';
@@ -31,13 +31,18 @@ async function bootstrap(): Promise<void> {
   const nats = new NatsJetStreamClient();
   await nats.connect({ servers: [env.NATS_URL], name: 'live-session-service' });
   logger.info({ natsUrl: env.NATS_URL }, 'Connected to NATS');
+  await ensureStreams(nats.getJetStreamManager());
 
   const sessionRepo = new DrizzleLiveSessionRepository(db);
   const createSession = new CreateSessionUseCase(sessionRepo, nats, logger);
   const startSession = new StartSessionUseCase(sessionRepo, nats, logger);
   const endSession = new EndSessionUseCase(sessionRepo, nats, logger);
 
-  const fastify = Fastify({ logger: false, trustProxy: true });
+  const fastify = Fastify({
+    logger: false,
+    trustProxy: true,
+    ajv: { customOptions: { keywords: ['example'] } },
+  });
 
   await fastify.register(fastifyHelmet);
   await fastify.register(fastifyCors, { origin: true });

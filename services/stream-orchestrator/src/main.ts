@@ -8,7 +8,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { z } from 'zod';
 import { createLogger } from '@tik-live-pro/logger';
 import { parseEnv, baseEnvSchema } from '@tik-live-pro/config';
-import { NatsJetStreamClient } from '@tik-live-pro/events';
+import { NatsJetStreamClient, ensureStreams } from '@tik-live-pro/events';
 import { AdapterRegistry, TikTokAdapter, FacebookAdapter } from '@tik-live-pro/platform-adapters';
 
 import { DrizzleStreamSessionRepository } from './infrastructure/db/stream-session.repo.impl.js';
@@ -49,6 +49,7 @@ async function main(): Promise<void> {
     name: 'stream-orchestrator',
   });
   logger.info('Connected to NATS');
+  await ensureStreams(nats.getJetStreamManager());
 
   // Platform adapters
   const adapterRegistry = new AdapterRegistry();
@@ -118,7 +119,10 @@ async function main(): Promise<void> {
   consumer.start();
 
   // HTTP server
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    logger: false,
+    ajv: { customOptions: { keywords: ['example'] } },
+  });
   await app.register(cors);
   await app.register(helmet);
 

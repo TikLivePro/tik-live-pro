@@ -1,6 +1,6 @@
 # TikLivePro — Architecture Overview
 
-> **Last updated:** 2026-05-22
+> **Last updated:** 2026-05-23
 > Keep this file up-to-date whenever services, ports, infrastructure, or data flows change.
 
 ## Table of Contents
@@ -215,7 +215,8 @@ Alert rules defined in `infra/observability/alerts/service-alerts.yml`:
 
 ```
 Host machine (Node.js processes via Turborepo)
-  └── All 10 microservices run directly on host ports 3000–3009
+  ├── All 10 microservices run directly on host ports 3000–3009
+  └── Next.js web app on port 3010
 
 Docker Compose (docker-compose.dev.yml)
   └── NATS, PostgreSQL, Redis, OTel Collector, Jaeger, Prometheus, Grafana

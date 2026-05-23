@@ -11,7 +11,7 @@ NextAuth.js builds its callback URL from `NEXTAUTH_URL` (set in `apps/web/.env`)
 For Google sign-in it sends:
 
 ```
-http://localhost:3000/api/auth/callback/google
+http://localhost:3010/api/auth/callback/google
 ```
 
 If that exact URI is not listed under **Authorized redirect URIs** in the Google Cloud Console, Google rejects the request with Error 400.
@@ -28,7 +28,7 @@ Under **Authorized redirect URIs**, add:
 
 | Environment | URI |
 |-------------|-----|
-| Local dev   | `http://localhost:3000/api/auth/callback/google` |
+| Local dev   | `http://localhost:3010/api/auth/callback/google` |
 | Production  | `https://<your-domain>/api/auth/callback/google` |
 
 Click **Save** and wait ~30 seconds for the change to propagate.
@@ -38,7 +38,7 @@ Click **Save** and wait ~30 seconds for the change to propagate.
 `apps/web/.env`:
 
 ```env
-NEXTAUTH_URL=http://localhost:3000   # must match the registered URI above
+NEXTAUTH_URL=http://localhost:3010   # must match the registered URI above
 ```
 
 If you change the port or domain, update both the env var **and** the Google Console entry.
@@ -50,9 +50,9 @@ If you change the port or domain, update both the env var **and** the Google Con
 ```
 
 Examples:
-- Google   → `http://localhost:3000/api/auth/callback/google`
-- Facebook → `http://localhost:3000/api/auth/callback/facebook`
-- TikTok   → `http://localhost:3000/api/auth/callback/tiktok`
+- Google   → `http://localhost:3010/api/auth/callback/google`
+- Facebook → `http://localhost:3010/api/auth/callback/facebook`
+- TikTok   → `http://localhost:3010/api/auth/callback/tiktok`
 
 Register a URI for each provider you enable.
 

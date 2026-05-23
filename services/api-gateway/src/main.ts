@@ -39,7 +39,11 @@ const SERVICE_ROUTES: Record<string, string> = {
 const PUBLIC_PREFIXES = new Set(['/auth']);
 
 async function bootstrap(): Promise<void> {
-  const fastify = Fastify({ logger: false, trustProxy: true });
+  const fastify = Fastify({
+    logger: false,
+    trustProxy: true,
+    ajv: { customOptions: { keywords: ['example'] } },
+  });
 
   await fastify.register(fastifyHelmet);
   await fastify.register(fastifyCors, { origin: true });

@@ -1,6 +1,6 @@
 # TikLivePro — Setup Guide
 
-> **Last updated:** 2026-05-22
+> **Last updated:** 2026-05-23
 > Update this file whenever prerequisites, ports, environment variables, or workflow steps change.
 
 ## Prerequisites
@@ -93,7 +93,7 @@ Update values as needed — critical variables:
 ```bash
 make dev              # all services + web (Turborepo, hot-reload)
 make dev-services     # backend only (no web)
-make dev-web          # web only (Next.js on port 3000 with Turbopack)
+make dev-web          # web only (Next.js on port 3010 with Turbopack)
 ```
 
 Service ports:
@@ -110,6 +110,7 @@ Service ports:
 | Notifications | 3007 | http://localhost:3007/docs |
 | Analytics | 3008 | http://localhost:3008/docs |
 | Stream Orchestrator | 3009 | http://localhost:3009/docs |
+| Web App (Next.js) | 3010 | http://localhost:3010 |
 
 > **Note:** `stream-orchestrator` also listens on RTMP port **1935** for local stream ingestion.
 

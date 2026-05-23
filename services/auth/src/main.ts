@@ -10,7 +10,7 @@ import { Pool } from 'pg';
 import { z } from 'zod';
 import { parseEnv, baseEnvSchema } from '@tik-live-pro/config';
 import { createLogger } from '@tik-live-pro/logger';
-import { NatsJetStreamClient } from '@tik-live-pro/events';
+import { NatsJetStreamClient, ensureStreams } from '@tik-live-pro/events';
 import { PgAuthUserRepository } from './infrastructure/repositories/pg-auth-user.repository.js';
 import { JwtTokenService } from './infrastructure/jwt/jwt-token.service.js';
 import { RegisterUseCase } from './application/use-cases/register.use-case.js';
@@ -36,8 +36,13 @@ async function bootstrap(): Promise<void> {
   const nats = new NatsJetStreamClient();
   await nats.connect({ servers: [env.NATS_URL], name: 'auth-service' });
   logger.info({ natsUrl: env.NATS_URL }, 'Connected to NATS');
+  await ensureStreams(nats.getJetStreamManager());
 
-  const fastify = Fastify({ logger: false, trustProxy: true });
+  const fastify = Fastify({
+    logger: false,
+    trustProxy: true,
+    ajv: { customOptions: { keywords: ['example'] } },
+  });
 
   await fastify.register(fastifyHelmet);
   await fastify.register(fastifyCors, { origin: true });

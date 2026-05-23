@@ -9,7 +9,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { z } from 'zod';
 import { parseEnv, baseEnvSchema } from '@tik-live-pro/config';
 import { createLogger } from '@tik-live-pro/logger';
-import { NatsJetStreamClient } from '@tik-live-pro/events';
+import { NatsJetStreamClient, ensureStreams } from '@tik-live-pro/events';
 import { registerCommentsRoutes } from './interfaces/http/comments.routes.js';
 
 const envSchema = baseEnvSchema.extend({
@@ -28,8 +28,13 @@ async function bootstrap(): Promise<void> {
   const nats = new NatsJetStreamClient();
   await nats.connect({ servers: [env.NATS_URL], name: 'comments-service' });
   logger.info({ natsUrl: env.NATS_URL }, 'Connected to NATS');
+  await ensureStreams(nats.getJetStreamManager());
 
-  const fastify = Fastify({ logger: false, trustProxy: true });
+  const fastify = Fastify({
+    logger: false,
+    trustProxy: true,
+    ajv: { customOptions: { keywords: ['example'] } },
+  });
 
   await fastify.register(fastifyHelmet);
   await fastify.register(fastifyCors, { origin: true });
