@@ -38,6 +38,9 @@ const SERVICE_ROUTES: Record<string, string> = {
 
 const PUBLIC_PREFIXES = new Set(['/auth']);
 
+// Specific paths that are publicly accessible without a JWT (within otherwise-protected prefixes).
+const PUBLIC_PATHS = new Set(['/billing/plans']);
+
 async function bootstrap(): Promise<void> {
   const fastify = Fastify({
     logger: false,
@@ -467,7 +470,24 @@ All error responses follow a consistent envelope:
               { in: 'path', name: 'platform', required: true, schema: { type: 'string', enum: ['tiktok', 'facebook'] }, description: 'Target social platform.' },
             ],
             responses: {
-              302: { description: 'Redirect to platform OAuth URL.' },
+              200: {
+                description: 'OAuth authorization URL to redirect the user to.',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        data: {
+                          type: 'object',
+                          properties: {
+                            authUrl: { type: 'string', format: 'uri', description: 'Redirect the user here to begin OAuth authorization.' },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
               400: { description: 'Unsupported platform.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
               401: { description: 'Unauthorized.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
               422: { description: 'Entitlement limit reached (free plan allows 2 accounts).', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
@@ -584,6 +604,16 @@ All error responses follow a consistent envelope:
         // -----------------------------------------------------------------------
         // BILLING
         // -----------------------------------------------------------------------
+        '/billing/plans': {
+          get: {
+            tags: ['Billing'],
+            summary: 'List available plans',
+            description: 'Returns all active subscription plans ordered by price.',
+            responses: {
+              200: { description: 'Plans list.', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, slug: { type: 'string' }, name: { type: 'string' }, priceCents: { type: 'integer' }, features: { type: 'array', items: { type: 'string' } }, maxSocialAccounts: { type: 'integer', nullable: true }, sortOrder: { type: 'integer' } } } } } } } } },
+            },
+          },
+        },
         '/billing/entitlements': {
           get: {
             tags: ['Billing'],
@@ -942,7 +972,7 @@ All error responses follow a consistent envelope:
     const isPublic = PUBLIC_PREFIXES.has(prefix);
 
     fastify.all(`${prefix}/*`, async (request, reply) => {
-      if (!isPublic) {
+      if (!isPublic && !PUBLIC_PATHS.has(request.url.split('?')[0]!)) {
         await request.jwtVerify();
       }
 

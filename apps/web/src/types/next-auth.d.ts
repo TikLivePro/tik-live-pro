@@ -7,6 +7,8 @@ declare module 'next-auth' {
     appAccessToken?: string;
     appRefreshToken?: string;
     appSubscriptionTier?: string;
+    appDisplayName?: string;
+    appEmail?: string | null;
     error?: string;
   }
 }
@@ -17,6 +19,9 @@ declare module 'next-auth/jwt' {
     appAccessToken?: string;
     appRefreshToken?: string;
     appSubscriptionTier?: string;
+    appDisplayName?: string;
+    appEmail?: string | null;
+    appAccessTokenExpiresAt?: number;
     error?: string;
   }
 }

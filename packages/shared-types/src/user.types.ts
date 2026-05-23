@@ -4,6 +4,7 @@ export type Email = string & { readonly _brand: 'Email' };
 export const SubscriptionTier = {
   FREE: 'free',
   PREMIUM: 'premium',
+  BUSINESS: 'business',
 } as const;
 export type SubscriptionTier = (typeof SubscriptionTier)[keyof typeof SubscriptionTier];
 

@@ -57,7 +57,7 @@ PACKAGES := \
   lint lint-fix \
   format \
   clean clean-dist clean-deps \
-  db-generate db-migrate db-studio \
+  db-generate db-migrate db-studio db-seed db-seed-billing \
   db-logs nats-logs nats-streams nats-streams-prod \
   logs-gateway logs-auth logs-users logs-integrations logs-live-session \
   logs-orchestrator logs-comments logs-billing logs-notifications logs-analytics \
@@ -334,6 +334,16 @@ ifndef svc
 endif
 	pnpm --filter=@tik-live-pro/$(svc)-service run db:studio 2>/dev/null || \
 	pnpm --filter=@tik-live-pro/$(svc) run db:studio
+
+## db-seed: Seed all service databases with default data
+##          Requires DB to be running: make infra-up && make db-migrate
+##          Override host: DB_BASE_URL=postgresql://user:pass@host:5432 make db-seed
+db-seed:
+	bash scripts/db-seed.sh
+
+## db-seed-billing: Seed only the billing service (subscription plans)
+db-seed-billing:
+	pnpm --filter=@tik-live-pro/billing-service run db:seed
 
 # ==============================================================================
 # CLEANUP

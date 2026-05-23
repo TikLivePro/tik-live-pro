@@ -6,9 +6,10 @@ import { useTranslations } from 'next-intl';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import { useProfile } from '../hooks/useProfile';
+import { useLocale } from '../hooks/useLocale';
 import { getInitials } from '@/lib/text.utils';
 import { cn } from '@/lib/utils';
-import { SettingsGearIcon, LogOutIcon, ChevronDownIcon, SunIcon, MoonIcon } from './AuthIcons';
+import { SettingsGearIcon, LogOutIcon, ChevronDownIcon, SunIcon, MoonIcon, GlobeIcon } from './AuthIcons';
 import { AVATAR_COLORS } from '@/lib/avatar.consts';
 
 export function UserMenu(): React.ReactElement {
@@ -19,10 +20,13 @@ export function UserMenu(): React.ReactElement {
   const t = useTranslations('auth');
   const tSettings = useTranslations('settings');
   const { displayName, email, subscriptionTier } = useProfile();
+  const { locale, setLocale } = useLocale();
 
   const label = displayName ?? email ?? 'User';
   const initials = getInitials(label);
   const avatarColor = AVATAR_COLORS[0];
+  const otherLocale = locale === 'en' ? 'fr' : 'en';
+  const otherLocaleLabel = locale === 'en' ? 'Français' : 'English';
 
   useEffect(() => {
     function handleOutsideClick(e: MouseEvent) {
@@ -98,6 +102,18 @@ export function UserMenu(): React.ReactElement {
                 ? <SunIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
                 : <MoonIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />}
               {theme === 'dark' ? t('themeLight') : t('themeDark')}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { setLocale(otherLocale); setOpen(false); }}
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-muted"
+            >
+              <GlobeIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+              <span className="flex-1 text-left">{t('language')}</span>
+              <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+                {otherLocaleLabel}
+              </span>
             </button>
           </div>
 

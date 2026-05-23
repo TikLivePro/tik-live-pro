@@ -9,6 +9,7 @@ interface AuthState {
   subscriptionTier: SubscriptionTier | null;
   displayName: string | null;
   email: string | null;
+  locale: string | null;
   isAuthenticated: boolean;
   setAuth: (params: {
     userId: UserId;
@@ -16,10 +17,11 @@ interface AuthState {
     refreshToken: string;
     subscriptionTier: SubscriptionTier;
     displayName?: string;
-    email?: string;
+    email?: string | null;
   }) => void;
   clearAuth: () => void;
   updateAccessToken: (accessToken: string) => void;
+  updateTokens: (accessToken: string, refreshToken: string) => void;
   updateProfile: (params: { displayName?: string; locale?: string }) => void;
 }
 
@@ -32,6 +34,7 @@ export const useAuthStore = create<AuthState>()(
       subscriptionTier: null,
       displayName: null,
       email: null,
+      locale: null,
       isAuthenticated: false,
       setAuth: ({ userId, accessToken, refreshToken, subscriptionTier, displayName, email }) =>
         set({ userId, accessToken, refreshToken, subscriptionTier, displayName: displayName ?? null, email: email ?? null, isAuthenticated: true }),
@@ -43,11 +46,16 @@ export const useAuthStore = create<AuthState>()(
           subscriptionTier: null,
           displayName: null,
           email: null,
+          locale: null,
           isAuthenticated: false,
         }),
       updateAccessToken: (accessToken) => set({ accessToken }),
-      updateProfile: ({ displayName, locale: _locale }) =>
-        set((state) => ({ displayName: displayName ?? state.displayName })),
+      updateTokens: (accessToken, refreshToken) => set({ accessToken, refreshToken, isAuthenticated: true }),
+      updateProfile: ({ displayName, locale }) =>
+        set((state) => ({
+          displayName: displayName ?? state.displayName,
+          locale: locale ?? state.locale,
+        })),
     }),
     {
       name: 'tik-live-pro-auth',
@@ -57,6 +65,7 @@ export const useAuthStore = create<AuthState>()(
         subscriptionTier: state.subscriptionTier,
         displayName: state.displayName,
         email: state.email,
+        locale: state.locale,
       }),
     },
   ),

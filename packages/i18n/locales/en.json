@@ -40,11 +40,14 @@
     "displayName": "Display name",
     "alreadyHaveAccount": "Already have an account?",
     "noAccount": "Don't have an account?",
+    "language": "Language",
     "errors": {
       "invalidCredentials": "Invalid email or password",
       "emailAlreadyExists": "This email is already registered",
       "weakPassword": "Password must be at least 8 characters",
-      "sessionExpired": "Your session has expired. Please sign in again"
+      "sessionExpired": "Your session has expired. Please sign in again",
+      "generic": "Something went wrong. Please try again",
+      "oauthFailed": "Social login failed. Please try again"
     }
   },
   "stream": {
@@ -75,8 +78,11 @@
       "dropped": "Dropped frames",
       "latency": "Latency"
     },
+    "sessionStarted": "Stream is live!",
+    "sessionEnded": "Stream ended",
     "errors": {
       "noDestinations": "Please add at least one destination",
+      "createFailed": "Failed to create the session",
       "startFailed": "Failed to start the stream",
       "endFailed": "Failed to end the stream"
     }
@@ -151,7 +157,8 @@
       "language": "Language",
       "save": "Save changes",
       "saving": "Saving...",
-      "saved": "Saved",
+      "saved": "Profile saved",
+      "saveError": "Failed to save profile",
       "unnamed": "Unnamed user"
     },
     "appearance": {
@@ -175,20 +182,23 @@
     },
     "subscription": {
       "sectionTitle": "SUBSCRIPTION",
-      "status": "Status",
-      "statusActive": "Active",
-      "statusInactive": "Inactive",
-      "nextRenewal": "Next renewal",
-      "monthlyRate": "Monthly rate",
-      "plan": "Plan",
-      "upgrade": "Upgrade to Premium",
-      "upgradeCta": "Unlock unlimited accounts, analytics dashboard, comment moderation, and stream recording.",
-      "manageSubscription": "Manage subscription",
+      "popular": "Popular",
+      "priceFree": "Free",
+      "pricePerMonth": "/mo",
+      "accountsLimit": "{n} social accounts",
+      "accountsUnlimited": "Unlimited accounts",
+      "currentPlan": "Current plan",
+      "selectPlan": "Select plan",
+      "selecting": "Loading...",
+      "renewsOn": "Renews {date}",
+      "cancelsOn": "Cancels {date}",
       "features": {
+        "basicStreaming": "Basic streaming (2 accounts)",
         "unlimitedAccounts": "Unlimited connected accounts",
         "analytics": "Analytics dashboard",
         "moderation": "Comment moderation",
-        "recording": "Stream recording"
+        "recording": "Stream recording",
+        "prioritySupport": "Priority support"
       }
     },
     "security": {
@@ -201,6 +211,7 @@
       "newPassword": "New password",
       "confirmNewPassword": "Confirm new password",
       "passwordUpdated": "Password updated successfully",
+      "passwordUpdateFailed": "Failed to update password",
       "passwordMismatch": "Passwords do not match",
       "cancel": "Cancel",
       "twoFactor": "Two-factor authentication",
@@ -214,7 +225,9 @@
       "connectTikTok": "Connect TikTok",
       "connectFacebook": "Connect Facebook",
       "tiktokSection": "TikTok",
-      "facebookSection": "Facebook"
+      "facebookSection": "Facebook",
+      "removed": "Account disconnected",
+      "removeFailed": "Failed to disconnect account"
     }
   }
 }

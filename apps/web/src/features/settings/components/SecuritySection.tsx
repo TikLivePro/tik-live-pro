@@ -16,7 +16,7 @@ export function SecuritySection(): React.JSX.Element {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
 
-  const { mutate: updatePassword, isPending, isSuccess, error, reset } = useUpdatePassword();
+  const { mutate: updatePassword, isPending, reset } = useUpdatePassword();
 
   function handleCancel() {
     setShowForm(false);
@@ -41,7 +41,8 @@ export function SecuritySection(): React.JSX.Element {
           setCurrentPassword('');
           setNewPassword('');
           setConfirmPassword('');
-          setTimeout(() => { setShowForm(false); reset(); }, 2000);
+          setShowForm(false);
+          reset();
         },
       },
     );
@@ -100,15 +101,9 @@ export function SecuritySection(): React.JSX.Element {
                 onToggleShow={() => setShowNew((v) => !v)}
               />
 
-              {(validationError ?? error?.message) && (
+              {validationError && (
                 <p className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                  {validationError ?? error?.message}
-                </p>
-              )}
-
-              {isSuccess && (
-                <p className="rounded-lg border border-green-500/20 bg-green-500/10 px-3 py-2 text-xs text-green-500">
-                  {t('security.passwordUpdated')}
+                  {validationError}
                 </p>
               )}
 
@@ -122,7 +117,7 @@ export function SecuritySection(): React.JSX.Element {
                 </button>
                 <button
                   type="submit"
-                  disabled={isPending || isSuccess}
+                  disabled={isPending}
                   className={cn(
                     'rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white',
                     'hover:bg-brand/90 transition-colors',

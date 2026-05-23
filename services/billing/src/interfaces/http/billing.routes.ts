@@ -68,7 +68,80 @@ const entitlementSchema = {
 
 // ---------------------------------------------------------------------------
 
+const STATIC_PLANS = [
+  {
+    id: '00000000-0000-0000-0000-000000000001',
+    slug: 'free',
+    name: 'Free',
+    priceCents: 0,
+    features: [],
+    maxSocialAccounts: 2,
+    stripePriceId: null,
+    sortOrder: 0,
+  },
+  {
+    id: '00000000-0000-0000-0000-000000000002',
+    slug: 'premium',
+    name: 'Pro',
+    priceCents: 999,
+    features: ['unlimited_accounts', 'analytics_dashboard', 'comment_moderation'],
+    maxSocialAccounts: null,
+    stripePriceId: null,
+    sortOrder: 1,
+  },
+  {
+    id: '00000000-0000-0000-0000-000000000003',
+    slug: 'business',
+    name: 'Business',
+    priceCents: 2999,
+    features: ['unlimited_accounts', 'analytics_dashboard', 'comment_moderation', 'stream_recording', 'priority_support'],
+    maxSocialAccounts: null,
+    stripePriceId: null,
+    sortOrder: 2,
+  },
+];
+
+const planSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', format: 'uuid' },
+    slug: { type: 'string', enum: ['free', 'premium', 'business'] },
+    name: { type: 'string', example: 'Pro' },
+    priceCents: { type: 'integer', description: 'Monthly price in USD cents. 0 for the free plan.', example: 999 },
+    features: {
+      type: 'array',
+      items: { type: 'string', enum: ['unlimited_accounts', 'analytics_dashboard', 'comment_moderation', 'stream_recording', 'priority_support'] },
+    },
+    maxSocialAccounts: { type: 'integer', nullable: true, description: 'Max connected social accounts. null = unlimited.' },
+    stripePriceId: { type: 'string', nullable: true },
+    sortOrder: { type: 'integer' },
+  },
+};
+
 export function registerBillingRoutes(fastify: FastifyInstance, _deps: { db: NodePgDatabase }): void {
+  // GET /billing/plans -------------------------------------------------------
+  fastify.get(
+    '/billing/plans',
+    {
+      schema: {
+        tags: ['Billing'],
+        summary: 'List available plans',
+        description: 'Returns all active subscription plans ordered by price.',
+        response: {
+          200: {
+            description: 'List of available plans.',
+            type: 'object',
+            required: ['data'],
+            properties: { data: { type: 'array', items: planSchema } },
+          },
+        },
+      },
+    },
+    async (_request, reply) => {
+      return reply.status(200).send({ data: STATIC_PLANS });
+    },
+  );
+
   // GET /billing/entitlements ------------------------------------------------
   fastify.get(
     '/billing/entitlements',

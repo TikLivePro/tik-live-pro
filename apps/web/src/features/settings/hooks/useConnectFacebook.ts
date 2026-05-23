@@ -1,18 +1,22 @@
 'use client';
 
-import { useAuthStore } from '@/features/auth/store/auth.store';
-import { API_BASE } from '@/lib/api';
+import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
+import { API_BASE, apiFetch } from '@/lib/api';
 
 export function useConnectFacebook(): () => void {
-  const { accessToken } = useAuthStore();
+  const t = useTranslations('accounts.errors');
+
   return () => {
-    void fetch(`${API_BASE}/integrations/connect/facebook`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
-      .then((r) => r.json())
-      .then((body: unknown) => {
-        const { data } = body as { data: { authUrl: string } };
-        window.location.href = data.authUrl;
+    void apiFetch(`${API_BASE}/integrations/oauth/facebook/start`)
+      .then(async (r) => {
+        if (!r.ok) throw new Error('connect_failed');
+        const body = (await r.json()) as { data?: { authUrl?: string } };
+        if (!body.data?.authUrl) throw new Error('connect_failed');
+        window.location.href = body.data.authUrl;
+      })
+      .catch(() => {
+        toast.error(t('connectFailed'));
       });
   };
 }

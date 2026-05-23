@@ -2,42 +2,51 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { useProfile } from '@/features/auth/hooks/useProfile';
+import { useLocale, setLocaleCookie, type SupportedLocale } from '@/features/auth/hooks/useLocale';
 import { useUpdateProfile } from '../hooks/useUpdateProfile';
 import { getInitials } from '@/lib/text.utils';
 import { AVATAR_COLORS } from '@/lib/avatar.consts';
 import { cn } from '@/lib/utils';
 
-const LOCALES = [
+const LOCALES: { value: SupportedLocale; label: string }[] = [
   { value: 'en', label: 'English' },
   { value: 'fr', label: 'Français' },
-] as const;
+];
 
 export function ProfileSection(): React.JSX.Element {
   const t = useTranslations('settings');
   const { displayName, email } = useProfile();
-  const { mutate: updateProfile, isPending, isSuccess, reset } = useUpdateProfile();
+  const { locale: currentLocale } = useLocale();
+  const router = useRouter();
+  const { mutate: updateProfile, isPending } = useUpdateProfile();
 
   const [name, setName] = useState(displayName ?? '');
-  const [locale, setLocale] = useState('en');
+  const [locale, setLocale] = useState<SupportedLocale>(currentLocale);
 
   useEffect(() => {
     if (displayName) setName(displayName);
   }, [displayName]);
 
+  // Sync locale selector with the current applied locale
   useEffect(() => {
-    if (isSuccess) {
-      const timer = setTimeout(reset, 2500);
-      return () => clearTimeout(timer);
+    setLocale(currentLocale);
+  }, [currentLocale]);
+
+  function handleLocaleChange() {
+    if (locale !== currentLocale) {
+      setLocaleCookie(locale);
+      router.refresh();
     }
-  }, [isSuccess, reset]);
+  }
 
   const initials = getInitials(name || displayName || email || 'U');
   const avatarColor = AVATAR_COLORS[0];
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    updateProfile({ displayName: name, locale });
+    updateProfile({ displayName: name, locale }, { onSuccess: handleLocaleChange });
   }
 
   return (
@@ -92,7 +101,7 @@ export function ProfileSection(): React.JSX.Element {
           </label>
           <select
             value={locale}
-            onChange={(e) => setLocale(e.target.value)}
+            onChange={(e) => setLocale(e.target.value as SupportedLocale)}
             className={cn(
               'w-full rounded-lg border border-border bg-input px-3 py-2 text-sm',
               'focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand/60 transition-colors',
@@ -105,9 +114,6 @@ export function ProfileSection(): React.JSX.Element {
         </div>
 
         <div className="flex items-center justify-end gap-3 pt-1">
-          {isSuccess && (
-            <span className="text-xs font-medium text-green-500">{t('profile.saved')}</span>
-          )}
           <button
             type="submit"
             disabled={isPending}

@@ -313,6 +313,18 @@ Exchanges a provider OAuth access token for a TikLivePro JWT token pair.
                     description: 'User subscription tier.',
                     example: 'free',
                   },
+                  displayName: {
+                    type: 'string',
+                    description: 'Display name from the OAuth provider profile.',
+                    example: 'Alice Streamer',
+                  },
+                  email: {
+                    type: 'string',
+                    format: 'email',
+                    nullable: true,
+                    description: 'Email address from the OAuth provider, or null if not provided.',
+                    example: 'alice@example.com',
+                  },
                 },
               },
             },

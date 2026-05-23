@@ -190,7 +190,25 @@ Initiates the OAuth 2.0 authorization code flow for the specified platform.
           },
         },
         response: {
-          302: { description: 'Redirect to the platform OAuth consent screen.' },
+          200: {
+            description: 'OAuth authorization URL to redirect the user to.',
+            type: 'object',
+            required: ['data'],
+            properties: {
+              data: {
+                type: 'object',
+                required: ['authUrl'],
+                properties: {
+                  authUrl: {
+                    type: 'string',
+                    format: 'uri',
+                    description: 'Platform OAuth consent screen URL. Redirect the user here to begin authorization.',
+                    example: 'https://open.tiktok.com/platform/oauth?client_key=...&redirect_uri=...&state=...',
+                  },
+                },
+              },
+            },
+          },
           400: errorSchema('Unsupported platform identifier.'),
           401: errorSchema('Missing or invalid Bearer token.'),
           422: errorSchema(
@@ -200,7 +218,7 @@ Initiates the OAuth 2.0 authorization code flow for the specified platform.
       },
     },
     async (_request, reply) => {
-      return reply.redirect('https://open.tiktok.com/platform/oauth');
+      return reply.status(200).send({ data: { authUrl: 'https://open.tiktok.com/platform/oauth' } });
     },
   );
 

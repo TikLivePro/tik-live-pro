@@ -6,6 +6,7 @@ export { SubscriptionSection } from './components/SubscriptionSection';
 export { SecuritySection } from './components/SecuritySection';
 export { ConnectedAccountsSection } from './components/ConnectedAccountsSection';
 export { useSubscription } from './hooks/useSubscription';
+export { usePlans } from './hooks/usePlans';
 export { useUpdateProfile } from './hooks/useUpdateProfile';
 export { useUpdatePassword } from './hooks/useUpdatePassword';
 export { useRemoveAccount } from './hooks/useRemoveAccount';

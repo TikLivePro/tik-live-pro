@@ -26,6 +26,7 @@ export const Feature = {
   ANALYTICS_DASHBOARD: 'analytics_dashboard',
   COMMENT_MODERATION: 'comment_moderation',
   STREAM_RECORDING: 'stream_recording',
+  PRIORITY_SUPPORT: 'priority_support',
 } as const;
 export type Feature = (typeof Feature)[keyof typeof Feature];
 
@@ -34,4 +35,15 @@ export interface Entitlement {
   tier: SubscriptionTier;
   features: Feature[];
   maxSocialAccounts: number;
+}
+
+export interface Plan {
+  id: string;
+  slug: SubscriptionTier;
+  name: string;
+  priceCents: number;
+  features: Feature[];
+  maxSocialAccounts: number | null;
+  stripePriceId: string | null;
+  sortOrder: number;
 }

@@ -15,6 +15,8 @@ declare module 'next-auth' {
     appAccessToken?: string;
     appRefreshToken?: string;
     appSubscriptionTier?: string;
+    appDisplayName?: string;
+    appEmail?: string | null;
     error?: string;
   }
 }
@@ -25,6 +27,9 @@ declare module 'next-auth/jwt' {
     appAccessToken?: string;
     appRefreshToken?: string;
     appSubscriptionTier?: string;
+    appDisplayName?: string;
+    appEmail?: string | null;
+    appAccessTokenExpiresAt?: number;
     error?: string;
   }
 }
@@ -103,6 +108,15 @@ const TikTok: OAuthConfig<{
 
 const AUTH_SERVICE_URL = process.env['AUTH_SERVICE_INTERNAL_URL'] ?? 'http://localhost:3001';
 
+function getTokenExpiry(jwt: string): number {
+  try {
+    const payload = JSON.parse(atob(jwt.split('.')[1] ?? '')) as { exp?: number };
+    return payload.exp ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 export const authOptions: AuthOptions = {
   providers: [
     GoogleProvider({
@@ -142,16 +156,52 @@ export const authOptions: AuthOptions = {
               accessToken: string;
               refreshToken: string;
               subscriptionTier: string;
+              displayName?: string;
+              email?: string | null;
             };
           };
           token.appUserId = json.data.userId;
           token.appAccessToken = json.data.accessToken;
           token.appRefreshToken = json.data.refreshToken;
           token.appSubscriptionTier = json.data.subscriptionTier;
+          token.appAccessTokenExpiresAt = getTokenExpiry(json.data.accessToken);
+          if (json.data.displayName !== undefined) token.appDisplayName = json.data.displayName;
+          if (json.data.email !== undefined) token.appEmail = json.data.email;
         } catch {
           token.error = 'OAuthExchangeFailed';
         }
+        return token;
       }
+
+      // Proactively refresh the TikLivePro access token before it expires (60-second buffer).
+      const now = Math.floor(Date.now() / 1000);
+      if (
+        token.appRefreshToken &&
+        token.appAccessTokenExpiresAt &&
+        now >= token.appAccessTokenExpiresAt - 60
+      ) {
+        try {
+          const res = await fetch(`${AUTH_SERVICE_URL}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: token.appRefreshToken }),
+          });
+          if (res.ok) {
+            const json = (await res.json()) as {
+              data: { accessToken: string; refreshToken: string };
+            };
+            token.appAccessToken = json.data.accessToken;
+            token.appRefreshToken = json.data.refreshToken;
+            token.appAccessTokenExpiresAt = getTokenExpiry(json.data.accessToken);
+            delete token.error;
+          } else {
+            token.error = 'RefreshFailed';
+          }
+        } catch {
+          token.error = 'RefreshFailed';
+        }
+      }
+
       return token;
     },
     async session({ session, token }: { session: Session; token: JWT }) {
@@ -160,8 +210,9 @@ export const authOptions: AuthOptions = {
       if (token.appUserId !== undefined) session.appUserId = token.appUserId;
       if (token.appAccessToken !== undefined) session.appAccessToken = token.appAccessToken;
       if (token.appRefreshToken !== undefined) session.appRefreshToken = token.appRefreshToken;
-      if (token.appSubscriptionTier !== undefined)
-        session.appSubscriptionTier = token.appSubscriptionTier;
+      if (token.appSubscriptionTier !== undefined) session.appSubscriptionTier = token.appSubscriptionTier;
+      if (token.appDisplayName !== undefined) session.appDisplayName = token.appDisplayName;
+      if (token.appEmail !== undefined) session.appEmail = token.appEmail;
       if (token.error !== undefined) session.error = token.error;
       return session;
     },

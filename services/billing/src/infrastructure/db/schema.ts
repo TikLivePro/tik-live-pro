@@ -1,4 +1,16 @@
-import { pgTable, text, timestamp, varchar, uuid } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, varchar, uuid, integer, boolean, jsonb } from 'drizzle-orm/pg-core';
+
+export const plans = pgTable('plans', {
+  id: uuid('id').primaryKey(),
+  slug: varchar('slug', { length: 20 }).notNull().unique(),
+  name: varchar('name', { length: 50 }).notNull(),
+  priceCents: integer('price_cents').notNull().default(0),
+  features: jsonb('features').notNull().default([]),
+  maxSocialAccounts: integer('max_social_accounts'),
+  stripePriceId: text('stripe_price_id'),
+  isActive: boolean('is_active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+});
 
 export const subscriptions = pgTable('subscriptions', {
   id: uuid('id').primaryKey(),

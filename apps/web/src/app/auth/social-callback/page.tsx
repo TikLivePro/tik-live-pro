@@ -31,6 +31,8 @@ export default function SocialCallbackPage() {
         accessToken: session.appAccessToken,
         refreshToken: session.appRefreshToken ?? '',
         subscriptionTier: (session.appSubscriptionTier ?? 'free') as SubscriptionTier,
+        ...(session.appDisplayName !== undefined ? { displayName: session.appDisplayName } : {}),
+        ...(session.appEmail !== undefined ? { email: session.appEmail } : {}),
       });
       const next = searchParams.get('next') ?? '/dashboard';
       router.replace(next);

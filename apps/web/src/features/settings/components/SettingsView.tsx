@@ -9,11 +9,14 @@ import { NotificationsSection } from './NotificationsSection';
 import { SubscriptionSection } from './SubscriptionSection';
 import { SecuritySection } from './SecuritySection';
 import { ConnectedAccountsSection } from './ConnectedAccountsSection';
-import { BackArrowIcon } from '@/features/auth/components/AuthIcons';
+import { BackArrowIcon, LogOutIcon } from '@/features/auth/components/AuthIcons';
+import { useAuth } from '@/features/auth';
 
 export function SettingsView(): React.JSX.Element {
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
+  const tAuth = useTranslations('auth');
+  const { logout } = useAuth();
 
   return (
     <div className="min-h-screen bg-background">
@@ -35,6 +38,14 @@ export function SettingsView(): React.JSX.Element {
         <SubscriptionSection />
         <ConnectedAccountsSection />
         <SecuritySection />
+
+        <button
+          onClick={logout}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-destructive/30 bg-destructive/5 py-3 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
+        >
+          <LogOutIcon className="h-4 w-4" />
+          {tAuth('signOut')}
+        </button>
       </main>
     </div>
   );

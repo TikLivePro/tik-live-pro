@@ -21,6 +21,8 @@ export interface OAuthSocialLoginInput {
 export interface OAuthSocialLoginOutput extends TokenPair {
   userId: UserId;
   subscriptionTier: string;
+  displayName: string;
+  email: string | null;
 }
 
 interface ProviderProfile {
@@ -167,7 +169,13 @@ export class OAuthSocialLoginUseCase {
     );
 
     log.info({ userId: user.id }, 'OAuth login: success');
-    return { userId: user.id, subscriptionTier: user.subscriptionTier, ...tokens };
+    return {
+      userId: user.id,
+      subscriptionTier: user.subscriptionTier,
+      displayName: user.displayName,
+      email: profile.email,
+      ...tokens,
+    };
   }
 
   private verifyProviderToken(

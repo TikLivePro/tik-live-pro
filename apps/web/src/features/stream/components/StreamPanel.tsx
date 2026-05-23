@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 
 export function StreamPanel() {
   const t = useTranslations('stream');
-  const { currentSession, isStarting, isEnding, error, startSession, endSession } = useStream();
+  const { currentSession, isStarting, isEnding, startSession, endSession } = useStream();
   const isLive = useStreamStore((s) => s.currentSession?.status === 'live');
 
   return (
@@ -17,10 +17,6 @@ export function StreamPanel() {
         <h2 className="text-xl font-semibold">{t('title')}</h2>
         {currentSession && <StatusBadge status={currentSession.status} />}
       </div>
-
-      {error && (
-        <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-md">{error}</p>
-      )}
 
       <div className="flex gap-3">
         {!isLive && currentSession && (

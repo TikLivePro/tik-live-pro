@@ -11,7 +11,8 @@
     "clean": "rm -rf dist",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "tsx src/infrastructure/db/seed.ts"
   },
   "dependencies": {
     "@tik-live-pro/shared-types": "workspace:*",

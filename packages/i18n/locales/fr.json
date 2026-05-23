@@ -40,11 +40,14 @@
     "displayName": "Nom d'affichage",
     "alreadyHaveAccount": "Vous avez déjà un compte ?",
     "noAccount": "Vous n'avez pas de compte ?",
+    "language": "Langue",
     "errors": {
       "invalidCredentials": "Email ou mot de passe invalide",
       "emailAlreadyExists": "Cet email est déjà enregistré",
       "weakPassword": "Le mot de passe doit comporter au moins 8 caractères",
-      "sessionExpired": "Votre session a expiré. Veuillez vous reconnecter"
+      "sessionExpired": "Votre session a expiré. Veuillez vous reconnecter",
+      "generic": "Une erreur s'est produite. Veuillez réessayer",
+      "oauthFailed": "Connexion sociale échouée. Veuillez réessayer"
     }
   },
   "stream": {
@@ -75,8 +78,11 @@
       "dropped": "Images perdues",
       "latency": "Latence"
     },
+    "sessionStarted": "Le stream est en direct !",
+    "sessionEnded": "Stream terminé",
     "errors": {
       "noDestinations": "Veuillez ajouter au moins une destination",
+      "createFailed": "Échec de la création de la session",
       "startFailed": "Échec du démarrage du stream",
       "endFailed": "Échec de la fin du stream"
     }
@@ -151,7 +157,8 @@
       "language": "Langue",
       "save": "Enregistrer",
       "saving": "Enregistrement...",
-      "saved": "Enregistré",
+      "saved": "Profil enregistré",
+      "saveError": "Échec de l'enregistrement du profil",
       "unnamed": "Utilisateur sans nom"
     },
     "appearance": {
@@ -175,20 +182,23 @@
     },
     "subscription": {
       "sectionTitle": "ABONNEMENT",
-      "status": "Statut",
-      "statusActive": "Actif",
-      "statusInactive": "Inactif",
-      "nextRenewal": "Prochain renouvellement",
-      "monthlyRate": "Tarif mensuel",
-      "plan": "Plan",
-      "upgrade": "Passer au Premium",
-      "upgradeCta": "Débloquez les comptes illimités, le tableau de bord analytique, la modération et l'enregistrement.",
-      "manageSubscription": "Gérer l'abonnement",
+      "popular": "Populaire",
+      "priceFree": "Gratuit",
+      "pricePerMonth": "/mois",
+      "accountsLimit": "{n} comptes sociaux",
+      "accountsUnlimited": "Comptes illimités",
+      "currentPlan": "Plan actuel",
+      "selectPlan": "Choisir ce plan",
+      "selecting": "Chargement...",
+      "renewsOn": "Renouvellement le {date}",
+      "cancelsOn": "Résiliation le {date}",
       "features": {
+        "basicStreaming": "Streaming de base (2 comptes)",
         "unlimitedAccounts": "Comptes connectés illimités",
         "analytics": "Tableau de bord analytique",
         "moderation": "Modération des commentaires",
-        "recording": "Enregistrement du stream"
+        "recording": "Enregistrement du stream",
+        "prioritySupport": "Support prioritaire"
       }
     },
     "security": {
@@ -201,6 +211,7 @@
       "newPassword": "Nouveau mot de passe",
       "confirmNewPassword": "Confirmer le nouveau mot de passe",
       "passwordUpdated": "Mot de passe mis à jour avec succès",
+      "passwordUpdateFailed": "Échec de la mise à jour du mot de passe",
       "passwordMismatch": "Les mots de passe ne correspondent pas",
       "cancel": "Annuler",
       "twoFactor": "Authentification à deux facteurs",
@@ -214,7 +225,9 @@
       "connectTikTok": "Connecter TikTok",
       "connectFacebook": "Connecter Facebook",
       "tiktokSection": "TikTok",
-      "facebookSection": "Facebook"
+      "facebookSection": "Facebook",
+      "removed": "Compte déconnecté",
+      "removeFailed": "Échec de la déconnexion du compte"
     }
   }
 }

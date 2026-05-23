@@ -10,13 +10,20 @@ const TIER_FEATURES: Record<string, Feature[]> = {
     F.UNLIMITED_ACCOUNTS,
     F.ANALYTICS_DASHBOARD,
     F.COMMENT_MODERATION,
+  ],
+  [SubscriptionTier.BUSINESS]: [
+    F.UNLIMITED_ACCOUNTS,
+    F.ANALYTICS_DASHBOARD,
+    F.COMMENT_MODERATION,
     F.STREAM_RECORDING,
+    F.PRIORITY_SUPPORT,
   ],
 };
 
 const TIER_ACCOUNT_LIMIT: Record<string, number> = {
   [SubscriptionTier.FREE]: FREEMIUM_ACCOUNT_LIMIT,
   [SubscriptionTier.PREMIUM]: Infinity,
+  [SubscriptionTier.BUSINESS]: Infinity,
 };
 
 export class SubscriptionPolicy {

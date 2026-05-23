@@ -8,6 +8,20 @@
       "when": 1779336153293,
       "tag": "0000_lively_matthew_murdock",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1748044800000,
+      "tag": "0001_plans_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779513329618,
+      "tag": "0002_complex_senator_kelly",
+      "breakpoints": true
     }
   ]
 }

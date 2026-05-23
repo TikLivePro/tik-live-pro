@@ -1,28 +1,24 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 import { useStreamStore } from '../store/stream.store';
-import { useAuthStore } from '@/features/auth/store/auth.store';
-import { API_BASE } from '@/lib/api';
+import { API_BASE, apiFetch } from '@/lib/api';
 import type { LiveSessionId, SocialAccountId } from '@tik-live-pro/shared-types';
 
 export function useStream() {
-  const [error, setError] = useState<string | null>(null);
-  const { accessToken } = useAuthStore();
+  const t = useTranslations('stream');
   const { currentSession, isStarting, isEnding, setSession, setStarting, setEnding, updateSessionStatus } =
     useStreamStore();
 
   const createSession = useCallback(
     async (params: { title: string; description?: string; destinationIds: SocialAccountId[] }) => {
-      setError(null);
       setStarting(true);
       try {
-        const res = await fetch(`${API_BASE}/sessions`, {
+        const res = await apiFetch(`${API_BASE}/sessions`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title: params.title,
             description: params.description,
@@ -32,61 +28,58 @@ export function useStream() {
         if (!res.ok) throw new Error('Failed to create session');
         const { data } = (await res.json()) as { data: { sessionId: LiveSessionId } };
         return data.sessionId;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+      } catch {
+        toast.error(t('errors.createFailed'));
         return null;
       } finally {
         setStarting(false);
       }
     },
-    [accessToken, setStarting],
+    [setStarting, t],
   );
 
   const startSession = useCallback(
     async (sessionId: LiveSessionId) => {
-      setError(null);
       setStarting(true);
       try {
-        const res = await fetch(`${API_BASE}/sessions/${sessionId}/start`, {
+        const res = await apiFetch(`${API_BASE}/sessions/${sessionId}/start`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (!res.ok) throw new Error('Failed to start session');
         updateSessionStatus('starting');
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        toast.success(t('sessionStarted'));
+      } catch {
+        toast.error(t('errors.startFailed'));
       } finally {
         setStarting(false);
       }
     },
-    [accessToken, setStarting, updateSessionStatus],
+    [setStarting, updateSessionStatus, t],
   );
 
   const endSession = useCallback(
     async (sessionId: LiveSessionId) => {
-      setError(null);
       setEnding(true);
       try {
-        const res = await fetch(`${API_BASE}/sessions/${sessionId}/end`, {
+        const res = await apiFetch(`${API_BASE}/sessions/${sessionId}/end`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}` },
         });
         if (!res.ok) throw new Error('Failed to end session');
         updateSessionStatus('ending');
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        toast.success(t('sessionEnded'));
+      } catch {
+        toast.error(t('errors.endFailed'));
       } finally {
         setEnding(false);
       }
     },
-    [accessToken, setEnding, updateSessionStatus],
+    [setEnding, updateSessionStatus, t],
   );
 
   return {
     currentSession,
     isStarting,
     isEnding,
-    error,
     createSession,
     startSession,
     endSession,

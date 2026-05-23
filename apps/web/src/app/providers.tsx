@@ -5,6 +5,14 @@ import { SessionProvider } from 'next-auth/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
 import type { AbstractIntlMessages } from 'next-intl';
+import { Toaster } from 'sonner';
+import { AuthSync } from '@/features/auth/components/AuthSync';
+import { useTheme } from '@/features/auth/hooks/useTheme';
+
+function ThemedToaster() {
+  const { theme } = useTheme();
+  return <Toaster theme={theme} richColors position="top-right" closeButton />;
+}
 
 export function Providers({
   locale,
@@ -29,6 +37,8 @@ export function Providers({
 
   return (
     <SessionProvider>
+      <AuthSync />
+      <ThemedToaster />
       <QueryClientProvider client={queryClient}>
         <NextIntlClientProvider locale={locale} messages={messages} timeZone="UTC" now={new Date()}>
           {children}
