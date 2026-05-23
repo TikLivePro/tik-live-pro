@@ -15,6 +15,8 @@ interface AuthResponse {
   accessToken: string;
   refreshToken: string;
   subscriptionTier: SubscriptionTier;
+  displayName?: string;
+  email?: string;
 }
 
 export function useAuth() {

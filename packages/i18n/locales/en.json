@@ -22,6 +22,9 @@
     "signingIn": "Signing in...",
     "signUp": "Sign up",
     "signOut": "Sign out",
+    "themeLight": "Light theme",
+    "themeDark": "Dark theme",
+    "user": "User",
     "subtitle": "Connect to your space",
     "email": "Email address",
     "emailPlaceholder": "client@example.com",
@@ -141,24 +144,77 @@
   },
   "settings": {
     "title": "Settings",
+    "profile": {
+      "sectionTitle": "PROFILE",
+      "displayName": "Display name",
+      "email": "Email address",
+      "language": "Language",
+      "save": "Save changes",
+      "saving": "Saving...",
+      "saved": "Saved",
+      "unnamed": "Unnamed user"
+    },
+    "appearance": {
+      "sectionTitle": "APPEARANCE",
+      "theme": "Theme",
+      "themeLight": "Light",
+      "themeDark": "Dark",
+      "currentLight": "Currently: Light",
+      "currentDark": "Currently: Dark"
+    },
+    "notifications": {
+      "sectionTitle": "NOTIFICATIONS",
+      "streamStarted": "Stream started",
+      "streamStartedDesc": "Get notified when your live session begins",
+      "streamEnded": "Stream ended",
+      "streamEndedDesc": "Get notified when your live session ends",
+      "accountConnected": "Account connected",
+      "accountConnectedDesc": "Get notified when a social account is linked",
+      "paymentFailed": "Payment issue",
+      "paymentFailedDesc": "Get notified when a payment requires attention"
+    },
     "subscription": {
       "sectionTitle": "SUBSCRIPTION",
       "status": "Status",
       "statusActive": "Active",
       "statusInactive": "Inactive",
       "nextRenewal": "Next renewal",
-      "monthlyRate": "Monthly rate"
+      "monthlyRate": "Monthly rate",
+      "plan": "Plan",
+      "upgrade": "Upgrade to Premium",
+      "upgradeCta": "Unlock unlimited accounts, analytics dashboard, comment moderation, and stream recording.",
+      "manageSubscription": "Manage subscription",
+      "features": {
+        "unlimitedAccounts": "Unlimited connected accounts",
+        "analytics": "Analytics dashboard",
+        "moderation": "Comment moderation",
+        "recording": "Stream recording"
+      }
     },
     "security": {
       "sectionTitle": "SECURITY",
       "password": "Password",
       "passwordChangedDaysAgo": "Changed {days} days ago",
-      "changePassword": "Edit"
+      "changePassword": "Edit",
+      "changePasswordTitle": "Change password",
+      "currentPassword": "Current password",
+      "newPassword": "New password",
+      "confirmNewPassword": "Confirm new password",
+      "passwordUpdated": "Password updated successfully",
+      "passwordMismatch": "Passwords do not match",
+      "cancel": "Cancel",
+      "twoFactor": "Two-factor authentication",
+      "twoFactorNotConfigured": "Not configured",
+      "twoFactorEnable": "Enable"
     },
     "connectedAccounts": {
-      "sectionTitle": "CONNECTED TIKTOK ACCOUNTS",
+      "sectionTitle": "CONNECTED ACCOUNTS",
       "add": "+ Add",
-      "noAccounts": "No connected TikTok accounts"
+      "noAccounts": "No connected accounts",
+      "connectTikTok": "Connect TikTok",
+      "connectFacebook": "Connect Facebook",
+      "tiktokSection": "TikTok",
+      "facebookSection": "Facebook"
     }
   }
 }

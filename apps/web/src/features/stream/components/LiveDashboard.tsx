@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { useStream } from '../hooks/useStream';
 import { useElapsedTime } from '../hooks/useElapsedTime';
 import { useSocialAccounts } from '@/features/accounts/hooks/useSocialAccounts';
+import { UserMenu } from '@/features/auth/components/UserMenu';
 import { StatsCard } from './StatsCard';
 import { AVATAR_COLORS } from '../consts/stream.consts';
 import { getInitials } from '@/lib/text.utils';
@@ -25,7 +26,7 @@ export function LiveDashboard(): React.ReactElement {
 
   return (
     <div className="flex flex-col min-h-screen bg-[#0f1117] text-white">
-      <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/5">
+      <header className="flex items-center justify-between border-b border-white/5 px-4 py-3 sm:px-6">
         <div className="flex items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -33,14 +34,17 @@ export function LiveDashboard(): React.ReactElement {
               <circle cx="12" cy="12" r="3.5" />
             </svg>
           </span>
-          <span className="font-bold text-base sm:text-lg tracking-tight">TikLive Pro</span>
+          <span className="text-base font-bold tracking-tight sm:text-lg">TikLive Pro</span>
         </div>
-        {isLive && (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-bold text-white">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
-            {t('status.live')}
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {isLive && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-bold text-white">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
+              {t('status.live')}
+            </span>
+          )}
+          <UserMenu />
+        </div>
       </header>
 
       <main className="mx-auto w-full max-w-lg flex-1 space-y-4 px-4 py-5 sm:max-w-2xl sm:px-6 lg:max-w-3xl">

@@ -7,15 +7,20 @@ interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   subscriptionTier: SubscriptionTier | null;
+  displayName: string | null;
+  email: string | null;
   isAuthenticated: boolean;
   setAuth: (params: {
     userId: UserId;
     accessToken: string;
     refreshToken: string;
     subscriptionTier: SubscriptionTier;
+    displayName?: string;
+    email?: string;
   }) => void;
   clearAuth: () => void;
   updateAccessToken: (accessToken: string) => void;
+  updateProfile: (params: { displayName?: string; locale?: string }) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -25,18 +30,24 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       refreshToken: null,
       subscriptionTier: null,
+      displayName: null,
+      email: null,
       isAuthenticated: false,
-      setAuth: ({ userId, accessToken, refreshToken, subscriptionTier }) =>
-        set({ userId, accessToken, refreshToken, subscriptionTier, isAuthenticated: true }),
+      setAuth: ({ userId, accessToken, refreshToken, subscriptionTier, displayName, email }) =>
+        set({ userId, accessToken, refreshToken, subscriptionTier, displayName: displayName ?? null, email: email ?? null, isAuthenticated: true }),
       clearAuth: () =>
         set({
           userId: null,
           accessToken: null,
           refreshToken: null,
           subscriptionTier: null,
+          displayName: null,
+          email: null,
           isAuthenticated: false,
         }),
       updateAccessToken: (accessToken) => set({ accessToken }),
+      updateProfile: ({ displayName, locale: _locale }) =>
+        set((state) => ({ displayName: displayName ?? state.displayName })),
     }),
     {
       name: 'tik-live-pro-auth',
@@ -44,6 +55,8 @@ export const useAuthStore = create<AuthState>()(
         userId: state.userId,
         refreshToken: state.refreshToken,
         subscriptionTier: state.subscriptionTier,
+        displayName: state.displayName,
+        email: state.email,
       }),
     },
   ),

@@ -22,6 +22,9 @@
     "signingIn": "Connexion en cours...",
     "signUp": "S'inscrire",
     "signOut": "Se déconnecter",
+    "themeLight": "Thème clair",
+    "themeDark": "Thème sombre",
+    "user": "Utilisateur",
     "subtitle": "Connectez-vous à votre espace",
     "email": "Adresse email",
     "emailPlaceholder": "client@example.com",
@@ -141,24 +144,77 @@
   },
   "settings": {
     "title": "Paramètres",
+    "profile": {
+      "sectionTitle": "PROFIL",
+      "displayName": "Nom d'affichage",
+      "email": "Adresse email",
+      "language": "Langue",
+      "save": "Enregistrer",
+      "saving": "Enregistrement...",
+      "saved": "Enregistré",
+      "unnamed": "Utilisateur sans nom"
+    },
+    "appearance": {
+      "sectionTitle": "APPARENCE",
+      "theme": "Thème",
+      "themeLight": "Clair",
+      "themeDark": "Sombre",
+      "currentLight": "Actuellement : Clair",
+      "currentDark": "Actuellement : Sombre"
+    },
+    "notifications": {
+      "sectionTitle": "NOTIFICATIONS",
+      "streamStarted": "Stream démarré",
+      "streamStartedDesc": "Soyez notifié quand votre live commence",
+      "streamEnded": "Stream terminé",
+      "streamEndedDesc": "Soyez notifié quand votre live se termine",
+      "accountConnected": "Compte connecté",
+      "accountConnectedDesc": "Soyez notifié quand un compte social est lié",
+      "paymentFailed": "Problème de paiement",
+      "paymentFailedDesc": "Soyez notifié quand un paiement nécessite votre attention"
+    },
     "subscription": {
       "sectionTitle": "ABONNEMENT",
       "status": "Statut",
       "statusActive": "Actif",
       "statusInactive": "Inactif",
       "nextRenewal": "Prochain renouvellement",
-      "monthlyRate": "Tarif mensuel"
+      "monthlyRate": "Tarif mensuel",
+      "plan": "Plan",
+      "upgrade": "Passer au Premium",
+      "upgradeCta": "Débloquez les comptes illimités, le tableau de bord analytique, la modération et l'enregistrement.",
+      "manageSubscription": "Gérer l'abonnement",
+      "features": {
+        "unlimitedAccounts": "Comptes connectés illimités",
+        "analytics": "Tableau de bord analytique",
+        "moderation": "Modération des commentaires",
+        "recording": "Enregistrement du stream"
+      }
     },
     "security": {
       "sectionTitle": "SÉCURITÉ",
       "password": "Mot de passe",
       "passwordChangedDaysAgo": "Modifié il y a {days} jours",
-      "changePassword": "Modifier"
+      "changePassword": "Modifier",
+      "changePasswordTitle": "Changer le mot de passe",
+      "currentPassword": "Mot de passe actuel",
+      "newPassword": "Nouveau mot de passe",
+      "confirmNewPassword": "Confirmer le nouveau mot de passe",
+      "passwordUpdated": "Mot de passe mis à jour avec succès",
+      "passwordMismatch": "Les mots de passe ne correspondent pas",
+      "cancel": "Annuler",
+      "twoFactor": "Authentification à deux facteurs",
+      "twoFactorNotConfigured": "Non configurée",
+      "twoFactorEnable": "Activer"
     },
     "connectedAccounts": {
-      "sectionTitle": "COMPTES TIKTOK CONNECTÉS",
+      "sectionTitle": "COMPTES CONNECTÉS",
       "add": "+ Ajouter",
-      "noAccounts": "Aucun compte TikTok connecté"
+      "noAccounts": "Aucun compte connecté",
+      "connectTikTok": "Connecter TikTok",
+      "connectFacebook": "Connecter Facebook",
+      "tiktokSection": "TikTok",
+      "facebookSection": "Facebook"
     }
   }
 }

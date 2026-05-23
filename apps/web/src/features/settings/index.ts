@@ -1,8 +1,15 @@
 export { SettingsView } from './components/SettingsView';
+export { ProfileSection } from './components/ProfileSection';
+export { AppearanceSection } from './components/AppearanceSection';
+export { NotificationsSection } from './components/NotificationsSection';
 export { SubscriptionSection } from './components/SubscriptionSection';
 export { SecuritySection } from './components/SecuritySection';
 export { ConnectedAccountsSection } from './components/ConnectedAccountsSection';
 export { useSubscription } from './hooks/useSubscription';
+export { useUpdateProfile } from './hooks/useUpdateProfile';
+export { useUpdatePassword } from './hooks/useUpdatePassword';
 export { useRemoveAccount } from './hooks/useRemoveAccount';
 export { useConnectTikTok } from './hooks/useConnectTikTok';
+export { useConnectFacebook } from './hooks/useConnectFacebook';
+export { useNotificationPreferences } from './hooks/useNotificationPreferences';
 export * from './consts/settings.consts';

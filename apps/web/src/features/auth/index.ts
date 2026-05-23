@@ -1,8 +1,10 @@
 export { useAuth } from './hooks/useAuth';
 export { useLoginForm } from './hooks/useLoginForm';
 export { useTheme } from './hooks/useTheme';
+export { useProfile } from './hooks/useProfile';
 export { useAuthStore } from './store/auth.store';
 export { LoginView } from './components/LoginView';
+export { UserMenu } from './components/UserMenu';
 export * from './components/AuthIcons';
 export * from './interfaces/auth.interfaces';
 export * from './consts/auth.consts';
