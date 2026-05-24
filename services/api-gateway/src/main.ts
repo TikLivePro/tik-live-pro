@@ -111,23 +111,25 @@ All error responses follow a consistent envelope:
         contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklive.pro' },
         license: { name: 'Proprietary' },
       },
-      servers: [
-        {
-          url: 'https://api.tiklive.pro',
-          description: 'Production',
-        },
-        {
-          url: 'https://api.staging.tiklive.pro',
-          description: 'Staging',
-        },
-        {
-          url: 'http://localhost:{port}',
-          description: 'Local development',
-          variables: {
-            port: { default: String(env.PORT), description: 'Gateway HTTP port' },
-          },
-        },
-      ],
+      servers: env.NODE_ENV === 'production'
+        ? [
+            { url: 'https://api.tiklive.pro', description: 'Production' },
+            { url: 'https://api.staging.tiklive.pro', description: 'Staging' },
+            {
+              url: 'http://localhost:{port}',
+              description: 'Local development',
+              variables: { port: { default: String(env.PORT), description: 'Gateway HTTP port' } },
+            },
+          ]
+        : [
+            {
+              url: 'http://localhost:{port}',
+              description: 'Local development',
+              variables: { port: { default: String(env.PORT), description: 'Gateway HTTP port' } },
+            },
+            { url: 'https://api.staging.tiklive.pro', description: 'Staging' },
+            { url: 'https://api.tiklive.pro', description: 'Production' },
+          ],
       components: {
         securitySchemes: {
           BearerAuth: {
@@ -968,6 +970,17 @@ All error responses follow a consistent envelope:
   // ---------------------------------------------------------------------------
   // Proxy routes
   // ---------------------------------------------------------------------------
+
+  // Hop-by-hop headers must not be forwarded to downstream services.
+  // accept-encoding is excluded so the downstream always returns uncompressed
+  // JSON — the gateway re-serializes the body so it cannot forward a
+  // compressed response verbatim.
+  const HOP_BY_HOP = new Set([
+    'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+    'te', 'trailers', 'transfer-encoding', 'upgrade', 'accept-encoding',
+    'content-length', // recalculated by fetch from the re-serialized body
+  ]);
+
   for (const [prefix, upstream] of Object.entries(SERVICE_ROUTES)) {
     const isPublic = PUBLIC_PREFIXES.has(prefix);
 
@@ -977,12 +990,16 @@ All error responses follow a consistent envelope:
       }
 
       const targetUrl = `${upstream}${request.url}`;
+      const forwardedHeaders = Object.fromEntries(
+        Object.entries(request.headers).filter(
+          ([k, v]) => v !== undefined && !HOP_BY_HOP.has(k.toLowerCase()),
+        ) as [string, string][],
+      );
+
       const fetchOptions: RequestInit = {
         method: request.method,
         headers: {
-          ...Object.fromEntries(
-            Object.entries(request.headers).filter(([, v]) => v !== undefined) as [string, string][],
-          ),
+          ...forwardedHeaders,
           'x-correlation-id': request.headers['x-correlation-id'] as string,
         },
       };
@@ -991,9 +1008,14 @@ All error responses follow a consistent envelope:
         fetchOptions.body = JSON.stringify(request.body);
       }
 
-      const response = await fetch(targetUrl, fetchOptions);
-      const data = await response.json();
-      return reply.status(response.status).send(data);
+      try {
+        const response = await fetch(targetUrl, fetchOptions);
+        const data = await response.json();
+        return reply.status(response.status).send(data);
+      } catch (err) {
+        logger.error({ err, targetUrl, method: request.method }, 'Proxy fetch failed');
+        return reply.status(502).send({ error: { code: 'BAD_GATEWAY', message: 'Upstream service unavailable' } });
+      }
     });
   }
 

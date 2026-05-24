@@ -3,6 +3,7 @@ export { ProfileSection } from './components/ProfileSection';
 export { AppearanceSection } from './components/AppearanceSection';
 export { NotificationsSection } from './components/NotificationsSection';
 export { SubscriptionSection } from './components/SubscriptionSection';
+export { PaymentMethodModal } from './components/PaymentMethodModal';
 export { SecuritySection } from './components/SecuritySection';
 export { ConnectedAccountsSection } from './components/ConnectedAccountsSection';
 export { useSubscription } from './hooks/useSubscription';

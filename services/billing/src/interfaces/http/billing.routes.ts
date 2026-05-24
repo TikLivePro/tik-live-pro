@@ -68,6 +68,33 @@ const entitlementSchema = {
 
 // ---------------------------------------------------------------------------
 
+const AVAILABLE_PAYMENT_METHODS = [
+  {
+    id: 'stripe',
+    label: 'Credit / Debit Card',
+    description: 'Pay securely via Stripe Checkout',
+  },
+  {
+    id: 'cash',
+    label: 'Cash',
+    description: 'Pay in person — we will activate your plan on receipt',
+  },
+  {
+    id: 'mobile_money',
+    label: 'Mobile Money',
+    description: 'Pay via MTN, Airtel, or Orange Money',
+  },
+];
+
+const paymentMethodSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', enum: ['stripe', 'cash', 'mobile_money'], description: 'Payment method identifier.' },
+    label: { type: 'string', example: 'Mobile Money' },
+    description: { type: 'string', example: 'Pay via MTN, Airtel, or Orange Money' },
+  },
+};
+
 const STATIC_PLANS = [
   {
     id: '00000000-0000-0000-0000-000000000001',
@@ -119,6 +146,29 @@ const planSchema = {
 };
 
 export function registerBillingRoutes(fastify: FastifyInstance, _deps: { db: NodePgDatabase }): void {
+  // GET /billing/payment-methods ---------------------------------------------
+  fastify.get(
+    '/billing/payment-methods',
+    {
+      schema: {
+        tags: ['Billing'],
+        summary: 'List available payment methods',
+        description: 'Returns all payment methods accepted at checkout: card (Stripe), cash, and mobile money.',
+        response: {
+          200: {
+            description: 'List of accepted payment methods.',
+            type: 'object',
+            required: ['data'],
+            properties: { data: { type: 'array', items: paymentMethodSchema } },
+          },
+        },
+      },
+    },
+    async (_request, reply) => {
+      return reply.status(200).send({ data: AVAILABLE_PAYMENT_METHODS });
+    },
+  );
+
   // GET /billing/plans -------------------------------------------------------
   fastify.get(
     '/billing/plans',
@@ -222,18 +272,25 @@ Free-plan users have no Stripe record — this endpoint returns HTTP 404 for the
     {
       schema: {
         tags: ['Billing'],
-        summary: 'Create Stripe Checkout session',
+        summary: 'Create checkout session',
         description: `
-Creates a Stripe Checkout session to upgrade the user from FREE to PREMIUM.
+Creates a checkout session to upgrade the user's subscription.
 
-**Client flow:**
-1. Call this endpoint with \`successUrl\` and \`cancelUrl\`.
+**Supported payment methods:** \`stripe\` (default), \`cash\`, \`mobile_money\`.
+
+### Stripe (card) flow
+1. Omit \`paymentMethod\` or pass \`"stripe"\`.
 2. Redirect the user's browser to the returned \`checkoutUrl\`.
 3. Stripe collects payment and redirects back to your \`successUrl\`.
-4. A \`billing.subscription.updated\` NATS event is published automatically via Stripe webhook → billing service.
-5. The user's entitlements are upgraded asynchronously.
+4. A \`billing.subscription.updated\` NATS event is published via Stripe webhook.
 
-**Important:** Do not poll for upgraded entitlements immediately after payment — instead listen for the \`billing.entitlement.updated\` event or wait a few seconds before re-fetching.
+### Cash / Mobile Money flow
+1. Pass \`paymentMethod: "cash"\` or \`"mobile_money"\` (include \`phoneNumber\` for mobile money).
+2. The response includes \`orderId\`, \`instructions\`, and \`status: "pending"\`.
+3. The plan is activated once an admin confirms the payment.
+4. A \`billing.entitlement.updated\` NATS event is published on confirmation.
+
+**Important:** Do not poll for upgraded entitlements immediately — listen for the \`billing.entitlement.updated\` event or wait a few seconds before re-fetching.
         `.trim(),
         security: bearerAuth,
         body: {
@@ -244,14 +301,26 @@ Creates a Stripe Checkout session to upgrade the user from FREE to PREMIUM.
             successUrl: {
               type: 'string',
               format: 'uri',
-              description: 'URL Stripe redirects the user to after successful payment. May include `{CHECKOUT_SESSION_ID}` template.',
+              description: 'URL to redirect the user to after successful payment (Stripe only). May include `{CHECKOUT_SESSION_ID}` template.',
               example: 'https://app.tiklive.pro/billing/success?session={CHECKOUT_SESSION_ID}',
             },
             cancelUrl: {
               type: 'string',
               format: 'uri',
-              description: 'URL Stripe redirects the user to if they cancel without completing payment.',
+              description: 'URL to redirect the user to if they cancel (Stripe only).',
               example: 'https://app.tiklive.pro/billing',
+            },
+            paymentMethod: {
+              type: 'string',
+              enum: ['stripe', 'cash', 'mobile_money'],
+              default: 'stripe',
+              description: 'Payment method to use. Defaults to `stripe`.',
+              example: 'mobile_money',
+            },
+            phoneNumber: {
+              type: 'string',
+              description: 'Mobile money phone number. Required when `paymentMethod` is `mobile_money`.',
+              example: '+261340000000',
             },
           },
         },
@@ -263,13 +332,34 @@ Creates a Stripe Checkout session to upgrade the user from FREE to PREMIUM.
             properties: {
               data: {
                 type: 'object',
-                required: ['checkoutUrl'],
+                description: 'For `stripe`: contains `checkoutUrl`. For `cash`/`mobile_money`: contains `orderId`, `instructions`, and `status`.',
                 properties: {
                   checkoutUrl: {
                     type: 'string',
                     format: 'uri',
-                    description: 'Stripe-hosted Checkout URL. Redirect the user here to complete payment.',
+                    nullable: true,
+                    description: 'Stripe-hosted Checkout URL. Present only when `paymentMethod` is `stripe`.',
                     example: 'https://checkout.stripe.com/pay/cs_test_abc123',
+                  },
+                  orderId: {
+                    type: 'string',
+                    format: 'uuid',
+                    nullable: true,
+                    description: 'Manual order ID. Present only when `paymentMethod` is `cash` or `mobile_money`.',
+                    example: '3f7a1b2c-0000-0000-0000-000000000001',
+                  },
+                  instructions: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Human-readable payment instructions. Present only for manual payment methods.',
+                    example: 'Send payment to +261340000000 (MTN) and share the transaction ID with support.',
+                  },
+                  status: {
+                    type: 'string',
+                    enum: ['pending'],
+                    nullable: true,
+                    description: 'Order status. Always `pending` for manual payment methods until admin confirms.',
+                    example: 'pending',
                   },
                 },
               },
@@ -281,8 +371,31 @@ Creates a Stripe Checkout session to upgrade the user from FREE to PREMIUM.
         },
       },
     },
-    async (_request, reply) => {
-      return reply.status(200).send({ data: { checkoutUrl: 'https://checkout.stripe.com/pay/cs_test_example' } });
+    async (request, reply) => {
+      const body = request.body as {
+        successUrl: string;
+        cancelUrl: string;
+        paymentMethod?: 'stripe' | 'cash' | 'mobile_money';
+        phoneNumber?: string;
+      };
+      const method = body.paymentMethod ?? 'stripe';
+
+      if (method === 'stripe') {
+        return reply.status(200).send({ data: { checkoutUrl: 'https://checkout.stripe.com/pay/cs_test_example' } });
+      }
+
+      const instructions =
+        method === 'mobile_money'
+          ? `Send payment to ${body.phoneNumber ?? 'our mobile money number'} and share the transaction ID with our support team.`
+          : 'Visit our office to pay in cash. Your plan will be activated within 24 hours after confirmation.';
+
+      return reply.status(200).send({
+        data: {
+          orderId: crypto.randomUUID(),
+          instructions,
+          status: 'pending',
+        },
+      });
     },
   );
 

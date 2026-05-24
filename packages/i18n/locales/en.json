@@ -199,6 +199,21 @@
         "moderation": "Comment moderation",
         "recording": "Stream recording",
         "prioritySupport": "Priority support"
+      },
+      "paymentMethod": {
+        "title": "Choose payment method",
+        "card": "Credit / Debit Card",
+        "cardDesc": "Pay securely via Stripe Checkout",
+        "cash": "Cash",
+        "cashDesc": "Pay in person — plan activated on receipt",
+        "mobileMoney": "Mobile Money",
+        "mobileMoneyDesc": "Pay via MTN, Airtel, or Orange Money",
+        "phoneNumber": "Mobile money phone number",
+        "confirm": "Confirm",
+        "confirming": "Processing...",
+        "cancel": "Cancel",
+        "orderPending": "Order placed — we will activate your plan once payment is confirmed.",
+        "phoneInvalid": "Enter a valid international phone number"
       }
     },
     "security": {

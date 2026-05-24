@@ -199,6 +199,21 @@
         "moderation": "Modération des commentaires",
         "recording": "Enregistrement du stream",
         "prioritySupport": "Support prioritaire"
+      },
+      "paymentMethod": {
+        "title": "Choisir un moyen de paiement",
+        "card": "Carte bancaire",
+        "cardDesc": "Paiement sécurisé via Stripe Checkout",
+        "cash": "Espèces",
+        "cashDesc": "Paiement en personne — plan activé à réception",
+        "mobileMoney": "Mobile Money",
+        "mobileMoneyDesc": "Paiement via MTN, Airtel ou Orange Money",
+        "phoneNumber": "Numéro de téléphone Mobile Money",
+        "confirm": "Confirmer",
+        "confirming": "Traitement en cours...",
+        "cancel": "Annuler",
+        "orderPending": "Commande enregistrée — votre plan sera activé dès confirmation du paiement.",
+        "phoneInvalid": "Saisissez un numéro de téléphone international valide"
       }
     },
     "security": {

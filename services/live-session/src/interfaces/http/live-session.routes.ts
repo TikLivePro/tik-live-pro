@@ -83,8 +83,19 @@ export function registerLiveSessionRoutes(
   fastify: FastifyInstance,
   deps: LiveSessionRouteDeps,
 ): void {
+  // All session routes require a valid JWT. Scoped inside `register` so the
+  // hook does not apply to /health and /ready on the root instance.
+  void fastify.register(async (child) => {
+    child.addHook('onRequest', async (request, reply) => {
+      try {
+        await request.jwtVerify();
+      } catch {
+        return reply.status(401).send({ error: { code: 'UNAUTHORIZED', message: 'Missing or invalid Bearer token' } });
+      }
+    });
+
   // POST /sessions -----------------------------------------------------------
-  fastify.post(
+  child.post(
     '/sessions',
     {
       schema: {
@@ -181,7 +192,7 @@ Creates a new live session that will broadcast simultaneously to one or more con
   );
 
   // GET /sessions/:sessionId -------------------------------------------------
-  fastify.get<{ Params: { sessionId: string } }>(
+  child.get<{ Params: { sessionId: string } }>(
     '/sessions/:sessionId',
     {
       schema: {
@@ -250,7 +261,7 @@ A session can also transition to \`error\` at any point if a fatal problem occur
   );
 
   // POST /sessions/:sessionId/start -----------------------------------------
-  fastify.post<{ Params: { sessionId: string } }>(
+  child.post<{ Params: { sessionId: string } }>(
     '/sessions/:sessionId/start',
     {
       schema: {
@@ -312,7 +323,7 @@ Transitions the session from \`created\` → \`starting\` and emits a \`session.
   );
 
   // POST /sessions/:sessionId/end -------------------------------------------
-  fastify.post<{ Params: { sessionId: string } }>(
+  child.post<{ Params: { sessionId: string } }>(
     '/sessions/:sessionId/end',
     {
       schema: {
@@ -373,4 +384,5 @@ Gracefully terminates the live session: transitions to \`ending\`, stops all ffm
       }
     },
   );
+  });
 }
