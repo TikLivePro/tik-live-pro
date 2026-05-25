@@ -191,7 +191,7 @@ export class TikTokAdapter implements IPlatformAdapter {
 
     const data = await response.json() as {
       data: {
-        comments: Array<{ id: string; user_name: string; avatar: string; content: string; create_time: number }>;
+        comments: Array<{ id: string; user_id: string; user_name: string; avatar: string; content: string; create_time: number }>;
         next_cursor: string | null;
       };
     };
@@ -202,6 +202,7 @@ export class TikTokAdapter implements IPlatformAdapter {
       platform: SocialPlatform.TIKTOK,
       platformCommentId: c.id,
       authorName: c.user_name,
+      authorPlatformUserId: c.user_id,
       authorAvatarUrl: c.avatar,
       content: c.content,
       receivedAt: new Date(c.create_time * 1000),
@@ -209,5 +210,91 @@ export class TikTokAdapter implements IPlatformAdapter {
 
     this.logger.debug({ sessionId, count: comments.length, nextCursor: data.data.next_cursor }, 'TikTok: comments polled');
     return { comments, nextCursor: data.data.next_cursor };
+  }
+
+  async postComment(
+    accessToken: string,
+    sessionId: LiveSessionId,
+    _socialAccountId: SocialAccountId,
+    content: string,
+  ): Promise<Comment> {
+    this.logger.debug({ sessionId, contentLength: content.length }, 'TikTok: posting comment');
+    const response = await fetch(`${this.baseUrl}/live/comment/create/`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      this.logger.error({ sessionId, status: response.status, body: text }, 'TikTok: failed to post comment');
+      throw new Error(`TikTok post comment failed: ${text}`);
+    }
+
+    const data = await response.json() as {
+      data: { comment_id: string; create_time: number };
+    };
+
+    this.logger.info({ sessionId, platformCommentId: data.data.comment_id }, 'TikTok: comment posted');
+    return {
+      id: randomUUID() as Comment['id'],
+      sessionId,
+      platform: SocialPlatform.TIKTOK,
+      platformCommentId: data.data.comment_id,
+      authorName: '',
+      authorPlatformUserId: '',
+      authorAvatarUrl: null,
+      content,
+      receivedAt: new Date(data.data.create_time * 1000),
+    };
+  }
+
+  async replyToComment(
+    accessToken: string,
+    sessionId: LiveSessionId,
+    _socialAccountId: SocialAccountId,
+    parentPlatformCommentId: string,
+    parentAuthorPlatformUserId: string,
+    content: string,
+  ): Promise<Comment> {
+    this.logger.debug({ sessionId, parentPlatformCommentId }, 'TikTok: replying to comment');
+    const response = await fetch(`${this.baseUrl}/live/comment/create/`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content,
+        reply_to_comment_id: parentPlatformCommentId,
+        reply_to_user_id: parentAuthorPlatformUserId,
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      this.logger.error({ sessionId, status: response.status, body: text }, 'TikTok: failed to reply to comment');
+      throw new Error(`TikTok reply comment failed: ${text}`);
+    }
+
+    const data = await response.json() as {
+      data: { comment_id: string; create_time: number };
+    };
+
+    this.logger.info({ sessionId, platformCommentId: data.data.comment_id }, 'TikTok: comment reply posted');
+    return {
+      id: randomUUID() as Comment['id'],
+      sessionId,
+      platform: SocialPlatform.TIKTOK,
+      platformCommentId: data.data.comment_id,
+      authorName: '',
+      authorPlatformUserId: '',
+      authorAvatarUrl: null,
+      content,
+      receivedAt: new Date(data.data.create_time * 1000),
+    };
   }
 }

@@ -90,8 +90,21 @@
   "comments": {
     "title": "Commentaires en direct",
     "noComments": "Aucun commentaire pour l'instant",
+    "commentsCount": "commentaires",
     "placeholder": "Les commentaires apparaîtront ici...",
-    "from": "depuis {platform}"
+    "from": "depuis {platform}",
+    "inputPlaceholder": "Dites quelque chose à votre audience...",
+    "replyPlaceholder": "Répondre à {name}...",
+    "send": "Envoyer",
+    "sending": "Envoi...",
+    "reply": "Répondre",
+    "replyingTo": "Réponse à {name}",
+    "cancelReply": "Annuler",
+    "sendError": "Échec de l'envoi du commentaire",
+    "insertLink": "Insérer un lien",
+    "insertLinkConfirm": "Insérer",
+    "viewAttachment": "Voir la pièce jointe",
+    "dismissPreview": "Masquer l'aperçu"
   },
   "accounts": {
     "title": "Comptes connectés",

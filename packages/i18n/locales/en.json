@@ -90,8 +90,21 @@
   "comments": {
     "title": "Live Comments",
     "noComments": "No comments yet",
+    "commentsCount": "comments",
     "placeholder": "Comments will appear here...",
-    "from": "from {platform}"
+    "from": "from {platform}",
+    "inputPlaceholder": "Say something to your audience...",
+    "replyPlaceholder": "Reply to {name}...",
+    "send": "Send",
+    "sending": "Sending...",
+    "reply": "Reply",
+    "replyingTo": "Replying to {name}",
+    "cancelReply": "Cancel",
+    "sendError": "Failed to send comment",
+    "insertLink": "Insert a link",
+    "insertLinkConfirm": "Insert",
+    "viewAttachment": "View attachment",
+    "dismissPreview": "Dismiss preview"
   },
   "accounts": {
     "title": "Connected Accounts",

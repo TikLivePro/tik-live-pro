@@ -1,5 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import type { WebSocket } from '@fastify/websocket';
+import { eq, desc, count, and } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { comments } from '../../infrastructure/db/schema.js';
+import type { CommentPoster } from '../../application/comment-poster.js';
+import type { Comment } from '@tik-live-pro/shared-types';
 
 // ---------------------------------------------------------------------------
 // Reusable schema fragments
@@ -45,6 +51,11 @@ const commentSchema = {
       description: 'Display name of the comment author as reported by the platform.',
       example: 'Bob Viewer',
     },
+    authorPlatformUserId: {
+      type: 'string',
+      description: 'Platform-assigned user ID of the comment author. Used for reply routing.',
+      example: 'tiktok_user_abc123',
+    },
     authorAvatarUrl: {
       type: 'string',
       format: 'uri',
@@ -57,6 +68,12 @@ const commentSchema = {
       description: 'Comment text content.',
       example: 'Great stream! Keep it up 🔥',
     },
+    replyToCommentId: {
+      type: 'string',
+      format: 'uuid',
+      nullable: true,
+      description: 'ID of the parent comment if this is a reply.',
+    },
     receivedAt: {
       type: 'string',
       format: 'date-time',
@@ -66,10 +83,33 @@ const commentSchema = {
 };
 
 // ---------------------------------------------------------------------------
+// Active WebSocket connections per session
+// ---------------------------------------------------------------------------
+const sessionSockets = new Map<string, Set<WebSocket>>();
 
-export function registerCommentsRoutes(fastify: FastifyInstance, _deps: { db: NodePgDatabase }): void {
+export function broadcastComment(sessionId: string, comment: Comment): void {
+  const sockets = sessionSockets.get(sessionId);
+  if (!sockets) return;
+  const message = JSON.stringify({ type: 'comment', data: comment });
+  for (const socket of sockets) {
+    try {
+      socket.send(message);
+    } catch {
+      // Ignore send errors on disconnected sockets
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+export function registerCommentsRoutes(
+  fastify: FastifyInstance,
+  deps: { db: NodePgDatabase; poster: CommentPoster },
+): void {
   // GET /comments ------------------------------------------------------------
-  fastify.get(
+  fastify.get<{
+    Querystring: { sessionId: string; platform?: string; page?: number; pageSize?: number };
+  }>(
     '/comments',
     {
       schema: {
@@ -80,39 +120,17 @@ Returns a paginated list of comments aggregated across all streaming platforms f
 
 Comments are collected by the \`CommentPoller\` which calls each platform's comment API on a configurable interval (default: every 2 seconds per platform). They are stored in Postgres and also published as \`comment.received\` NATS events for real-time consumption.
 
-**Real-time alternative:** for live comment feeds, connect to the WebSocket endpoint \`ws://<host>/comments/ws?sessionId=<id>\` — it pushes comments as they arrive, with no polling needed.
-
-**Pagination:** results are ordered by \`receivedAt\` ascending (oldest first) by default. Use \`cursor\` for efficient keyset pagination on large datasets.
+**Real-time alternative:** connect to the WebSocket endpoint \`ws://<host>/comments/ws?sessionId=<id>\` — it pushes comments as they arrive.
         `.trim(),
         security: bearerAuth,
         querystring: {
           type: 'object',
           required: ['sessionId'],
           properties: {
-            sessionId: {
-              type: 'string',
-              format: 'uuid',
-              description: 'The live session to fetch comments for.',
-              example: 'b2c3d4e5-f6a7-8901-bcde-f12345678901',
-            },
-            platform: {
-              type: 'string',
-              enum: ['tiktok', 'facebook'],
-              description: 'Filter by platform. Omit to return comments from all platforms.',
-            },
-            page: {
-              type: 'integer',
-              minimum: 1,
-              default: 1,
-              description: 'Page number (1-based offset pagination).',
-            },
-            pageSize: {
-              type: 'integer',
-              minimum: 1,
-              maximum: 100,
-              default: 50,
-              description: 'Number of comments per page. Maximum 100.',
-            },
+            sessionId: { type: 'string', format: 'uuid', description: 'The live session to fetch comments for.' },
+            platform: { type: 'string', enum: ['tiktok', 'facebook'], description: 'Filter by platform.' },
+            page: { type: 'integer', minimum: 1, default: 1 },
+            pageSize: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
           },
         },
         response: {
@@ -125,94 +143,269 @@ Comments are collected by the \`CommentPoller\` which calls each platform's comm
                 type: 'object',
                 required: ['items', 'total', 'page', 'pageSize', 'hasNextPage'],
                 properties: {
-                  items: {
-                    type: 'array',
-                    items: commentSchema,
-                  },
-                  total: {
-                    type: 'integer',
-                    description: 'Total number of comments for this session (across all platforms).',
-                    example: 1234,
-                  },
-                  page: { type: 'integer', example: 1 },
-                  pageSize: { type: 'integer', example: 50 },
-                  hasNextPage: { type: 'boolean', example: true },
+                  items: { type: 'array', items: commentSchema },
+                  total: { type: 'integer' },
+                  page: { type: 'integer' },
+                  pageSize: { type: 'integer' },
+                  hasNextPage: { type: 'boolean' },
                 },
               },
             },
           },
           401: errorSchema('Missing or invalid Bearer token.'),
-          404: errorSchema('Session not found or does not belong to the authenticated user.'),
-          422: errorSchema('Validation error — missing or invalid query parameters.'),
         },
       },
     },
-    async (_request, reply) => {
+    async (request, reply) => {
+      const { sessionId, platform, page = 1, pageSize = 50 } = request.query;
+      const offset = (page - 1) * pageSize;
+
+      const conditions = [eq(comments.sessionId, sessionId)];
+      if (platform) conditions.push(eq(comments.platform, platform));
+      const where = and(...conditions);
+
+      const [items, [totalRow]] = await Promise.all([
+        deps.db
+          .select()
+          .from(comments)
+          .where(where)
+          .orderBy(desc(comments.receivedAt))
+          .limit(pageSize)
+          .offset(offset),
+        deps.db.select({ count: count() }).from(comments).where(where),
+      ]);
+
+      const total = Number(totalRow?.count ?? 0);
       return reply.status(200).send({
-        data: { items: [], total: 0, page: 1, pageSize: 50, hasNextPage: false },
+        data: { items, total, page, pageSize, hasNextPage: offset + items.length < total },
       });
     },
   );
 
-  // GET /comments/ws (WebSocket — documented for reference) ------------------
+  // POST /comments -----------------------------------------------------------
+  fastify.post<{ Body: { sessionId: string; content: string; mediaUrls?: string[] } }>(
+    '/comments',
+    {
+      schema: {
+        tags: ['Comments'],
+        summary: 'Post a comment to all connected platforms',
+        description: `
+Sends a comment from the authenticated streamer to all social platforms connected to the live session.
+
+The comment is posted via each platform's API using the streamer's OAuth token for that account, then stored locally and pushed in real time to WebSocket subscribers.
+
+Supports an optional \`mediaUrl\` field to attach an image, GIF, or file URL alongside the text.
+        `.trim(),
+        security: bearerAuth,
+        body: {
+          type: 'object',
+          required: ['sessionId', 'content'],
+          additionalProperties: false,
+          properties: {
+            sessionId: { type: 'string', format: 'uuid', description: 'ID of the active live session.' },
+            content: { type: 'string', minLength: 0, maxLength: 1000, description: 'Comment text to post.' },
+            mediaUrls: {
+              type: 'array',
+              items: { type: 'string', format: 'uri' },
+              nullable: true,
+              description: 'Optional list of image, GIF, or file URLs to attach.',
+            },
+          },
+        },
+        response: {
+          201: {
+            description: 'Comments posted.',
+            type: 'object',
+            required: ['data'],
+            properties: {
+              data: { type: 'array', items: commentSchema },
+            },
+          },
+          401: errorSchema('Missing or invalid Bearer token.'),
+          422: errorSchema('Validation error.'),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { sessionId, content } = request.body;
+      const posted = await deps.poster.postToAllPlatforms(
+        sessionId as Comment['sessionId'],
+        content,
+      );
+
+      for (const comment of posted) {
+        broadcastComment(sessionId, comment);
+      }
+
+      return reply.status(201).send({ data: posted });
+    },
+  );
+
+  // POST /comments/:commentId/reply ------------------------------------------
+  fastify.post<{
+    Params: { commentId: string };
+    Body: { content: string; mediaUrls?: string[] };
+  }>(
+    '/comments/:commentId/reply',
+    {
+      schema: {
+        tags: ['Comments'],
+        summary: 'Reply to a viewer comment',
+        description: `
+Replies to a specific comment. The reply is sent to the platform where the original comment came from, using the streamer's OAuth token for that platform's account.
+
+**Platform routing:** the platform is inferred from the parent comment record. If the comment came from TikTok, the reply is posted via the TikTok account connected to the session; likewise for Facebook.
+        `.trim(),
+        security: bearerAuth,
+        params: {
+          type: 'object',
+          required: ['commentId'],
+          properties: {
+            commentId: { type: 'string', format: 'uuid', description: 'Internal ID of the comment to reply to.' },
+          },
+        },
+        body: {
+          type: 'object',
+          required: ['content'],
+          additionalProperties: false,
+          properties: {
+            content: { type: 'string', minLength: 0, maxLength: 1000, description: 'Reply text.' },
+            mediaUrls: {
+              type: 'array',
+              items: { type: 'string', format: 'uri' },
+              nullable: true,
+              description: 'Optional list of image, GIF, or file URLs to attach.',
+            },
+          },
+        },
+        response: {
+          201: {
+            description: 'Reply posted.',
+            type: 'object',
+            required: ['data'],
+            properties: {
+              data: commentSchema,
+            },
+          },
+          401: errorSchema('Missing or invalid Bearer token.'),
+          404: errorSchema('Parent comment not found.'),
+          422: errorSchema('Validation error.'),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { commentId } = request.params;
+      const { content } = request.body;
+
+      const [parentComment] = await deps.db
+        .select()
+        .from(comments)
+        .where(eq(comments.id, commentId))
+        .limit(1);
+
+      if (!parentComment) {
+        return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Comment not found' } });
+      }
+
+      const replyComment = await deps.poster.replyToPlatformComment(
+        parentComment.sessionId as Comment['sessionId'],
+        parentComment.platform as Comment['platform'],
+        commentId,
+        parentComment.platformCommentId,
+        parentComment.authorPlatformUserId,
+        content,
+      );
+
+      if (!replyComment) {
+        return reply.status(422).send({
+          error: { code: 'UNPROCESSABLE', message: 'No account available for this platform in the active session' },
+        });
+      }
+
+      // Persist the reply
+      const id = randomUUID();
+      await deps.db.insert(comments).values({
+        id,
+        sessionId: parentComment.sessionId,
+        platform: replyComment.platform,
+        platformCommentId: replyComment.platformCommentId,
+        authorName: replyComment.authorName,
+        authorPlatformUserId: replyComment.authorPlatformUserId,
+        authorAvatarUrl: replyComment.authorAvatarUrl,
+        content: replyComment.content,
+        replyToCommentId: commentId,
+        receivedAt: replyComment.receivedAt,
+      }).onConflictDoNothing();
+
+      const saved = { ...replyComment, id: id as Comment['id'], replyToCommentId: commentId as Comment['id'] };
+      broadcastComment(parentComment.sessionId, saved);
+
+      return reply.status(201).send({ data: saved });
+    },
+  );
+
+  // GET /comments/ws (WebSocket) ---------------------------------------------
   fastify.get(
     '/comments/ws',
     {
+      websocket: true,
       schema: {
         tags: ['Comments'],
         summary: 'Real-time comment stream (WebSocket)',
         description: `
-Opens a WebSocket connection that pushes comments in real time as they are received from TikTok and Facebook.
+Opens a WebSocket connection that pushes comments in real time.
 
-**Connection:**
-\`\`\`
-ws://<host>/comments/ws?sessionId=<sessionId>
-\`\`\`
-Include the Bearer token in the \`Authorization\` header or as the \`token\` query parameter (browser WebSocket APIs do not support custom headers).
+**Connection:** \`ws://<host>/comments/ws?sessionId=<sessionId>&token=<jwt>\`
 
-**Message format (server → client):**
-\`\`\`json
-{
-  "type": "comment",
-  "data": {
-    "id": "uuid",
-    "platform": "tiktok",
-    "authorName": "Bob Viewer",
-    "content": "Great stream!",
-    "receivedAt": "2026-05-19T10:00:00.000Z"
-  }
-}
-\`\`\`
+**Server messages:**
+- \`{ "type": "comment", "data": { ...comment } }\` — new comment received
+- \`{ "type": "ping" }\` — keepalive (every 30 s)
+- \`{ "type": "session_ended" }\` — session ended, connection will close
 
-**Connection lifecycle:**
-- The server sends a \`ping\` frame every 30 s.
-- If the session ends, the server sends \`{ "type": "session_ended" }\` and closes the connection.
+**Client messages:**
+No client-to-server messages are expected on this connection. Use \`POST /comments\` and \`POST /comments/:id/reply\` for sending.
         `.trim(),
         security: bearerAuth,
         querystring: {
           type: 'object',
           required: ['sessionId'],
           properties: {
-            sessionId: {
-              type: 'string',
-              format: 'uuid',
-              description: 'Live session to stream comments from.',
-            },
-            token: {
-              type: 'string',
-              description: 'JWT access token (alternative to Authorization header, for browser WebSocket clients).',
-            },
+            sessionId: { type: 'string', format: 'uuid' },
+            token: { type: 'string', description: 'JWT (alternative to Authorization header for browser WebSocket clients).' },
           },
         },
         response: {
           101: { description: 'Switching Protocols — WebSocket connection established.' },
-          401: errorSchema('Missing or invalid Bearer token.'),
-          404: errorSchema('Session not found.'),
+          401: { description: 'Unauthorized.' },
         },
       },
     },
-    async (_request, reply) => {
-      return reply.status(101).send();
+    async (socket, request) => {
+      const query = request.query as { sessionId?: string; token?: string };
+      const sessionId = query.sessionId;
+
+      if (!sessionId) {
+        socket.close(1008, 'sessionId required');
+        return;
+      }
+
+      if (!sessionSockets.has(sessionId)) {
+        sessionSockets.set(sessionId, new Set());
+      }
+      sessionSockets.get(sessionId)!.add(socket);
+
+      const ping = setInterval(() => {
+        try { socket.send(JSON.stringify({ type: 'ping' })); } catch { /* ignore */ }
+      }, 30_000);
+
+      socket.on('close', () => {
+        clearInterval(ping);
+        const set = sessionSockets.get(sessionId);
+        if (set) {
+          set.delete(socket);
+          if (set.size === 0) sessionSockets.delete(sessionId);
+        }
+      });
     },
   );
 }

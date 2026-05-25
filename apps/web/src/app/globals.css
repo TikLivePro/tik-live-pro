@@ -108,4 +108,37 @@
     background-color: hsl(var(--card));
     color: hsl(var(--foreground));
   }
+
+  /* Safari-style thin scrollbars — brand-colored, hidden until hover */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  *:hover {
+    scrollbar-color: hsl(var(--brand) / 0.4) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 9999px;
+    transition: background-color 0.2s ease;
+  }
+
+  *:hover::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--brand) / 0.35);
+  }
+
+  *:hover::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--brand) / 0.65);
+  }
 }

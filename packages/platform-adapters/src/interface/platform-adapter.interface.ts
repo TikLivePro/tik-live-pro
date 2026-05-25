@@ -52,4 +52,20 @@ export interface IPlatformAdapter {
     socialAccountId: SocialAccountId,
     cursor: string | null,
   ): Promise<CommentPage>;
+
+  postComment(
+    accessToken: string,
+    sessionId: LiveSessionId,
+    socialAccountId: SocialAccountId,
+    content: string,
+  ): Promise<Comment>;
+
+  replyToComment(
+    accessToken: string,
+    sessionId: LiveSessionId,
+    socialAccountId: SocialAccountId,
+    parentPlatformCommentId: string,
+    parentAuthorPlatformUserId: string,
+    content: string,
+  ): Promise<Comment>;
 }

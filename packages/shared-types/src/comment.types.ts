@@ -9,7 +9,10 @@ export interface Comment {
   platform: SocialPlatform;
   platformCommentId: string;
   authorName: string;
+  authorPlatformUserId: string;
   authorAvatarUrl: string | null;
   content: string;
+  mediaUrls?: string[] | null;
+  replyToCommentId?: CommentId;
   receivedAt: Date;
 }

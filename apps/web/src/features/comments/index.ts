@@ -1,4 +1,14 @@
 export { CommentFeed } from './components/CommentFeed';
 export { CommentItem } from './components/CommentItem';
+export { CommentInput } from './components/CommentInput';
+export { AttachmentPreview } from './components/AttachmentPreview';
+export { EmojiPickerPopover } from './components/EmojiPickerPopover';
+export { GifPickerPopover } from './components/GifPickerPopover';
+export { LinkInsertPopover } from './components/LinkInsertPopover';
+export { LinkPreviewCard } from './components/LinkPreviewCard';
+export { LinkPreviewSquare } from './components/LinkPreviewSquare';
 export { useComments } from './hooks/useComments';
+export { useLinkPreview } from './hooks/useLinkPreview';
+export type { LinkPreviewData } from './interfaces/link-preview.interfaces';
 export * from './consts/comments.consts';
+export type * from './interfaces/comment-actions.interfaces';

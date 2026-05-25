@@ -4,18 +4,32 @@ import fastifyCors from '@fastify/cors';
 import fastifyHelmet from '@fastify/helmet';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
+import fastifyWebsocket from '@fastify/websocket';
 import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { z } from 'zod';
 import { parseEnv, baseEnvSchema } from '@tik-live-pro/config';
 import { createLogger } from '@tik-live-pro/logger';
-import { NatsJetStreamClient, ensureStreams } from '@tik-live-pro/events';
-import { registerCommentsRoutes } from './interfaces/http/comments.routes.js';
+import { NatsJetStreamClient, ensureStreams, Subjects } from '@tik-live-pro/events';
+import type { SessionCreatedPayload, CommentReceivedPayload } from '@tik-live-pro/events';
+import { consumerOpts, createInbox } from 'nats';
+import { AdapterRegistry, TikTokAdapter, FacebookAdapter } from '@tik-live-pro/platform-adapters';
+import { registerCommentsRoutes, broadcastComment } from './interfaces/http/comments.routes.js';
+import { CommentPoller } from './application/comment-poller.js';
+import { CommentPoster } from './application/comment-poster.js';
+import { SessionRegistry } from './application/session-registry.js';
+import type { SocialPlatform, LiveSessionId, SocialAccountId } from '@tik-live-pro/shared-types';
 
 const envSchema = baseEnvSchema.extend({
   DATABASE_URL: z.string().url(),
   JWT_SECRET: z.string().min(64),
   COMMENT_POLL_INTERVAL_MS: z.coerce.number().default(2000),
+  INTEGRATIONS_SERVICE_URL: z.string().url().default('http://localhost:3005'),
+  INTERNAL_API_KEY: z.string().min(32),
+  TIKTOK_CLIENT_KEY: z.string().default(''),
+  TIKTOK_CLIENT_SECRET: z.string().default(''),
+  FACEBOOK_APP_ID: z.string().default(''),
+  FACEBOOK_APP_SECRET: z.string().default(''),
 });
 
 const env = parseEnv(envSchema);
@@ -30,6 +44,122 @@ async function bootstrap(): Promise<void> {
   logger.info({ natsUrl: env.NATS_URL }, 'Connected to NATS');
   await ensureStreams(nats.getJetStreamManager());
 
+  // ---------------------------------------------------------------------------
+  // Platform adapters
+  // ---------------------------------------------------------------------------
+  const adapterRegistry = new AdapterRegistry();
+  adapterRegistry.register(new TikTokAdapter({ clientKey: env.TIKTOK_CLIENT_KEY, clientSecret: env.TIKTOK_CLIENT_SECRET }, logger));
+  adapterRegistry.register(new FacebookAdapter({ appId: env.FACEBOOK_APP_ID, appSecret: env.FACEBOOK_APP_SECRET }, logger));
+
+  // ---------------------------------------------------------------------------
+  // Application services
+  // ---------------------------------------------------------------------------
+  const sessionRegistry = new SessionRegistry(logger);
+  const commentPoller = new CommentPoller(adapterRegistry, nats, logger);
+  const commentPoster = new CommentPoster(
+    adapterRegistry,
+    sessionRegistry,
+    nats,
+    logger,
+    env.INTEGRATIONS_SERVICE_URL,
+    env.INTERNAL_API_KEY,
+  );
+
+  // ---------------------------------------------------------------------------
+  // NATS subscribers
+  // ---------------------------------------------------------------------------
+  const js = nats.getJetStream();
+
+  const mkOpts = (durable: string) => {
+    const o = consumerOpts();
+    o.durable(durable);
+    o.deliverNew();
+    o.ackExplicit();
+    o.manualAck();
+    o.deliverTo(createInbox()); // nats v2: push consumers require a deliver_subject
+    return o;
+  };
+
+  // session.created → register accounts in session registry
+  const sessionCreatedSub = await js.subscribe(Subjects.SESSION_CREATED, mkOpts('comments-session-created'));
+  void (async () => {
+    for await (const msg of sessionCreatedSub) {
+      try {
+        const payload = msg.json<SessionCreatedPayload>();
+        sessionRegistry.register(
+          payload.sessionId,
+          payload.destinationAccountIds.map((id) => ({
+            socialAccountId: id as SocialAccountId,
+            platform: 'unknown' as SocialPlatform, // platform resolved when polling starts
+          })),
+        );
+        msg.ack();
+      } catch (err) {
+        logger.error({ err }, 'Failed to process session.created event');
+        msg.nak();
+      }
+    }
+  })();
+
+  // session.starting → start polling
+  const sessionStartingSub = await js.subscribe(Subjects.SESSION_STARTING, mkOpts('comments-session-starting'));
+  void (async () => {
+    for await (const msg of sessionStartingSub) {
+      try {
+        const payload = msg.json<{ sessionId: LiveSessionId; userId: string }>();
+        const accounts = sessionRegistry.getAccounts(payload.sessionId);
+        for (const account of accounts) {
+          commentPoller.start({
+            sessionId: payload.sessionId,
+            socialAccountId: account.socialAccountId,
+            platform: account.platform,
+            accessToken: '', // Token will be fetched dynamically by poster; poller uses integrations service
+            cursor: null,
+            intervalMs: env.COMMENT_POLL_INTERVAL_MS,
+          });
+        }
+        msg.ack();
+      } catch (err) {
+        logger.error({ err }, 'Failed to process session.starting event');
+        msg.nak();
+      }
+    }
+  })();
+
+  // session.ended → stop polling, clean up registry
+  const sessionEndedSub = await js.subscribe(Subjects.SESSION_ENDED, mkOpts('comments-session-ended'));
+  void (async () => {
+    for await (const msg of sessionEndedSub) {
+      try {
+        const payload = msg.json<{ sessionId: LiveSessionId }>();
+        commentPoller.stopAll(payload.sessionId);
+        sessionRegistry.remove(payload.sessionId);
+        msg.ack();
+      } catch (err) {
+        logger.error({ err }, 'Failed to process session.ended event');
+        msg.nak();
+      }
+    }
+  })();
+
+  // comment.received → push to WebSocket clients
+  const commentReceivedSub = await js.subscribe(Subjects.COMMENT_RECEIVED, mkOpts('comments-comment-received'));
+  void (async () => {
+    for await (const msg of commentReceivedSub) {
+      try {
+        const comment = msg.json<CommentReceivedPayload>();
+        broadcastComment(comment.sessionId, comment);
+        msg.ack();
+      } catch (err) {
+        logger.error({ err }, 'Failed to process comment.received event');
+        msg.nak();
+      }
+    }
+  })();
+
+  // ---------------------------------------------------------------------------
+  // Fastify server
+  // ---------------------------------------------------------------------------
   const fastify = Fastify({
     logger: false,
     trustProxy: true,
@@ -39,17 +169,15 @@ async function bootstrap(): Promise<void> {
   await fastify.register(fastifyHelmet);
   await fastify.register(fastifyCors, { origin: true });
   await fastify.register(fastifyJwt, { secret: env.JWT_SECRET });
+  await fastify.register(fastifyWebsocket);
 
-  // ---------------------------------------------------------------------------
-  // OpenAPI / Swagger
-  // ---------------------------------------------------------------------------
   await fastify.register(fastifySwagger, {
     openapi: {
       openapi: '3.1.0',
       info: {
         title: 'TikLivePro — Comments Service',
         description: `
-Real-time comment aggregation service — collects and serves comments from TikTok and Facebook during live sessions.
+Real-time comment aggregation service — collects, stores, and serves comments from TikTok and Facebook during live sessions. Also supports posting comments and replying to viewer comments.
 
 ## How comments are collected
 The \`CommentPoller\` runs a per-session, per-platform polling loop (default interval: **${env.COMMENT_POLL_INTERVAL_MS} ms**):
@@ -59,13 +187,13 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
 4. On \`session.ended\` NATS event → stops all pollers for the session.
 
 ## Consuming comments
-Two mechanisms are available:
 - **REST:** \`GET /comments?sessionId=<id>\` — paginated historical comments.
 - **WebSocket:** \`ws://<host>/comments/ws?sessionId=<id>\` — real-time push feed.
 
-## Authorization
-All endpoints require a JWT Bearer token.
-      `.trim(),
+## Posting comments
+- **POST /comments** — post to all connected platforms for a session.
+- **POST /comments/:id/reply** — reply to a viewer comment on the platform it came from.
+        `.trim(),
         version: '1.0.0',
         contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklive.pro' },
         license: { name: 'Proprietary' },
@@ -88,7 +216,7 @@ All endpoints require a JWT Bearer token.
         },
       },
       tags: [
-        { name: 'Comments', description: 'Comment retrieval and real-time WebSocket stream.' },
+        { name: 'Comments', description: 'Comment retrieval, real-time stream, and posting.' },
         { name: 'Health', description: 'Kubernetes liveness / readiness probes.' },
       ],
     },
@@ -106,7 +234,7 @@ All endpoints require a JWT Bearer token.
     staticCSP: true,
   });
 
-  registerCommentsRoutes(fastify, { db });
+  registerCommentsRoutes(fastify, { db, poster: commentPoster });
 
   fastify.get(
     '/health',
@@ -148,6 +276,7 @@ All endpoints require a JWT Bearer token.
   logger.info({ port: env.PORT }, 'Comments service listening — docs at /docs');
 
   const shutdown = async (): Promise<void> => {
+    commentPoller.stopAll('' as LiveSessionId);
     await fastify.close();
     await nats.drain();
     await pool.end();

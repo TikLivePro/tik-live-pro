@@ -1,5 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { createDecipheriv } from 'node:crypto';
+import { inArray } from 'drizzle-orm';
+import { socialAccounts } from '../../infrastructure/db/schema.js';
 
 // ---------------------------------------------------------------------------
 // Reusable schema fragments
@@ -66,7 +69,22 @@ const socialAccountSchema = {
 
 // ---------------------------------------------------------------------------
 
-export function registerIntegrationsRoutes(fastify: FastifyInstance, _deps: { db: NodePgDatabase }): void {
+function decryptToken(encryptedHex: string, keyHex: string): string {
+  const key = Buffer.from(keyHex.padEnd(64, '0').slice(0, 64), 'hex');
+  const parts = encryptedHex.split(':');
+  if (parts.length !== 3) throw new Error('Invalid encrypted token format');
+  const iv = Buffer.from(parts[0]!, 'hex');
+  const tag = Buffer.from(parts[1]!, 'hex');
+  const ciphertext = Buffer.from(parts[2]!, 'hex');
+  const decipher = createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+}
+
+export function registerIntegrationsRoutes(
+  fastify: FastifyInstance,
+  deps: { db: NodePgDatabase; tokenEncryptionKey: string; internalApiKey: string },
+): void {
   // GET /integrations/accounts -----------------------------------------------
   fastify.get(
     '/integrations/accounts',
@@ -279,6 +297,66 @@ Callback URL invoked by the social platform after the user completes the OAuth c
     },
     async (_request, reply) => {
       return reply.redirect('https://app.tiklive.pro/integrations?success=true');
+    },
+  );
+
+  // POST /internal/accounts/tokens -----------------------------------------
+  // Internal endpoint: returns decrypted access tokens for given account IDs.
+  // Protected by X-Internal-Secret header — not exposed through the API gateway.
+  fastify.post<{ Body: { accountIds: string[] } }>(
+    '/internal/accounts/tokens',
+    {
+      schema: {
+        tags: ['Internal'],
+        summary: 'Get decrypted tokens for social accounts (internal use only)',
+        body: {
+          type: 'object',
+          required: ['accountIds'],
+          properties: {
+            accountIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            description: 'Map of accountId → token info',
+          },
+          401: errorSchema('Missing or invalid internal secret.'),
+        },
+      },
+    },
+    async (request, reply) => {
+      if (request.headers['x-internal-secret'] !== deps.internalApiKey) {
+        return reply.status(401).send({ error: { code: 'UNAUTHORIZED', message: 'Invalid internal secret' } });
+      }
+
+      const { accountIds } = request.body;
+      if (accountIds.length === 0) return reply.status(200).send({ data: {} });
+
+      const rows = await deps.db
+        .select({
+          id: socialAccounts.id,
+          platform: socialAccounts.platform,
+          platformUserId: socialAccounts.platformUserId,
+          accessTokenEncrypted: socialAccounts.accessTokenEncrypted,
+        })
+        .from(socialAccounts)
+        .where(inArray(socialAccounts.id, accountIds));
+
+      const result: Record<string, { accessToken: string; platform: string; platformUserId: string }> = {};
+      for (const row of rows) {
+        try {
+          result[row.id] = {
+            accessToken: decryptToken(row.accessTokenEncrypted, deps.tokenEncryptionKey),
+            platform: row.platform,
+            platformUserId: row.platformUserId,
+          };
+        } catch {
+          // Skip accounts with decryption errors
+        }
+      }
+
+      return reply.status(200).send({ data: result });
     },
   );
 }

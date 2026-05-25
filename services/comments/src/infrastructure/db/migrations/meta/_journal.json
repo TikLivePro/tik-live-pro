@@ -8,6 +8,13 @@
       "when": 1779336152240,
       "tag": "0000_plain_meteorite",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779593348836,
+      "tag": "0001_windy_mastermind",
+      "breakpoints": true
     }
   ]
 }

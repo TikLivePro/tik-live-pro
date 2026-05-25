@@ -8,8 +8,10 @@ export const comments = pgTable(
     platform: varchar('platform', { length: 20 }).notNull(),
     platformCommentId: varchar('platform_comment_id', { length: 255 }).notNull(),
     authorName: varchar('author_name', { length: 255 }).notNull(),
+    authorPlatformUserId: varchar('author_platform_user_id', { length: 255 }).notNull().default(''),
     authorAvatarUrl: text('author_avatar_url'),
     content: text('content').notNull(),
+    replyToCommentId: uuid('reply_to_comment_id'),
     receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

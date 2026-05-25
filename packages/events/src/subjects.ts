@@ -35,6 +35,8 @@ export const Subjects = {
   // Comments
   COMMENT_RECEIVED: 'comment.received',
   COMMENT_BATCH_RECEIVED: 'comment.batch_received',
+  COMMENT_POSTED: 'comment.posted',
+  COMMENT_REPLIED: 'comment.replied',
 
   // Billing
   BILLING_SUBSCRIPTION_CREATED: 'billing.subscription.created',

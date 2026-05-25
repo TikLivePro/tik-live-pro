@@ -1,4 +1,4 @@
-import { StringCodec, consumerOpts } from 'nats';
+import { StringCodec, consumerOpts, createInbox } from 'nats';
 import type { NatsJetStreamClient } from '@tik-live-pro/events';
 import { Subjects } from '@tik-live-pro/events';
 import type { SessionCreatedPayload, SessionStatusChangedPayload } from '@tik-live-pro/events';
@@ -31,6 +31,7 @@ export class SessionEventConsumer {
     opts.durable('stream-orchestrator-session-created');
     opts.ackExplicit();
     opts.deliverNew();
+    opts.deliverTo(createInbox());
 
     try {
       const sub = await js.subscribe(Subjects.SESSION_CREATED, opts);
@@ -61,6 +62,7 @@ export class SessionEventConsumer {
     opts.durable('stream-orchestrator-session-starting');
     opts.ackExplicit();
     opts.deliverNew();
+    opts.deliverTo(createInbox());
 
     try {
       const sub = await js.subscribe(Subjects.SESSION_STARTING, opts);
@@ -88,6 +90,7 @@ export class SessionEventConsumer {
     opts.durable('stream-orchestrator-session-ended');
     opts.ackExplicit();
     opts.deliverNew();
+    opts.deliverTo(createInbox());
 
     try {
       const sub = await js.subscribe(Subjects.SESSION_ENDED, opts);

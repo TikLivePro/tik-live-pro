@@ -166,7 +166,7 @@ export class FacebookAdapter implements IPlatformAdapter {
     }
 
     const data = await response.json() as {
-      data: Array<{ id: string; from: { name: string }; message: string; created_time: string }>;
+      data: Array<{ id: string; from: { id: string; name: string }; message: string; created_time: string }>;
       paging?: { cursors?: { after: string } };
     };
 
@@ -176,6 +176,7 @@ export class FacebookAdapter implements IPlatformAdapter {
       platform: SocialPlatform.FACEBOOK,
       platformCommentId: c.id,
       authorName: c.from.name,
+      authorPlatformUserId: c.from.id,
       authorAvatarUrl: null,
       content: c.message,
       receivedAt: new Date(c.created_time),
@@ -185,6 +186,78 @@ export class FacebookAdapter implements IPlatformAdapter {
     return {
       comments,
       nextCursor: data.paging?.cursors?.after ?? null,
+    };
+  }
+
+  async postComment(
+    accessToken: string,
+    sessionId: LiveSessionId,
+    socialAccountId: SocialAccountId,
+    content: string,
+  ): Promise<Comment> {
+    this.logger.debug({ sessionId, socialAccountId, contentLength: content.length }, 'Facebook: posting comment');
+    const params = new URLSearchParams({ message: content, access_token: accessToken });
+    const response = await fetch(`${this.graphBase}/${socialAccountId}/comments`, {
+      method: 'POST',
+      body: params,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      this.logger.error({ sessionId, status: response.status, body: text }, 'Facebook: failed to post comment');
+      throw new Error(`Facebook post comment failed: ${text}`);
+    }
+
+    const data = await response.json() as { id: string };
+
+    this.logger.info({ sessionId, platformCommentId: data.id }, 'Facebook: comment posted');
+    return {
+      id: randomUUID() as Comment['id'],
+      sessionId,
+      platform: SocialPlatform.FACEBOOK,
+      platformCommentId: data.id,
+      authorName: '',
+      authorPlatformUserId: '',
+      authorAvatarUrl: null,
+      content,
+      receivedAt: new Date(),
+    };
+  }
+
+  async replyToComment(
+    accessToken: string,
+    sessionId: LiveSessionId,
+    _socialAccountId: SocialAccountId,
+    parentPlatformCommentId: string,
+    _parentAuthorPlatformUserId: string,
+    content: string,
+  ): Promise<Comment> {
+    this.logger.debug({ sessionId, parentPlatformCommentId }, 'Facebook: replying to comment');
+    const params = new URLSearchParams({ message: content, access_token: accessToken });
+    const response = await fetch(`${this.graphBase}/${parentPlatformCommentId}/comments`, {
+      method: 'POST',
+      body: params,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      this.logger.error({ sessionId, status: response.status, body: text }, 'Facebook: failed to reply to comment');
+      throw new Error(`Facebook reply comment failed: ${text}`);
+    }
+
+    const data = await response.json() as { id: string };
+
+    this.logger.info({ sessionId, platformCommentId: data.id }, 'Facebook: comment reply posted');
+    return {
+      id: randomUUID() as Comment['id'],
+      sessionId,
+      platform: SocialPlatform.FACEBOOK,
+      platformCommentId: data.id,
+      authorName: '',
+      authorPlatformUserId: '',
+      authorAvatarUrl: null,
+      content,
+      receivedAt: new Date(),
     };
   }
 

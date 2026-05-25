@@ -21,6 +21,7 @@ const envSchema = baseEnvSchema.extend({
   FACEBOOK_APP_SECRET: z.string(),
   OAUTH_REDIRECT_BASE_URL: z.string().url(),
   TOKEN_ENCRYPTION_KEY: z.string().min(32),
+  INTERNAL_API_KEY: z.string().min(32),
 });
 
 const env = parseEnv(envSchema);
@@ -116,7 +117,11 @@ All endpoints except the OAuth callback require a JWT Bearer token.
     staticCSP: true,
   });
 
-  registerIntegrationsRoutes(fastify, { db });
+  registerIntegrationsRoutes(fastify, {
+    db,
+    tokenEncryptionKey: env.TOKEN_ENCRYPTION_KEY,
+    internalApiKey: env.INTERNAL_API_KEY,
+  });
 
   fastify.get(
     '/health',

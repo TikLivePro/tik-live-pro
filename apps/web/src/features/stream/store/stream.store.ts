@@ -7,6 +7,7 @@ const MAX_COMMENTS = 200;
 interface StreamState {
   currentSession: LiveSession | null;
   comments: Comment[];
+  replyingTo: Comment | null;
   isStarting: boolean;
   isEnding: boolean;
   setSession: (session: LiveSession | null) => void;
@@ -14,6 +15,7 @@ interface StreamState {
   addComment: (comment: Comment) => void;
   addComments: (comments: Comment[]) => void;
   clearComments: () => void;
+  setReplyingTo: (comment: Comment | null) => void;
   setStarting: (value: boolean) => void;
   setEnding: (value: boolean) => void;
 }
@@ -21,6 +23,7 @@ interface StreamState {
 export const useStreamStore = create<StreamState>()((set) => ({
   currentSession: null,
   comments: [],
+  replyingTo: null,
   isStarting: false,
   isEnding: false,
 
@@ -44,6 +47,7 @@ export const useStreamStore = create<StreamState>()((set) => ({
     }),
 
   clearComments: () => set({ comments: [] }),
+  setReplyingTo: (comment) => set({ replyingTo: comment }),
   setStarting: (value) => set({ isStarting: value }),
   setEnding: (value) => set({ isEnding: value }),
 }));

@@ -10,6 +10,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@emoji-mart/data": "^1.2.1",
+    "@emoji-mart/react": "^1.1.1",
+    "@giphy/js-fetch-api": "^5.8.0",
+    "@giphy/js-types": "^5.1.0",
     "@tanstack/react-query": "^5.75.0",
     "@tik-live-pro/i18n": "workspace:*",
     "@tik-live-pro/shared-types": "workspace:*",
