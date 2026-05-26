@@ -123,6 +123,10 @@
       "freemium": "Le plan gratuit permet jusqu'à 2 comptes connectés",
       "upgrade": "Passez au Premium pour des comptes illimités"
     },
+    "modal": {
+      "title": "Connecter un compte",
+      "subtitle": "Choisissez une plateforme à connecter à votre stream"
+    },
     "errors": {
       "connectFailed": "Échec de la connexion du compte",
       "disconnectFailed": "Échec de la déconnexion du compte",
@@ -160,6 +164,108 @@
     "accountConnected": "Compte {platform} connecté",
     "accountDisconnected": "Compte {platform} déconnecté",
     "paymentFailed": "Paiement échoué — veuillez mettre à jour votre mode de paiement"
+  },
+  "legal": {
+    "backHome": "Retour à l'accueil",
+    "lastUpdated": "Dernière mise à jour : 26 mai 2026",
+    "terms": {
+      "title": "Conditions d'utilisation",
+      "sections": {
+        "acceptance": {
+          "title": "1. Acceptation des conditions",
+          "body": "En accédant à TikLivePro (« le Service ») ou en l'utilisant, vous acceptez d'être lié par ces Conditions d'utilisation. Si vous n'acceptez pas ces conditions, veuillez ne pas utiliser le Service."
+        },
+        "description": {
+          "title": "2. Description du service",
+          "body": "TikLivePro est une plateforme de streaming en direct permettant aux utilisateurs de diffuser simultanément sur plusieurs réseaux sociaux, dont TikTok et Facebook, et de visualiser les commentaires agrégés en temps réel de toutes les plateformes connectées depuis un tableau de bord unique."
+        },
+        "eligibility": {
+          "title": "3. Éligibilité",
+          "body": "Vous devez avoir au moins 18 ans pour utiliser le Service. En utilisant TikLivePro, vous déclarez remplir cette condition. Si vous avez moins de 18 ans, vous ne pouvez utiliser le Service qu'avec le consentement vérifiable d'un parent ou tuteur légal."
+        },
+        "account": {
+          "title": "4. Responsabilité du compte",
+          "body": "Vous êtes responsable de la confidentialité de vos identifiants de connexion et de toutes les activités réalisées sur votre compte. Vous vous engagez à nous notifier immédiatement de tout accès non autorisé. TikLivePro ne peut être tenu responsable de toute perte résultant d'une utilisation non autorisée de vos identifiants."
+        },
+        "acceptable": {
+          "title": "5. Utilisation acceptable",
+          "body": "Vous vous engagez à ne pas utiliser le Service pour diffuser des contenus illégaux, nuisibles, menaçants, abusifs, diffamatoires ou autrement répréhensibles. Vous devez respecter les conditions d'utilisation de toutes les plateformes tierces connectées (TikTok, Facebook). Toute violation peut entraîner une suspension immédiate du compte sans remboursement."
+        },
+        "thirdParty": {
+          "title": "6. Plateformes tierces",
+          "body": "TikLivePro s'intègre à TikTok, Facebook et d'autres plateformes. Votre utilisation de ces intégrations est soumise aux conditions d'utilisation et politiques propres à chaque plateforme. TikLivePro n'est pas responsable des actions prises par des plateformes tierces, y compris la suspension de compte, la suppression de contenu ou la révocation d'accès à leur API."
+        },
+        "billing": {
+          "title": "7. Abonnements et paiements",
+          "body": "Certaines fonctionnalités de TikLivePro nécessitent un abonnement payant. Les frais d'abonnement sont facturés de manière récurrente selon le choix effectué lors du paiement. Tous les paiements sont définitifs et non remboursables sauf disposition légale contraire. Vous pouvez annuler votre abonnement à tout moment ; l'annulation prend effet à la fin de la période de facturation en cours."
+        },
+        "ip": {
+          "title": "8. Propriété intellectuelle",
+          "body": "Tous les contenus, logos et documents fournis par TikLivePro sont la propriété de TikLivePro ou lui sont concédés sous licence et ne peuvent être reproduits ou distribués sans autorisation écrite. Vous conservez l'entière propriété de tous les contenus que vous créez et diffusez via le Service."
+        },
+        "liability": {
+          "title": "9. Limitation de responsabilité",
+          "body": "TikLivePro est fourni « tel quel » sans garantie d'aucune sorte, expresse ou implicite. Dans la mesure permise par la loi applicable, TikLivePro ne pourra être tenu responsable des dommages indirects, accessoires, spéciaux ou consécutifs découlant de votre utilisation du Service."
+        },
+        "termination": {
+          "title": "10. Résiliation",
+          "body": "TikLivePro se réserve le droit de suspendre ou de résilier votre compte à tout moment en cas de violation de ces Conditions ou pour toute autre raison à notre seule discrétion. Vous pouvez également résilier votre compte à tout moment en contactant notre équipe de support."
+        },
+        "changes": {
+          "title": "11. Modifications des conditions",
+          "body": "Nous pouvons mettre à jour ces Conditions d'utilisation de temps à autre. La poursuite de l'utilisation du Service après toute modification constitue votre acceptation des Conditions mises à jour. Nous vous informerons des modifications importantes par e-mail à l'adresse associée à votre compte."
+        },
+        "contact": {
+          "title": "12. Contact",
+          "body": "Pour toute question ou préoccupation relative à ces Conditions d'utilisation, veuillez nous contacter à : legal@tiklive.pro"
+        }
+      }
+    },
+    "privacy": {
+      "title": "Politique de confidentialité",
+      "sections": {
+        "intro": {
+          "title": "1. Introduction",
+          "body": "TikLivePro (« nous ») s'engage à protéger vos données personnelles. Cette Politique de confidentialité explique comment nous collectons, utilisons, stockons et partageons vos informations lorsque vous utilisez notre Service, en conformité avec le Règlement général sur la protection des données (RGPD) et les lois applicables en matière de confidentialité."
+        },
+        "collect": {
+          "title": "2. Données que nous collectons",
+          "body": "Nous collectons : (a) les informations de compte que vous fournissez — nom, adresse e-mail et mot de passe ; (b) les jetons d'accès aux plateformes sociales lors de la connexion de comptes TikTok ou Facebook, chiffrés au repos avec AES-256-GCM ; (c) les données d'utilisation incluant la durée des sessions, les statistiques de streaming et les interactions ; (d) les données techniques telles que l'adresse IP, le type de navigateur et les informations sur l'appareil."
+        },
+        "use": {
+          "title": "3. Utilisation de vos données",
+          "body": "Nous utilisons vos données pour : fournir et améliorer continuellement le Service ; vérifier votre identité et sécuriser votre compte ; connecter les plateformes tierces en votre nom pour le streaming ; traiter les paiements d'abonnement ; envoyer des notifications transactionnelles et de service ; et respecter les obligations légales."
+        },
+        "sharing": {
+          "title": "4. Partage des données",
+          "body": "Nous partageons des données avec : les processeurs de paiement (Stripe) uniquement à des fins de facturation ; les plateformes sociales (TikTok, Facebook) dans la mesure nécessaire pour activer les fonctionnalités de streaming et de commentaires que vous avez autorisées ; des fournisseurs d'analyse sous des accords stricts de traitement des données. Nous ne vendons pas vos données personnelles à des tiers."
+        },
+        "retention": {
+          "title": "5. Conservation des données",
+          "body": "Nous conservons les données de votre compte tant que votre compte est actif. Les jetons d'accès aux plateformes sociales sont supprimés immédiatement lors de la déconnexion d'un compte. Lors de la suppression du compte, toutes les données personnelles sont définitivement effacées dans les 30 jours, sauf conservation requise par la loi."
+        },
+        "rights": {
+          "title": "6. Vos droits (RGPD)",
+          "body": "Si vous résidez dans l'Espace économique européen, vous avez le droit d'accéder, de rectifier, de supprimer ou de porter vos données personnelles. Vous pouvez également vous opposer au traitement ou demander sa limitation. Pour exercer ces droits, contactez-nous à privacy@tiklive.pro. Nous répondrons dans un délai de 30 jours."
+        },
+        "cookies": {
+          "title": "7. Cookies",
+          "body": "Nous utilisons des cookies essentiels pour l'authentification et la gestion des sessions, strictement nécessaires au fonctionnement du Service. Nous utilisons également des cookies analytiques pour comprendre l'utilisation du Service et l'améliorer. Vous pouvez désactiver les cookies non essentiels à tout moment dans les paramètres de votre navigateur sans affecter les fonctionnalités principales."
+        },
+        "security": {
+          "title": "8. Sécurité",
+          "body": "Nous mettons en œuvre des mesures de sécurité conformes aux standards du secteur : chiffrement AES-256-GCM pour les jetons OAuth stockés, HTTPS/TLS pour toutes les données en transit, et audits de sécurité réguliers. Aucun système n'est totalement sécurisé. Veuillez protéger vos identifiants de connexion et nous signaler immédiatement tout soupçon de violation."
+        },
+        "changes": {
+          "title": "9. Modifications de cette politique",
+          "body": "Nous pouvons mettre à jour cette Politique de confidentialité périodiquement pour refléter les évolutions de nos pratiques ou de la législation applicable. Nous vous informerons des modifications importantes par e-mail ou notification dans l'application au moins 14 jours avant leur entrée en vigueur. La poursuite de l'utilisation du Service après les modifications indique votre acceptation."
+        },
+        "contact": {
+          "title": "10. Contact et demandes de données",
+          "body": "Pour toute demande relative à la confidentialité, l'accès aux données ou l'exercice de vos droits, contactez notre équipe Protection des données à : privacy@tiklive.pro. Nous nous engageons à traiter vos demandes dans les meilleurs délais."
+        }
+      }
+    }
   },
   "settings": {
     "title": "Paramètres",
