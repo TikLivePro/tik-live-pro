@@ -72,6 +72,7 @@ COPY . .
 
 # Rebuild any native addons for the build environment
 RUN pnpm install --frozen-lockfile \
+      --filter "@tik-live-pro/${PACKAGE_NAME}..." \
       --prod=false
 
 # Build shared packages in dependency order, then the service itself
