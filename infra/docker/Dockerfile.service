@@ -74,8 +74,16 @@ COPY . .
 RUN pnpm install --frozen-lockfile \
       --prod=false
 
-# Compile: builds the target package AND all workspace dependencies it needs
-RUN pnpm --filter "@tik-live-pro/${PACKAGE_NAME}..." build
+# Build shared packages in dependency order, then the service itself
+RUN pnpm --filter "@tik-live-pro/shared-types" build \
+ && pnpm --filter "@tik-live-pro/config" build \
+ && pnpm --filter "@tik-live-pro/i18n" build \
+ && pnpm --filter "@tik-live-pro/logger" build \
+ && pnpm --filter "@tik-live-pro/validation" build \
+ && pnpm --filter "@tik-live-pro/domain" build \
+ && pnpm --filter "@tik-live-pro/events" build \
+ && pnpm --filter "@tik-live-pro/platform-adapters" build \
+ && pnpm --filter "@tik-live-pro/${PACKAGE_NAME}" build
 
 # ── Stage 4: runtime (minimal production image) ───────────────────────────────
 FROM node:${NODE_VERSION}-alpine AS runtime

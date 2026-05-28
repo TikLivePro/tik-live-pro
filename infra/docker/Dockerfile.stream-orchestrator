@@ -51,7 +51,15 @@ RUN pnpm install --frozen-lockfile \
       --filter "@tik-live-pro/stream-orchestrator..." \
       --prod=false
 
-RUN pnpm --filter "@tik-live-pro/stream-orchestrator..." build
+RUN pnpm --filter "@tik-live-pro/shared-types" build \
+ && pnpm --filter "@tik-live-pro/config" build \
+ && pnpm --filter "@tik-live-pro/i18n" build \
+ && pnpm --filter "@tik-live-pro/logger" build \
+ && pnpm --filter "@tik-live-pro/validation" build \
+ && pnpm --filter "@tik-live-pro/domain" build \
+ && pnpm --filter "@tik-live-pro/events" build \
+ && pnpm --filter "@tik-live-pro/platform-adapters" build \
+ && pnpm --filter "@tik-live-pro/stream-orchestrator" build
 
 # ── Stage 4: runtime ──────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-alpine AS runtime

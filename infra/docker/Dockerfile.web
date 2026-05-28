@@ -50,7 +50,8 @@ RUN pnpm install --frozen-lockfile --filter "@tik-live-pro/web..." --prod=false
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN pnpm --filter "@tik-live-pro/i18n" build \
+RUN pnpm --filter "@tik-live-pro/shared-types" build \
+ && pnpm --filter "@tik-live-pro/i18n" build \
  && pnpm --filter "@tik-live-pro/web" build
 
 # ── Stage 4: runtime (minimal — standalone bundle only) ───────────────────────
