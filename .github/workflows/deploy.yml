@@ -145,6 +145,8 @@ jobs:
           fi
           # metadata-action génère "1.2.3" (sans 'v') — on strip le préfixe
           echo "value=${TAG#v}" >> "$GITHUB_OUTPUT"
+          # ghcr.io registry names must be lowercase
+          echo "registry=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       - name: Copy compose file to server
         uses: appleboy/scp-action@v0.1.7
@@ -159,7 +161,7 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           IMAGE_TAG: ${{ steps.tag.outputs.value }}
-          REGISTRY: ghcr.io/${{ github.repository }}
+          REGISTRY: ${{ steps.tag.outputs.registry }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
           AUTH_DATABASE_URL: ${{ secrets.AUTH_DATABASE_URL }}
