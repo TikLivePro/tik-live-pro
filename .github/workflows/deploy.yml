@@ -219,7 +219,13 @@ jobs:
               "GRAFANA_PASSWORD=$GRAFANA_PASSWORD" \
               > .env
 
-            docker compose -f docker-compose.prod.managed.yml pull
+            n=0
+            until docker compose -f docker-compose.prod.managed.yml pull; do
+              n=$((n+1))
+              if [ $n -ge 3 ]; then echo "Pull failed after 3 attempts"; exit 1; fi
+              echo "Pull attempt $n failed, retrying in 20s..."
+              sleep 20
+            done
 
             docker compose -f docker-compose.prod.managed.yml up -d --remove-orphans
 
