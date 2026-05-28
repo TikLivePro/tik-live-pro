@@ -73,7 +73,8 @@ COPY . .
 # Rebuild any native addons for the build environment
 RUN pnpm install --frozen-lockfile \
       --filter "@tik-live-pro/${PACKAGE_NAME}..." \
-      --prod=false
+      --prod=false \
+      --include-workspace-root
 
 # Build shared packages in dependency order, then the service itself
 RUN pnpm --filter "@tik-live-pro/shared-types" build \
