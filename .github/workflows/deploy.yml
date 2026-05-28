@@ -157,19 +157,66 @@ jobs:
 
       - name: Pull images & restart stack
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.value }}
+          REGISTRY: ghcr.io/${{ github.repository }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
+          AUTH_DATABASE_URL: ${{ secrets.AUTH_DATABASE_URL }}
+          USERS_DATABASE_URL: ${{ secrets.USERS_DATABASE_URL }}
+          SESSIONS_DATABASE_URL: ${{ secrets.SESSIONS_DATABASE_URL }}
+          BILLING_DATABASE_URL: ${{ secrets.BILLING_DATABASE_URL }}
+          INTEGRATIONS_DATABASE_URL: ${{ secrets.INTEGRATIONS_DATABASE_URL }}
+          COMMENTS_DATABASE_URL: ${{ secrets.COMMENTS_DATABASE_URL }}
+          NOTIFICATIONS_DATABASE_URL: ${{ secrets.NOTIFICATIONS_DATABASE_URL }}
+          ANALYTICS_DATABASE_URL: ${{ secrets.ANALYTICS_DATABASE_URL }}
+          STREAM_DATABASE_URL: ${{ secrets.STREAM_DATABASE_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
+          TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+          FACEBOOK_APP_ID: ${{ secrets.FACEBOOK_APP_ID }}
+          FACEBOOK_APP_SECRET: ${{ secrets.FACEBOOK_APP_SECRET }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_PREMIUM_PRICE_ID: ${{ secrets.STRIPE_PREMIUM_PRICE_ID }}
+          GRAFANA_PASSWORD: ${{ secrets.GRAFANA_PASSWORD }}
         with:
           host: ${{ secrets.DROPLET_IP }}
           username: root
           key: ${{ secrets.DROPLET_SSH_KEY }}
+          envs: IMAGE_TAG,REGISTRY,JWT_SECRET,TOKEN_ENCRYPTION_KEY,AUTH_DATABASE_URL,USERS_DATABASE_URL,SESSIONS_DATABASE_URL,BILLING_DATABASE_URL,INTEGRATIONS_DATABASE_URL,COMMENTS_DATABASE_URL,NOTIFICATIONS_DATABASE_URL,ANALYTICS_DATABASE_URL,STREAM_DATABASE_URL,REDIS_URL,TIKTOK_CLIENT_KEY,TIKTOK_CLIENT_SECRET,FACEBOOK_APP_ID,FACEBOOK_APP_SECRET,STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET,STRIPE_PREMIUM_PRICE_ID,GRAFANA_PASSWORD
           script: |
             set -e
             cd /opt/tiklivepro
 
-            # IMAGE_TAG = "v1.2.3" — correspond au tag semver généré par metadata-action
-            export IMAGE_TAG="${{ steps.tag.outputs.value }}"
-            export REGISTRY="ghcr.io/${{ github.repository }}"
-
             echo "==> Deploying $IMAGE_TAG"
+
+            # Write .env from CI secrets on every deploy — server needs no manual .env maintenance
+            printf '%s\n' \
+              "REGISTRY=$REGISTRY" \
+              "IMAGE_TAG=$IMAGE_TAG" \
+              "JWT_SECRET=$JWT_SECRET" \
+              "TOKEN_ENCRYPTION_KEY=$TOKEN_ENCRYPTION_KEY" \
+              "AUTH_DATABASE_URL=$AUTH_DATABASE_URL" \
+              "USERS_DATABASE_URL=$USERS_DATABASE_URL" \
+              "SESSIONS_DATABASE_URL=$SESSIONS_DATABASE_URL" \
+              "BILLING_DATABASE_URL=$BILLING_DATABASE_URL" \
+              "INTEGRATIONS_DATABASE_URL=$INTEGRATIONS_DATABASE_URL" \
+              "COMMENTS_DATABASE_URL=$COMMENTS_DATABASE_URL" \
+              "NOTIFICATIONS_DATABASE_URL=$NOTIFICATIONS_DATABASE_URL" \
+              "ANALYTICS_DATABASE_URL=$ANALYTICS_DATABASE_URL" \
+              "STREAM_DATABASE_URL=$STREAM_DATABASE_URL" \
+              "REDIS_URL=$REDIS_URL" \
+              "TIKTOK_CLIENT_KEY=$TIKTOK_CLIENT_KEY" \
+              "TIKTOK_CLIENT_SECRET=$TIKTOK_CLIENT_SECRET" \
+              "FACEBOOK_APP_ID=$FACEBOOK_APP_ID" \
+              "FACEBOOK_APP_SECRET=$FACEBOOK_APP_SECRET" \
+              "STRIPE_SECRET_KEY=$STRIPE_SECRET_KEY" \
+              "STRIPE_WEBHOOK_SECRET=$STRIPE_WEBHOOK_SECRET" \
+              "STRIPE_PREMIUM_PRICE_ID=$STRIPE_PREMIUM_PRICE_ID" \
+              "GRAFANA_PASSWORD=$GRAFANA_PASSWORD" \
+              > .env
+
             docker compose -f docker-compose.prod.managed.yml pull
 
             docker compose -f docker-compose.prod.managed.yml up -d --remove-orphans

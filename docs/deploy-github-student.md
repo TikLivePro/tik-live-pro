@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-05-27
+> Dernière mise à jour : 2026-05-28
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -206,7 +206,7 @@ api.tiklivepro.me {
 systemctl reload caddy
 ```
 
-### 6d — Dossier du projet et fichier `.env`
+### 6d — Dossier du projet
 
 ```bash
 mkdir -p /opt/tiklivepro
@@ -216,51 +216,11 @@ mkdir -p /opt/tiklivepro
 >
 > | Variable | Où la mettre | Pourquoi |
 > |----------|-------------|---------|
-> | `DROPLET_IP`, `DROPLET_SSH_KEY` | **GitHub Secrets** | utilisées par le runner GitHub Actions pour se connecter au serveur |
-> | Tout le reste (JWT, DB, OAuth…) | **`/opt/tiklivepro/.env`** | chargées par `docker compose` sur le serveur — ne transitent jamais par GitHub |
-> | `REGISTRY`, `IMAGE_TAG` | **injectées par le CI** | le workflow les exporte via `export` avant `docker compose pull` — pas besoin de les mettre dans `.env` |
+> | `DROPLET_IP`, `DROPLET_SSH_KEY` | **GitHub Secrets** | utilisées par le runner pour se connecter au serveur via SSH |
+> | Tout le reste (JWT, DB, OAuth…) | **GitHub Secrets** | le CI écrit le fichier `.env` sur le serveur à chaque déploiement — pas de maintenance manuelle |
+> | `REGISTRY`, `IMAGE_TAG` | **injectées par le CI** | calculées depuis le tag git — pas besoin de les configurer |
 
-Créez `/opt/tiklivepro/.env` avec uniquement les secrets applicatifs :
-
-```bash
-cat > /opt/tiklivepro/.env << 'EOF'
-# Secrets de l'application
-JWT_SECRET=        # openssl rand -hex 64
-TOKEN_ENCRYPTION_KEY=  # openssl rand -hex 32
-
-# Neon — connection strings (même host, base différente par service)
-AUTH_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_auth?sslmode=require
-USERS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_users?sslmode=require
-SESSIONS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_sessions?sslmode=require
-BILLING_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_billing?sslmode=require
-INTEGRATIONS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_integrations?sslmode=require
-COMMENTS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_comments?sslmode=require
-NOTIFICATIONS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_notifications?sslmode=require
-ANALYTICS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_analytics?sslmode=require
-STREAM_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_stream?sslmode=require
-
-# Upstash Redis
-REDIS_URL=rediss://default:TOKEN@HOST.upstash.io:6379
-
-# Social OAuth
-TIKTOK_CLIENT_KEY=
-TIKTOK_CLIENT_SECRET=
-FACEBOOK_APP_ID=
-FACEBOOK_APP_SECRET=
-
-# Stripe
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
-STRIPE_PREMIUM_PRICE_ID=
-
-# Frontend
-NEXT_PUBLIC_API_URL=https://api.tiklivepro.me
-OAUTH_REDIRECT_BASE_URL=https://api.tiklivepro.me
-
-# Grafana (uniquement avec --profile observability)
-GRAFANA_PASSWORD=
-EOF
-```
+Le fichier `/opt/tiklivepro/.env` est **écrit automatiquement par le workflow CI** à chaque déploiement. Vous n'avez pas à le créer ni à le maintenir manuellement sur le serveur.
 
 ### 6e — Authentification GHCR sur le serveur
 
@@ -302,59 +262,81 @@ Après le premier push (étape 8), allez dans **GitHub > Packages** et passez ch
 
 ### 7b — Secrets GitHub du dépôt
 
-Le workflow GitHub Actions a besoin de deux informations pour se connecter à votre Droplet et y déclencher le déploiement. Ces informations sont stockées comme **secrets chiffrés** dans GitHub — elles ne sont jamais visibles dans les logs CI.
+Le workflow a besoin que **tous** les secrets soient configurés dans GitHub — il se connecte au Droplet via SSH et écrit le fichier `.env` à partir de ces valeurs à chaque déploiement.
 
 **Où les ajouter :**
 **GitHub > votre repo > Settings > Secrets and variables > Actions > New repository secret**
 
 ---
 
-**Secret 1 : `DROPLET_IP`**
-
-Valeur = l'IP publique de votre Droplet, visible dans le dashboard DigitalOcean (ex : `167.99.143.212`).
-
-```
-Name:   DROPLET_IP
-Secret: 167.99.143.212
-```
-
----
-
-**Secret 2 : `DROPLET_SSH_KEY`**
-
-Valeur = le contenu **complet** de votre clé SSH privée (le fichier `~/.ssh/id_rsa` sur votre machine locale — c'est la clé dont la partie publique a été ajoutée au Droplet lors de sa création).
-
-Pour copier le contenu de la clé dans votre presse-papier, exécutez **sur votre machine locale** :
-```bash
-cat ~/.ssh/id_rsa
-```
-
-Copiez tout le bloc, en incluant les lignes d'en-tête et de fin :
-```
------BEGIN OPENSSH PRIVATE KEY-----
-b3BlbnNzaC1rZXktdjEAAAAA...
-...
------END OPENSSH PRIVATE KEY-----
-```
-
-Collez ce bloc entier comme valeur du secret :
-```
-Name:   DROPLET_SSH_KEY
-Secret: -----BEGIN OPENSSH PRIVATE KEY-----
-        b3BlbnNzaC1rZXktdjEAAAAA...
-        -----END OPENSSH PRIVATE KEY-----
-```
-
-> **Pourquoi la clé privée ?** GitHub Actions doit se connecter en SSH au Droplet pour lancer `docker compose pull && up`. Il a besoin de la clé privée pour s'authentifier, exactement comme vous le faites avec `ssh root@<IP>` depuis votre terminal.
-
----
-
-**Récapitulatif des secrets à créer :**
+**Connexion au serveur**
 
 | Secret | Valeur |
 |--------|--------|
-| `DROPLET_IP` | IP publique du Droplet (ex : `167.99.143.212`) |
+| `DROPLET_IP` | IP publique du Droplet, visible dans le dashboard DigitalOcean (ex : `167.99.143.212`) |
 | `DROPLET_SSH_KEY` | Contenu complet de `~/.ssh/id_rsa` (clé privée, bloc `BEGIN … END`) |
+
+Pour copier la clé privée :
+```bash
+cat ~/.ssh/id_rsa
+```
+Copiez le bloc entier incluant les lignes d'en-tête/fin (`-----BEGIN OPENSSH PRIVATE KEY-----` … `-----END OPENSSH PRIVATE KEY-----`).
+
+---
+
+**Secrets applicatifs**
+
+Ces valeurs sont écrites dans `/opt/tiklivepro/.env` sur le serveur à chaque deploy. Le serveur ne stocke jamais de secrets en dehors de ce fichier généré par le CI.
+
+| Secret | Comment l'obtenir |
+|--------|------------------|
+| `JWT_SECRET` | `openssl rand -hex 64` |
+| `TOKEN_ENCRYPTION_KEY` | `openssl rand -hex 32` |
+
+**Neon (PostgreSQL)** — récupérez la connection string depuis **Dashboard > Connection Details**, changez uniquement le nom de la base en fin d'URL :
+
+| Secret | Base de données |
+|--------|----------------|
+| `AUTH_DATABASE_URL` | `tiklivepro_auth` |
+| `USERS_DATABASE_URL` | `tiklivepro_users` |
+| `SESSIONS_DATABASE_URL` | `tiklivepro_sessions` |
+| `BILLING_DATABASE_URL` | `tiklivepro_billing` |
+| `INTEGRATIONS_DATABASE_URL` | `tiklivepro_integrations` |
+| `COMMENTS_DATABASE_URL` | `tiklivepro_comments` |
+| `NOTIFICATIONS_DATABASE_URL` | `tiklivepro_notifications` |
+| `ANALYTICS_DATABASE_URL` | `tiklivepro_analytics` |
+| `STREAM_DATABASE_URL` | `tiklivepro_stream` |
+
+Format attendu : `postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_auth?sslmode=require`
+
+**Upstash (Redis)**
+
+| Secret | Comment l'obtenir |
+|--------|------------------|
+| `REDIS_URL` | Dashboard Upstash > votre DB > **Redis URL (TLS)** — format `rediss://default:TOKEN@HOST.upstash.io:6379` |
+
+**TikTok & Facebook**
+
+| Secret | Comment l'obtenir |
+|--------|------------------|
+| `TIKTOK_CLIENT_KEY` | TikTok Developer Portal > votre app > App Key |
+| `TIKTOK_CLIENT_SECRET` | TikTok Developer Portal > votre app > App Secret |
+| `FACEBOOK_APP_ID` | Meta for Developers > votre app > App ID |
+| `FACEBOOK_APP_SECRET` | Meta for Developers > votre app > App Secret |
+
+**Stripe**
+
+| Secret | Comment l'obtenir |
+|--------|------------------|
+| `STRIPE_SECRET_KEY` | Stripe Dashboard > Developers > API keys > Secret key |
+| `STRIPE_WEBHOOK_SECRET` | Stripe Dashboard > Developers > Webhooks > votre endpoint > Signing secret |
+| `STRIPE_PREMIUM_PRICE_ID` | Stripe Dashboard > Products > votre plan Premium > Price ID (format `price_xxx`) |
+
+**Observability (optionnel)**
+
+| Secret | Description |
+|--------|-------------|
+| `GRAFANA_PASSWORD` | Mot de passe admin Grafana — requis uniquement si vous démarrez le stack avec `--profile observability` |
 
 ### 7c — Environnement de production (optionnel mais recommandé)
 
@@ -446,14 +428,13 @@ GitHub Actions                       GitHub Actions
   push :main, :sha-xxx             push :1.2.3, :1.2, :1, :latest
   (pas de deploy)                         ↓
                                    SSH → Droplet
-                                     export IMAGE_TAG=1.2.3
-                                     export REGISTRY=ghcr.io/...
+                                     écriture de .env depuis GitHub Secrets
                                      docker compose pull
                                      docker compose up -d
                                      docker image prune -f
 ```
 
-Le tag `IMAGE_TAG=1.2.3` est injecté par le CI au moment du deploy — il n'est pas dans le `.env` du serveur. Chaque service démarre exactement la version taguée à ce commit.
+Le fichier `.env` est **recréé à chaque déploiement** depuis les secrets GitHub — le serveur ne stocke jamais de secrets de façon permanente. `IMAGE_TAG` et `REGISTRY` sont calculés depuis le tag git et injectés directement.
 
 ---
 
@@ -498,6 +479,16 @@ Augmentez la limite mémoire dans `docker-compose.prod.managed.yml` et réduisez
 Vérifiez que `DROPLET_IP` et `DROPLET_SSH_KEY` sont bien configurés dans les secrets GitHub. Testez manuellement :
 ```bash
 ssh -i ~/.ssh/id_rsa root@188.166.197.25 "docker ps"
+```
+
+### Un service refuse de démarrer (variable manquante)
+Le fichier `.env` est écrit par le CI depuis les secrets GitHub. Si une variable est absente :
+1. Vérifiez que le secret correspondant existe dans **GitHub > Settings > Secrets and variables > Actions**
+2. Relancez le déploiement (nouveau tag ou `workflow_dispatch`)
+
+Vérifier le `.env` actuel sur le serveur :
+```bash
+cat /opt/tiklivepro/.env
 ```
 
 ### `docker pull` échoue (unauthorized)
