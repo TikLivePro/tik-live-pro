@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
+import { useTheme, useLocale, SunIcon, MoonIcon, GlobeIcon } from '@/features/auth';
 
 const SECTION_KEYS = [
   'acceptance',
@@ -22,6 +23,8 @@ const SECTION_KEYS = [
 
 export function TermsView(): React.JSX.Element {
   const t = useTranslations('legal');
+  const { theme, toggle: toggleTheme } = useTheme();
+  const { locale, setLocale, supportedLocales } = useLocale();
 
   return (
     <div className="min-h-screen bg-background">
@@ -44,6 +47,38 @@ export function TermsView(): React.JSX.Element {
           </Link>
           <span className="text-border">/</span>
           <span className="text-sm font-medium">{t('terms.title')}</span>
+
+          <div className="ml-auto flex items-center gap-2">
+            <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-0.5">
+              {supportedLocales.map((l) => (
+                <button
+                  key={l}
+                  onClick={() => setLocale(l)}
+                  aria-label={`Switch to ${l}`}
+                  className={cn(
+                    'flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium uppercase transition-colors',
+                    locale === l
+                      ? 'bg-muted text-foreground'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {l === supportedLocales[0] && <GlobeIcon className="h-3 w-3" />}
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={toggleTheme}
+              aria-label="Toggle theme"
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card',
+                'text-muted-foreground transition-colors hover:border-border/80 hover:text-foreground',
+              )}
+            >
+              {theme === 'dark' ? <SunIcon className="h-4 w-4" /> : <MoonIcon className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
       </header>
 

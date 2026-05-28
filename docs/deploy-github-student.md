@@ -264,16 +264,33 @@ EOF
 
 ### 6e — Authentification GHCR sur le serveur
 
-Pour que le serveur puisse `docker pull` depuis votre registre privé :
+Pour que le **Droplet DigitalOcean** puisse télécharger vos images depuis votre registre privé GHCR, il faut lui donner les credentials GitHub une seule fois.
 
-1. Créez un **Personal Access Token** GitHub avec le scope `read:packages` :
-   **GitHub > Settings > Developer settings > Personal access tokens > Tokens (classic)**
+**Étape 1 — Créer le token (sur votre machine locale / navigateur)**
 
-2. Connectez Docker à GHCR (une seule fois) :
-   ```bash
-   echo "VOTRE_PAT" | docker login ghcr.io -u VOTRE_USERNAME --password-stdin
-   ```
-   Docker mémorise les credentials dans `~/.docker/config.json`. Les futurs `docker pull` fonctionneront sans authentification supplémentaire.
+1. Allez sur **GitHub > Settings > Developer settings > Personal access tokens > Tokens (classic)**
+2. Cliquez **Generate new token (classic)**
+3. Cochez uniquement le scope `read:packages`
+4. Générez et **copiez le token** (il ne s'affiche qu'une seule fois)
+
+**Étape 2 — Connecter Docker à GHCR (sur le Droplet)**
+
+Ouvrez une session SSH sur le serveur (si ce n'est pas déjà fait) :
+```bash
+# depuis votre machine locale
+ssh root@167.99.xxx.xxx
+```
+
+Puis, **depuis la session SSH sur le Droplet**, collez votre token et exécutez :
+```bash
+# remplacez VOTRE_PAT par le token copié à l'étape 1
+# remplacez VOTRE_USERNAME par votre nom d'utilisateur GitHub (ex: tokiarivelo)
+echo "VOTRE_PAT" | docker login ghcr.io -u VOTRE_USERNAME --password-stdin
+```
+
+Vous devez voir `Login Succeeded`. Docker enregistre les credentials dans `~/.docker/config.json` sur le serveur — tous les futurs `docker pull ghcr.io/...` se feront automatiquement sans re-saisir le mot de passe.
+
+> **Résumé** : le token est créé sur GitHub (dans votre navigateur), puis utilisé **une seule fois** sur le Droplet pour autoriser Docker. Rien à faire côté GitHub Actions — le CI construit et pousse les images, le serveur n'a besoin que de les télécharger.
 
 ---
 
@@ -285,12 +302,59 @@ Après le premier push (étape 8), allez dans **GitHub > Packages** et passez ch
 
 ### 7b — Secrets GitHub du dépôt
 
-**GitHub > votre repo > Settings > Secrets and variables > Actions > New repository secret :**
+Le workflow GitHub Actions a besoin de deux informations pour se connecter à votre Droplet et y déclencher le déploiement. Ces informations sont stockées comme **secrets chiffrés** dans GitHub — elles ne sont jamais visibles dans les logs CI.
+
+**Où les ajouter :**
+**GitHub > votre repo > Settings > Secrets and variables > Actions > New repository secret**
+
+---
+
+**Secret 1 : `DROPLET_IP`**
+
+Valeur = l'IP publique de votre Droplet, visible dans le dashboard DigitalOcean (ex : `167.99.143.212`).
+
+```
+Name:   DROPLET_IP
+Secret: 167.99.143.212
+```
+
+---
+
+**Secret 2 : `DROPLET_SSH_KEY`**
+
+Valeur = le contenu **complet** de votre clé SSH privée (le fichier `~/.ssh/id_rsa` sur votre machine locale — c'est la clé dont la partie publique a été ajoutée au Droplet lors de sa création).
+
+Pour copier le contenu de la clé dans votre presse-papier, exécutez **sur votre machine locale** :
+```bash
+cat ~/.ssh/id_rsa
+```
+
+Copiez tout le bloc, en incluant les lignes d'en-tête et de fin :
+```
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAA...
+...
+-----END OPENSSH PRIVATE KEY-----
+```
+
+Collez ce bloc entier comme valeur du secret :
+```
+Name:   DROPLET_SSH_KEY
+Secret: -----BEGIN OPENSSH PRIVATE KEY-----
+        b3BlbnNzaC1rZXktdjEAAAAA...
+        -----END OPENSSH PRIVATE KEY-----
+```
+
+> **Pourquoi la clé privée ?** GitHub Actions doit se connecter en SSH au Droplet pour lancer `docker compose pull && up`. Il a besoin de la clé privée pour s'authentifier, exactement comme vous le faites avec `ssh root@<IP>` depuis votre terminal.
+
+---
+
+**Récapitulatif des secrets à créer :**
 
 | Secret | Valeur |
 |--------|--------|
-| `DROPLET_IP` | IP publique du Droplet (`167.99.xxx.xxx`) |
-| `DROPLET_SSH_KEY` | Contenu de `~/.ssh/id_rsa` (clé privée) |
+| `DROPLET_IP` | IP publique du Droplet (ex : `167.99.143.212`) |
+| `DROPLET_SSH_KEY` | Contenu complet de `~/.ssh/id_rsa` (clé privée, bloc `BEGIN … END`) |
 
 ### 7c — Environnement de production (optionnel mais recommandé)
 
