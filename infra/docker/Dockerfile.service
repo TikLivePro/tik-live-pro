@@ -81,6 +81,7 @@ RUN pnpm install --frozen-lockfile \
       --filter "@tik-live-pro/events..." \
       --filter "@tik-live-pro/platform-adapters..." \
       --filter "@tik-live-pro/${PACKAGE_NAME}..." \
+      --force \
       --prod=false \
       --include-workspace-root
 
