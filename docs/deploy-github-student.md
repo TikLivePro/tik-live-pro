@@ -84,7 +84,7 @@ Services externes gratuits
    - Plan : **Basic — 4 GB RAM / 2 vCPUs / 80 GB SSD** (~$24/mois)
    - Authentication : **SSH Key** (`~/.ssh/id_rsa.pub`)
    - Hostname : `tiklivepro-prod`
-4. Notez l'IP publique : `167.99.xxx.xxx`
+4. Notez l'IP publique : `188.166.197.25`
 
 ---
 
@@ -94,8 +94,8 @@ Services externes gratuits
 
 | Type | Host | Value | TTL |
 |------|------|-------|-----|
-| A Record | `@` | `167.99.xxx.xxx` | Automatic |
-| A Record | `www` | `167.99.xxx.xxx` | Automatic |
+| A Record | `@` | `188.166.197.25` | Automatic |
+| A Record | `www` | `188.166.197.25` | Automatic |
 | CNAME Record | `api` | `tiklivepro.me.` | Automatic |
 
 Vérifier la propagation (5–30 min) :
@@ -149,7 +149,7 @@ Upstash remplace le conteneur Redis — économie de 300 MB sur le Droplet.
 
 Connectez-vous au Droplet :
 ```bash
-ssh root@167.99.xxx.xxx
+ssh root@188.166.197.25
 ```
 
 ### 6a — Swap (filet de sécurité obligatoire)
@@ -278,7 +278,7 @@ Pour que le **Droplet DigitalOcean** puisse télécharger vos images depuis votr
 Ouvrez une session SSH sur le serveur (si ce n'est pas déjà fait) :
 ```bash
 # depuis votre machine locale
-ssh root@167.99.xxx.xxx
+ssh root@188.166.197.25
 ```
 
 Puis, **depuis la session SSH sur le Droplet**, collez votre token et exécutez :
@@ -497,7 +497,7 @@ Augmentez la limite mémoire dans `docker-compose.prod.managed.yml` et réduisez
 ### Le deploy GitHub Actions échoue au SSH
 Vérifiez que `DROPLET_IP` et `DROPLET_SSH_KEY` sont bien configurés dans les secrets GitHub. Testez manuellement :
 ```bash
-ssh -i ~/.ssh/id_rsa root@167.99.xxx.xxx "docker ps"
+ssh -i ~/.ssh/id_rsa root@188.166.197.25 "docker ps"
 ```
 
 ### `docker pull` échoue (unauthorized)
