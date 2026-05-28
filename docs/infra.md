@@ -1,6 +1,6 @@
 # TikLivePro — Infrastructure Guide
 
-> **Last updated:** 2026-05-22
+> **Last updated:** 2026-05-28
 > Update whenever a Dockerfile, compose file, Kubernetes manifest, or build script changes.
 
 ## Table of Contents
@@ -68,7 +68,7 @@ All Node.js services share a single parameterized Dockerfile. Stages:
 |-------|------|---------|
 | `base` | `node:22-alpine` | corepack + pnpm + dumb-init |
 | `deps` | `base` | Install **production** deps for the target service + its workspace dependencies |
-| `builder` | `base` | Copy full source, install all deps (including dev), run `pnpm build` |
+| `builder` | `base` | Copy full source, install all workspace deps (including dev), run `pnpm build` |
 | `runtime` | `node:22-alpine` | Minimal — copy `dist/` + `node_modules/` from builder; drop to non-root user |
 
 **Build arguments:**
@@ -83,6 +83,9 @@ All Node.js services share a single parameterized Dockerfile. Stages:
 
 **Why `runtime` copies `node_modules` from `builder` (not `deps`)**:
 Workspace packages are symlinked inside `node_modules`. The `deps` stage installs only prod deps, which creates the symlinks but doesn't build the `dist/` of the linked packages. The `builder` stage does build them, so copying `node_modules` from `builder` ensures workspace symlinks resolve to real compiled output.
+
+**Why `builder` installs workspace-wide dev deps (no service filter)**:
+Some workspace dependency packages (for example shared libraries built with `tsc`) need their own dev-time build tools available during recursive builds. Installing dev dependencies across the workspace in `builder` avoids `tsc: not found` failures in CI at the cost of a heavier build layer.
 
 ### `Dockerfile.stream-orchestrator`
 
