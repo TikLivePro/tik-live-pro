@@ -48,8 +48,18 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 RUN pnpm install --frozen-lockfile \
+      --filter "@tik-live-pro/shared-types..." \
+      --filter "@tik-live-pro/config..." \
+      --filter "@tik-live-pro/i18n..." \
+      --filter "@tik-live-pro/logger..." \
+      --filter "@tik-live-pro/validation..." \
+      --filter "@tik-live-pro/domain..." \
+      --filter "@tik-live-pro/events..." \
+      --filter "@tik-live-pro/platform-adapters..." \
       --filter "@tik-live-pro/stream-orchestrator..." \
-      --prod=false
+      --force \
+      --prod=false \
+      --include-workspace-root
 
 RUN pnpm --filter "@tik-live-pro/shared-types" build \
  && pnpm --filter "@tik-live-pro/config" build \
