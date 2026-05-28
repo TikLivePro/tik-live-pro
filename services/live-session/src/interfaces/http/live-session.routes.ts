@@ -172,13 +172,15 @@ Creates a new live session that will broadcast simultaneously to one or more con
       const correlationId = (request.headers['x-correlation-id'] as string | undefined) ?? crypto.randomUUID();
 
       try {
+        const input = {
+          userId,
+          title: body.title,
+          destinationAccountIds: body.destinationAccountIds as import('@tik-live-pro/shared-types').SocialAccountId[],
+          ...(body.description === undefined ? {} : { description: body.description }),
+        };
+
         const result = await deps.createSession.execute(
-          {
-            userId,
-            title: body.title,
-            description: body.description,
-            destinationAccountIds: body.destinationAccountIds as import('@tik-live-pro/shared-types').SocialAccountId[],
-          },
+          input,
           correlationId,
         );
         return reply.status(201).send({ data: { sessionId: result.sessionId } });

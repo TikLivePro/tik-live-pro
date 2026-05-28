@@ -15,7 +15,7 @@ import type {
 
 type DbRow = typeof liveSessions.$inferSelect;
 
-const INACTIVE_STATUSES = ['ended', 'error'] as const;
+const INACTIVE_STATUSES: LiveSessionStatus[] = ['ended', 'error'];
 
 export class DrizzleLiveSessionRepository implements ILiveSessionRepository {
   constructor(private readonly db: NodePgDatabase) {}
