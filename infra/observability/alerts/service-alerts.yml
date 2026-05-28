@@ -29,7 +29,7 @@ groups:
           description: >
             Prometheus cannot scrape {{ $labels.job }} at {{ $labels.instance }}.
             The service has been unreachable for more than 1 minute.
-          runbook: https://docs.tiklive.pro/runbooks/service-down
+          runbook: https://docs.tiklivepro.pro/runbooks/service-down
 
       - alert: HighErrorRate
         # More than 5% of HTTP responses are 5xx over the last 5 minutes
@@ -47,7 +47,7 @@ groups:
           description: >
             {{ $labels.job }} is returning {{ $value | humanizePercentage }} 5xx errors
             over the last 5 minutes.
-          runbook: https://docs.tiklive.pro/runbooks/high-error-rate
+          runbook: https://docs.tiklivepro.pro/runbooks/high-error-rate
 
       - alert: HighLatencyP99
         # 99th-percentile latency above 2 s for more than 3 minutes
@@ -63,7 +63,7 @@ groups:
           description: >
             99th-percentile latency for {{ $labels.job }} is {{ $value | humanizeDuration }},
             exceeding the 2 s threshold.
-          runbook: https://docs.tiklive.pro/runbooks/high-latency
+          runbook: https://docs.tiklivepro.pro/runbooks/high-latency
 
   # ── NATS JetStream ───────────────────────────────────────────────────────────
   - name: nats_health
@@ -80,7 +80,7 @@ groups:
           description: >
             Prometheus cannot reach the NATS monitoring endpoint.
             All event-driven services will be unable to publish or consume messages.
-          runbook: https://docs.tiklive.pro/runbooks/nats-down
+          runbook: https://docs.tiklivepro.pro/runbooks/nats-down
 
       - alert: NATSHighPendingMessages
         # More than 100 000 messages pending across all streams
@@ -152,4 +152,4 @@ groups:
         annotations:
           summary: "PostgreSQL is down"
           description: "The PostgreSQL exporter cannot connect to the database."
-          runbook: https://docs.tiklive.pro/runbooks/postgres-down
+          runbook: https://docs.tiklivepro.pro/runbooks/postgres-down

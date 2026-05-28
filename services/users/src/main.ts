@@ -15,7 +15,7 @@ import { registerUsersRoutes } from './interfaces/http/users.routes.js';
 const envSchema = baseEnvSchema.extend({
   DATABASE_URL: z.string().url(),
   JWT_SECRET: z.string().min(64),
-  CDN_BASE_URL: z.string().url().default('https://cdn.tiklive.pro'),
+  CDN_BASE_URL: z.string().url().default('https://cdn.tiklivepro.pro'),
 });
 
 const env = parseEnv(envSchema);
@@ -64,7 +64,7 @@ User profiles are **not** created by this service directly. Instead, the service
 All endpoints require a JWT Bearer token.
       `.trim(),
         version: '1.0.0',
-        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklive.pro' },
+        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklivepro.pro' },
         license: { name: 'Proprietary' },
       },
       servers: [

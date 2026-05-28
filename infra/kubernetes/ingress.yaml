@@ -7,7 +7,7 @@
 # For local development (minikube):
 #   minikube addons enable ingress
 #
-# Replace `tiklive.pro` with your real domain or set up local /etc/hosts entries
+# Replace `tiklivepro.pro` with your real domain or set up local /etc/hosts entries
 # ==============================================================================
 
 apiVersion: networking.k8s.io/v1
@@ -29,12 +29,12 @@ spec:
   # Uncomment and adjust when TLS cert is ready:
   # tls:
   #   - hosts:
-  #       - api.tiklive.pro
-  #       - tiklive.pro
-  #     secretName: tiklive-tls
+  #       - api.tiklivepro.pro
+  #       - tiklivepro.pro
+  #     secretName: tiklivepro-tls
   rules:
     # All API traffic routes through the gateway
-    - host: api.tiklive.pro
+    - host: api.tiklivepro.pro
       http:
         paths:
           - path: /()(.*)
@@ -46,7 +46,7 @@ spec:
                   number: 3000
 
     # Grafana dashboard
-    - host: grafana.tiklive.pro
+    - host: grafana.tiklivepro.pro
       http:
         paths:
           - path: /()(.*)
@@ -58,7 +58,7 @@ spec:
                   number: 3000
 
     # Jaeger UI
-    - host: jaeger.tiklive.pro
+    - host: jaeger.tiklivepro.pro
       http:
         paths:
           - path: /()(.*)
@@ -70,7 +70,7 @@ spec:
                   number: 16686
 
     # Prometheus
-    - host: prometheus.tiklive.pro
+    - host: prometheus.tiklivepro.pro
       http:
         paths:
           - path: /()(.*)

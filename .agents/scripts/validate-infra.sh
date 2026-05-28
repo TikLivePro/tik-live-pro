@@ -29,15 +29,15 @@ ERRORS=0
 # Format: "directory-name:package-suffix:port:db-name"
 declare -a SERVICES=(
   "api-gateway:api-gateway:3000:"
-  "auth:auth-service:3001:tiklive_auth"
-  "users:users-service:3002:tiklive_users"
-  "live-session:live-session-service:3003:tiklive_sessions"
-  "billing:billing-service:3004:tiklive_billing"
-  "integrations:integrations-service:3005:tiklive_integrations"
-  "comments:comments-service:3006:tiklive_comments"
-  "notifications:notifications-service:3007:tiklive_notifications"
-  "analytics:analytics-service:3008:tiklive_analytics"
-  "stream-orchestrator:stream-orchestrator:3009:tiklive_stream"
+  "auth:auth-service:3001:tiklivepro_auth"
+  "users:users-service:3002:tiklivepro_users"
+  "live-session:live-session-service:3003:tiklivepro_sessions"
+  "billing:billing-service:3004:tiklivepro_billing"
+  "integrations:integrations-service:3005:tiklivepro_integrations"
+  "comments:comments-service:3006:tiklivepro_comments"
+  "notifications:notifications-service:3007:tiklivepro_notifications"
+  "analytics:analytics-service:3008:tiklivepro_analytics"
+  "stream-orchestrator:stream-orchestrator:3009:tiklivepro_stream"
 )
 
 fail() { echo "  ❌ $*"; ERRORS=$((ERRORS + 1)); }

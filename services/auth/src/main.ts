@@ -89,7 +89,7 @@ Authorization: Bearer <accessToken>
 | \`auth.user.logged_in\` | Successful login |
         `.trim(),
         version: '1.0.0',
-        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklive.pro' },
+        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklivepro.pro' },
         license: { name: 'Proprietary' },
       },
       servers: [

@@ -154,7 +154,7 @@ rtmp://<host>:<port>/live/<ingestKey>
               ingestUrl: {
                 type: 'string',
                 description:
-                  'Full RTMP URL to push the video stream to. Example: `rtmp://rtmp.tiklive.pro:1935/live/abc123`.',
+                  'Full RTMP URL to push the video stream to. Example: `rtmp://rtmp.tiklivepro.pro:1935/live/abc123`.',
                 example: 'rtmp://localhost:1935/live/abc123def456',
               },
               ingestKey: {

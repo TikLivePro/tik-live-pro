@@ -66,15 +66,15 @@
 | Service | Port | Package name | Database | Key responsibilities |
 |---------|------|-------------|----------|---------------------|
 | api-gateway | 3000 | `@tik-live-pro/api-gateway` | — | JWT validation, rate limiting, HTTP proxy, Swagger aggregation |
-| auth | 3001 | `@tik-live-pro/auth-service` | `tiklive_auth` | Registration, login, JWT issue/refresh, Google/Facebook/TikTok OAuth |
-| users | 3002 | `@tik-live-pro/users-service` | `tiklive_users` | User profiles, preferences, CDN avatar management |
-| live-session | 3003 | `@tik-live-pro/live-session-service` | `tiklive_sessions` | Session lifecycle (created → starting → live → ended) |
-| billing | 3004 | `@tik-live-pro/billing-service` | `tiklive_billing` | Stripe subscriptions, entitlement enforcement |
-| integrations | 3005 | `@tik-live-pro/integrations-service` | `tiklive_integrations` | Social account OAuth tokens, AES-256-GCM at-rest encryption |
-| comments | 3006 | `@tik-live-pro/comments-service` | `tiklive_comments` | Platform comment polling, WebSocket fan-out |
-| notifications | 3007 | `@tik-live-pro/notifications-service` | `tiklive_notifications` | Push and email notifications via NATS workqueue |
-| analytics | 3008 | `@tik-live-pro/analytics-service` | `tiklive_analytics` | Event aggregation, usage metrics |
-| stream-orchestrator | 3009 | `@tik-live-pro/stream-orchestrator` | `tiklive_stream` | RTMP ingestion (port 1935), multi-destination broadcast via TikTok/Facebook adapters |
+| auth | 3001 | `@tik-live-pro/auth-service` | `tiklivepro_auth` | Registration, login, JWT issue/refresh, Google/Facebook/TikTok OAuth |
+| users | 3002 | `@tik-live-pro/users-service` | `tiklivepro_users` | User profiles, preferences, CDN avatar management |
+| live-session | 3003 | `@tik-live-pro/live-session-service` | `tiklivepro_sessions` | Session lifecycle (created → starting → live → ended) |
+| billing | 3004 | `@tik-live-pro/billing-service` | `tiklivepro_billing` | Stripe subscriptions, entitlement enforcement |
+| integrations | 3005 | `@tik-live-pro/integrations-service` | `tiklivepro_integrations` | Social account OAuth tokens, AES-256-GCM at-rest encryption |
+| comments | 3006 | `@tik-live-pro/comments-service` | `tiklivepro_comments` | Platform comment polling, WebSocket fan-out |
+| notifications | 3007 | `@tik-live-pro/notifications-service` | `tiklivepro_notifications` | Push and email notifications via NATS workqueue |
+| analytics | 3008 | `@tik-live-pro/analytics-service` | `tiklivepro_analytics` | Event aggregation, usage metrics |
+| stream-orchestrator | 3009 | `@tik-live-pro/stream-orchestrator` | `tiklivepro_stream` | RTMP ingestion (port 1935), multi-destination broadcast via TikTok/Facebook adapters |
 
 ---
 

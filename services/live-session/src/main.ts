@@ -80,7 +80,7 @@ This service emits domain events to NATS JetStream that drive other services:
 All endpoints require a valid JWT Bearer token (obtained from the Auth Service).
       `.trim(),
         version: '1.0.0',
-        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklive.pro' },
+        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklivepro.pro' },
         license: { name: 'Proprietary' },
       },
       servers: [

@@ -302,13 +302,13 @@ Creates a checkout session to upgrade the user's subscription.
               type: 'string',
               format: 'uri',
               description: 'URL to redirect the user to after successful payment (Stripe only). May include `{CHECKOUT_SESSION_ID}` template.',
-              example: 'https://app.tiklive.pro/billing/success?session={CHECKOUT_SESSION_ID}',
+              example: 'https://app.tiklivepro.pro/billing/success?session={CHECKOUT_SESSION_ID}',
             },
             cancelUrl: {
               type: 'string',
               format: 'uri',
               description: 'URL to redirect the user to if they cancel (Stripe only).',
-              example: 'https://app.tiklive.pro/billing',
+              example: 'https://app.tiklivepro.pro/billing',
             },
             paymentMethod: {
               type: 'string',

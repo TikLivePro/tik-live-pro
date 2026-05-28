@@ -68,7 +68,7 @@ Some analytics features require a Premium subscription:
 All endpoints require a JWT Bearer token.
       `.trim(),
         version: '1.0.0',
-        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklive.pro' },
+        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklivepro.pro' },
         license: { name: 'Proprietary' },
       },
       servers: [

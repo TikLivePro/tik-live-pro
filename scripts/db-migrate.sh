@@ -12,15 +12,15 @@ run_migrate() {
   echo "  done: $svc"
 }
 
-run_migrate auth                tiklive_auth
-run_migrate users               tiklive_users
-run_migrate integrations        tiklive_integrations
-run_migrate live-session        tiklive_sessions
-run_migrate stream-orchestrator tiklive_sessions
-run_migrate comments            tiklive_comments
-run_migrate billing             tiklive_billing
-run_migrate notifications       tiklive_notifications
-run_migrate analytics           tiklive_analytics
+run_migrate auth                tiklivepro_auth
+run_migrate users               tiklivepro_users
+run_migrate integrations        tiklivepro_integrations
+run_migrate live-session        tiklivepro_sessions
+run_migrate stream-orchestrator tiklivepro_sessions
+run_migrate comments            tiklivepro_comments
+run_migrate billing             tiklivepro_billing
+run_migrate notifications       tiklivepro_notifications
+run_migrate analytics           tiklivepro_analytics
 
 echo ""
 echo "All services migrated."

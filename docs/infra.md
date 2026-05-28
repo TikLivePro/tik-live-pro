@@ -213,7 +213,7 @@ NATS_URL used by all services: `nats://nats-service.tik-live-pro.svc.cluster.loc
 
 - Init ConfigMap runs `init.sql` on first boot — creates all 9 service databases
 - 20 Gi PVC — adjust `storage` in the manifest for your cluster
-- Connection strings follow pattern: `postgresql://postgres:<pass>@postgres:5432/tiklive_<service>`
+- Connection strings follow pattern: `postgresql://postgres:<pass>@postgres:5432/tiklivepro_<service>`
 
 ### Stream Orchestrator — RTMP
 
@@ -246,10 +246,10 @@ Requires an NGINX Ingress Controller installed in the cluster.
 
 | Hostname | Backend |
 |---------|---------|
-| `api.tiklive.pro` | api-gateway:3000 |
-| `grafana.tiklive.pro` | grafana:3000 |
-| `jaeger.tiklive.pro` | jaeger:16686 |
-| `prometheus.tiklive.pro` | prometheus:9090 |
+| `api.tiklivepro.pro` | api-gateway:3000 |
+| `grafana.tiklivepro.pro` | grafana:3000 |
+| `jaeger.tiklivepro.pro` | jaeger:16686 |
+| `prometheus.tiklivepro.pro` | prometheus:9090 |
 
 ---
 

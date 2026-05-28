@@ -42,7 +42,7 @@ spec:
               value: nats://nats-service:4222
             # Must be the public-facing URL for OAuth callbacks
             - name: OAUTH_REDIRECT_BASE_URL
-              value: https://api.tiklive.pro/integrations
+              value: https://api.tiklivepro.pro/integrations
             - name: CORRELATION_ID_HEADER
               value: x-correlation-id
             - name: TRACE_ID_HEADER

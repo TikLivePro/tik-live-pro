@@ -131,7 +131,7 @@ NODE_ENV=development
 LOG_LEVEL=debug
 
 # Database
-DATABASE_URL=postgresql://postgres:password@localhost:5432/tiklive_<service>
+DATABASE_URL=postgresql://postgres:password@localhost:5432/tiklivepro_<service>
 
 # NATS
 NATS_URL=nats://localhost:4222
@@ -222,8 +222,8 @@ fastify.get('/resource/:id', {
 
 Add to `infra/docker/postgres/init.sql`:
 ```sql
-SELECT 'CREATE DATABASE tiklive_<service>'
-  WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tiklive_<service>')\gexec
+SELECT 'CREATE DATABASE tiklivepro_<service>'
+  WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'tiklivepro_<service>')\gexec
 ```
 
 Also add to the PostgreSQL ConfigMap in `infra/kubernetes/postgres-deployment.yaml`.

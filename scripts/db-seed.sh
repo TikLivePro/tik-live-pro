@@ -20,7 +20,7 @@ run_seed() {
   echo "  done: $svc"
 }
 
-run_seed billing tiklive_billing
+run_seed billing tiklivepro_billing
 
 echo ""
 echo "All services seeded."

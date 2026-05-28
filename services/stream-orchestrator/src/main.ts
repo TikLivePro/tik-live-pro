@@ -154,7 +154,7 @@ This service is primarily driven by NATS JetStream events from the \`live-sessio
 | \`session.ending\` | Stop all workers and clean up |
       `.trim(),
         version: '1.0.0',
-        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklive.pro' },
+        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklivepro.pro' },
         license: { name: 'Proprietary' },
       },
       servers: [

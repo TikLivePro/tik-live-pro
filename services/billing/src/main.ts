@@ -75,7 +75,7 @@ Stripe communicates billing events via signed webhooks to \`POST /billing/webhoo
 All endpoints except \`POST /billing/webhooks/stripe\` require a JWT Bearer token.
       `.trim(),
         version: '1.0.0',
-        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklive.pro' },
+        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklivepro.pro' },
         license: { name: 'Proprietary' },
       },
       servers: [

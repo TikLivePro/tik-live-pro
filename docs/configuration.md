@@ -62,7 +62,7 @@ Path: `.env`
 
 | Variable | Default | Description |
 |---|---|---|
-| `DB_BASE_URL` | `postgresql://postgres:password@localhost:5432` | Base Postgres connection string. Each service database name is appended automatically (e.g. `.../tiklive_auth`). Override when host, port, or credentials differ. |
+| `DB_BASE_URL` | `postgresql://postgres:password@localhost:5432` | Base Postgres connection string. Each service database name is appended automatically (e.g. `.../tiklivepro_auth`). Override when host, port, or credentials differ. |
 
 ---
 
@@ -98,7 +98,7 @@ Port: **3001**
 | `NODE_ENV` | `development` | Yes | Runtime environment |
 | `PORT` | `3001` | Yes | HTTP listen port |
 | `LOG_LEVEL` | `info` | Yes | Pino log level |
-| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklive_auth` | Yes | Postgres connection string for the auth database |
+| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklivepro_auth` | Yes | Postgres connection string for the auth database |
 | `NATS_URL` | `nats://localhost:4222` | Yes | NATS JetStream broker URL |
 | `JWT_SECRET` | — | Yes | Shared JWT secret (min 64 chars) |
 | `JWT_ACCESS_EXPIRES_IN` | `15m` | Yes | Access token TTL (e.g. `15m`, `1h`) |
@@ -117,10 +117,10 @@ Port: **3002**
 | `NODE_ENV` | `development` | Yes | Runtime environment |
 | `PORT` | `3002` | Yes | HTTP listen port |
 | `LOG_LEVEL` | `info` | Yes | Pino log level |
-| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklive_users` | Yes | Postgres connection string |
+| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklivepro_users` | Yes | Postgres connection string |
 | `NATS_URL` | `nats://localhost:4222` | Yes | NATS JetStream broker URL |
 | `JWT_SECRET` | — | Yes | Shared JWT secret |
-| `CDN_BASE_URL` | `https://cdn.tiklive.pro` | Yes | Base URL for uploaded avatars |
+| `CDN_BASE_URL` | `https://cdn.tiklivepro.pro` | Yes | Base URL for uploaded avatars |
 | `CORRELATION_ID_HEADER` | `x-correlation-id` | Yes | Correlation ID header |
 | `TRACE_ID_HEADER` | `x-trace-id` | Yes | Trace ID header |
 
@@ -135,7 +135,7 @@ Port: **3003**
 | `NODE_ENV` | `development` | Yes | Runtime environment |
 | `PORT` | `3003` | Yes | HTTP listen port |
 | `LOG_LEVEL` | `info` | Yes | Pino log level |
-| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklive_sessions` | Yes | Postgres connection string |
+| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklivepro_sessions` | Yes | Postgres connection string |
 | `NATS_URL` | `nats://localhost:4222` | Yes | NATS JetStream broker URL |
 | `JWT_SECRET` | — | Yes | Shared JWT secret |
 | `CORRELATION_ID_HEADER` | `x-correlation-id` | Yes | Correlation ID header |
@@ -152,7 +152,7 @@ Port: **3004**
 | `NODE_ENV` | `development` | Yes | Runtime environment |
 | `PORT` | `3004` | Yes | HTTP listen port |
 | `LOG_LEVEL` | `info` | Yes | Pino log level |
-| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklive_billing` | Yes | Postgres connection string |
+| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklivepro_billing` | Yes | Postgres connection string |
 | `NATS_URL` | `nats://localhost:4222` | Yes | NATS JetStream broker URL |
 | `JWT_SECRET` | — | Yes | Shared JWT secret |
 | `STRIPE_SECRET_KEY` | — | Yes | Stripe secret key (`sk_test_…` for development, `sk_live_…` for production) |
@@ -172,14 +172,14 @@ Port: **3005**
 | `NODE_ENV` | `development` | Yes | Runtime environment |
 | `PORT` | `3005` | Yes | HTTP listen port |
 | `LOG_LEVEL` | `info` | Yes | Pino log level |
-| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklive_integrations` | Yes | Postgres connection string |
+| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklivepro_integrations` | Yes | Postgres connection string |
 | `NATS_URL` | `nats://localhost:4222` | Yes | NATS JetStream broker URL |
 | `JWT_SECRET` | — | Yes | Shared JWT secret |
 | `TIKTOK_CLIENT_KEY` | — | Yes | TikTok app client key |
 | `TIKTOK_CLIENT_SECRET` | — | Yes | TikTok app client secret |
 | `FACEBOOK_APP_ID` | — | Yes | Facebook app ID |
 | `FACEBOOK_APP_SECRET` | — | Yes | Facebook app secret |
-| `OAUTH_REDIRECT_BASE_URL` | `http://localhost:3005` | Yes | Base URL for OAuth callbacks, e.g. `https://api.tiklive.pro` in production |
+| `OAUTH_REDIRECT_BASE_URL` | `http://localhost:3005` | Yes | Base URL for OAuth callbacks, e.g. `https://api.tiklivepro.pro` in production |
 | `TOKEN_ENCRYPTION_KEY` | — | Yes | AES-256-GCM key for OAuth token encryption at rest (min 32 chars) |
 | `CORRELATION_ID_HEADER` | `x-correlation-id` | Yes | Correlation ID header |
 | `TRACE_ID_HEADER` | `x-trace-id` | Yes | Trace ID header |
@@ -195,7 +195,7 @@ Port: **3006**
 | `NODE_ENV` | `development` | Yes | Runtime environment |
 | `PORT` | `3006` | Yes | HTTP listen port |
 | `LOG_LEVEL` | `info` | Yes | Pino log level |
-| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklive_comments` | Yes | Postgres connection string |
+| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklivepro_comments` | Yes | Postgres connection string |
 | `NATS_URL` | `nats://localhost:4222` | Yes | NATS JetStream broker URL |
 | `JWT_SECRET` | — | Yes | Shared JWT secret |
 | `COMMENT_POLL_INTERVAL_MS` | `2000` | Yes | How often (ms) to poll platform APIs for new comments |
@@ -213,7 +213,7 @@ Port: **3007**
 | `NODE_ENV` | `development` | Yes | Runtime environment |
 | `PORT` | `3007` | Yes | HTTP listen port |
 | `LOG_LEVEL` | `info` | Yes | Pino log level |
-| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklive_notifications` | Yes | Postgres connection string |
+| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklivepro_notifications` | Yes | Postgres connection string |
 | `NATS_URL` | `nats://localhost:4222` | Yes | NATS JetStream broker URL |
 | `JWT_SECRET` | — | Yes | Shared JWT secret |
 | `CORRELATION_ID_HEADER` | `x-correlation-id` | Yes | Correlation ID header |
@@ -230,7 +230,7 @@ Port: **3008**
 | `NODE_ENV` | `development` | Yes | Runtime environment |
 | `PORT` | `3008` | Yes | HTTP listen port |
 | `LOG_LEVEL` | `info` | Yes | Pino log level |
-| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklive_analytics` | Yes | Postgres connection string |
+| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklivepro_analytics` | Yes | Postgres connection string |
 | `NATS_URL` | `nats://localhost:4222` | Yes | NATS JetStream broker URL |
 | `JWT_SECRET` | — | Yes | Shared JWT secret |
 | `CORRELATION_ID_HEADER` | `x-correlation-id` | Yes | Correlation ID header |
@@ -247,7 +247,7 @@ Port: **3009**
 | `NODE_ENV` | `development` | Yes | Runtime environment |
 | `PORT` | `3009` | Yes | HTTP listen port |
 | `LOG_LEVEL` | `debug` | Yes | Pino log level |
-| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklive_sessions` | Yes | Shares the live-session Postgres database |
+| `DATABASE_URL` | `postgresql://postgres:password@localhost:5432/tiklivepro_sessions` | Yes | Shares the live-session Postgres database |
 | `NATS_URL` | `nats://localhost:4222` | Yes | NATS JetStream broker URL |
 | `RTMP_INGEST_HOST` | `0.0.0.0` | Yes | RTMP ingest bind address |
 | `RTMP_INGEST_PORT` | `1935` | Yes | RTMP ingest port |
@@ -299,14 +299,14 @@ Port: **3009**
 
 1. Go to [TikTok for Developers](https://developers.tiktok.com/) and create an app.
 2. Enable the **Login Kit** and **Live** products.
-3. Add the OAuth redirect URI: `http://localhost:3005/integrations/oauth/tiktok/callback` (dev) or `https://api.tiklive.pro/integrations/oauth/tiktok/callback` (prod).
+3. Add the OAuth redirect URI: `http://localhost:3005/integrations/oauth/tiktok/callback` (dev) or `https://api.tiklivepro.pro/integrations/oauth/tiktok/callback` (prod).
 4. Copy **Client Key** → `TIKTOK_CLIENT_KEY` and **Client Secret** → `TIKTOK_CLIENT_SECRET` in both `services/integrations/.env` and `services/stream-orchestrator/.env`.
 
 ### Facebook
 
 1. Go to [Meta for Developers](https://developers.facebook.com/) and create an app of type **Business**.
 2. Add the **Facebook Login** product and enable the **Live Videos** permission.
-3. Add the OAuth redirect URI: `http://localhost:3005/integrations/oauth/facebook/callback` (dev) or `https://api.tiklive.pro/integrations/oauth/facebook/callback` (prod).
+3. Add the OAuth redirect URI: `http://localhost:3005/integrations/oauth/facebook/callback` (dev) or `https://api.tiklivepro.pro/integrations/oauth/facebook/callback` (prod).
 4. Copy **App ID** → `FACEBOOK_APP_ID` and **App Secret** → `FACEBOOK_APP_SECRET` in both `services/integrations/.env` and `services/stream-orchestrator/.env`.
 
 ### Google (web social login only)
@@ -322,7 +322,7 @@ Port: **3009**
 
 1. Create a [Stripe](https://stripe.com) account and retrieve your **secret key** from the Dashboard → Developers → API keys.
 2. Create a **Product** with a recurring **Price** for the Premium plan. Copy the Price ID (`price_…`) → `STRIPE_PREMIUM_PRICE_ID`.
-3. Set up a **Webhook** endpoint pointing to `https://api.tiklive.pro/billing/webhooks/stripe`. Copy the signing secret → `STRIPE_WEBHOOK_SECRET`.
+3. Set up a **Webhook** endpoint pointing to `https://api.tiklivepro.pro/billing/webhooks/stripe`. Copy the signing secret → `STRIPE_WEBHOOK_SECRET`.
 4. For local development, use the [Stripe CLI](https://stripe.com/docs/stripe-cli) to forward events: `stripe listen --forward-to localhost:3004/billing/webhooks/stripe`.
 
 ---

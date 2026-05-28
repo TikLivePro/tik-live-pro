@@ -89,14 +89,14 @@ Third-party social platforms (TikTok, Facebook, YouTube, etc.) are integrated us
 | Service | Port | Database | Notes |
 |---------|------|----------|-------|
 | api-gateway | 3000 | — | BFF, JWT validation, rate limiting |
-| auth | 3001 | `tiklive_auth` | JWT issue/refresh, OAuth |
-| users | 3002 | `tiklive_users` | Profiles, preferences |
-| live-session | 3003 | `tiklive_sessions` | Session lifecycle |
-| billing | 3004 | `tiklive_billing` | Stripe, entitlements |
-| integrations | 3005 | `tiklive_integrations` | Social OAuth tokens (AES-256-GCM encrypted) |
-| comments | 3006 | `tiklive_comments` | Comment polling + WebSocket |
-| notifications | 3007 | `tiklive_notifications` | Push/email via workqueue |
-| analytics | 3008 | `tiklive_analytics` | Event aggregation |
-| stream-orchestrator | 3009 | `tiklive_stream` | RTMP ingest (:1935), platform broadcast |
+| auth | 3001 | `tiklivepro_auth` | JWT issue/refresh, OAuth |
+| users | 3002 | `tiklivepro_users` | Profiles, preferences |
+| live-session | 3003 | `tiklivepro_sessions` | Session lifecycle |
+| billing | 3004 | `tiklivepro_billing` | Stripe, entitlements |
+| integrations | 3005 | `tiklivepro_integrations` | Social OAuth tokens (AES-256-GCM encrypted) |
+| comments | 3006 | `tiklivepro_comments` | Comment polling + WebSocket |
+| notifications | 3007 | `tiklivepro_notifications` | Push/email via workqueue |
+| analytics | 3008 | `tiklivepro_analytics` | Event aggregation |
+| stream-orchestrator | 3009 | `tiklivepro_stream` | RTMP ingest (:1935), platform broadcast |
 
 When adding a new service, also update `docs/architecture.md`, `docs/setup.md`, and `infra/observability/prometheus.yml`.

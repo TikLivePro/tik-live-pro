@@ -296,7 +296,7 @@ Callback URL invoked by the social platform after the user completes the OAuth c
       },
     },
     async (_request, reply) => {
-      return reply.redirect('https://app.tiklive.pro/integrations?success=true');
+      return reply.redirect('https://app.tiklivepro.pro/integrations?success=true');
     },
   );
 

@@ -41,7 +41,7 @@ spec:
             - name: NATS_URL
               value: nats://nats-service:4222
             - name: CDN_BASE_URL
-              value: https://cdn.tiklive.pro
+              value: https://cdn.tiklivepro.pro
             - name: CORRELATION_ID_HEADER
               value: x-correlation-id
             - name: TRACE_ID_HEADER

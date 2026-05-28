@@ -71,7 +71,7 @@ namespace → secrets → nats → postgres → redis
   - `NATS_URL` used by services: `nats://nats-service.tik-live-pro.svc.cluster.local:4222`
   - Prometheus sidecar exports metrics on port 7777.
 - **PostgreSQL**: 1-replica StatefulSet with a ConfigMap-mounted `init.sql` that creates all service databases.
-  - Adding a new service: add `CREATE DATABASE tiklive_<service>` to `infra/docker/postgres/init.sql` **and** the Kubernetes PostgreSQL ConfigMap in `postgres-deployment.yaml`.
+  - Adding a new service: add `CREATE DATABASE tiklivepro_<service>` to `infra/docker/postgres/init.sql` **and** the Kubernetes PostgreSQL ConfigMap in `postgres-deployment.yaml`.
 
 ### Deployments
 

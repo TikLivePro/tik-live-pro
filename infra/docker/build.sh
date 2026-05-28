@@ -79,6 +79,33 @@ build_service() {
   fi
 }
 
+build_web() {
+  local image_tag="${REGISTRY}/web:${TAG}"
+  local dockerfile="${DOCKERFILE_DIR}/Dockerfile.web"
+
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Building: ${image_tag}  (Next.js standalone)"
+  echo "  Dockerfile: ${dockerfile}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  local cache_args=()
+  if [[ -n "${CACHE_FROM:-}" ]]; then
+    cache_args=(--cache-from "${CACHE_FROM}")
+  fi
+
+  docker build \
+    -f "${dockerfile}" \
+    -t "${image_tag}" \
+    "${cache_args[@]+"${cache_args[@]}"}" \
+    "${REPO_ROOT}"
+
+  if [[ "${PUSH:-0}" == "1" ]]; then
+    echo "  Pushing ${image_tag}…"
+    docker push "${image_tag}"
+  fi
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 TARGET="${1:-}"
 
@@ -87,6 +114,9 @@ if [[ -z "${TARGET}" || "${TARGET}" == "all" ]]; then
   for entry in "${SERVICES[@]}"; do
     build_service "${entry}"
   done
+  build_web
+elif [[ "${TARGET}" == "web" ]]; then
+  build_web
 else
   # Find the matching entry
   matched=false
@@ -106,6 +136,7 @@ else
     for entry in "${SERVICES[@]}"; do
       echo "  ${entry%%:*}"
     done
+    echo "  web"
     exit 1
   fi
 fi

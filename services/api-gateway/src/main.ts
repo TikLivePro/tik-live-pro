@@ -108,13 +108,13 @@ All error responses follow a consistent envelope:
 \`\`\`
       `.trim(),
         version: '1.0.0',
-        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklive.pro' },
+        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklivepro.pro' },
         license: { name: 'Proprietary' },
       },
       servers: env.NODE_ENV === 'production'
         ? [
-            { url: 'https://api.tiklive.pro', description: 'Production' },
-            { url: 'https://api.staging.tiklive.pro', description: 'Staging' },
+            { url: 'https://api.tiklivepro.pro', description: 'Production' },
+            { url: 'https://api.staging.tiklivepro.pro', description: 'Staging' },
             {
               url: 'http://localhost:{port}',
               description: 'Local development',
@@ -127,8 +127,8 @@ All error responses follow a consistent envelope:
               description: 'Local development',
               variables: { port: { default: String(env.PORT), description: 'Gateway HTTP port' } },
             },
-            { url: 'https://api.staging.tiklive.pro', description: 'Staging' },
-            { url: 'https://api.tiklive.pro', description: 'Production' },
+            { url: 'https://api.staging.tiklivepro.pro', description: 'Staging' },
+            { url: 'https://api.tiklivepro.pro', description: 'Production' },
           ],
       components: {
         securitySchemes: {
@@ -411,7 +411,7 @@ All error responses follow a consistent envelope:
               content: { 'multipart/form-data': { schema: { type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary', description: 'Image file (JPEG or PNG, max 5 MB).' } } } } },
             },
             responses: {
-              200: { description: 'Avatar uploaded.', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'object', properties: { avatarUrl: { type: 'string', format: 'uri', example: 'https://cdn.tiklive.pro/avatars/abc.jpg' } } } } } } } },
+              200: { description: 'Avatar uploaded.', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'object', properties: { avatarUrl: { type: 'string', format: 'uri', example: 'https://cdn.tiklivepro.pro/avatars/abc.jpg' } } } } } } } },
               401: { description: 'Unauthorized.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
               413: { description: 'File too large (> 5 MB).', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
             },
@@ -655,8 +655,8 @@ All error responses follow a consistent envelope:
                     type: 'object',
                     required: ['successUrl', 'cancelUrl'],
                     properties: {
-                      successUrl: { type: 'string', format: 'uri', description: 'URL Stripe redirects to after successful payment.', example: 'https://app.tiklive.pro/billing/success' },
-                      cancelUrl: { type: 'string', format: 'uri', description: 'URL Stripe redirects to if the user cancels.', example: 'https://app.tiklive.pro/billing' },
+                      successUrl: { type: 'string', format: 'uri', description: 'URL Stripe redirects to after successful payment.', example: 'https://app.tiklivepro.pro/billing/success' },
+                      cancelUrl: { type: 'string', format: 'uri', description: 'URL Stripe redirects to if the user cancels.', example: 'https://app.tiklivepro.pro/billing' },
                     },
                   },
                 },

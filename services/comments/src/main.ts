@@ -195,7 +195,7 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
 - **POST /comments/:id/reply** — reply to a viewer comment on the platform it came from.
         `.trim(),
         version: '1.0.0',
-        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklive.pro' },
+        contact: { name: 'TikLivePro Engineering', email: 'engineering@tiklivepro.pro' },
         license: { name: 'Proprietary' },
       },
       servers: [

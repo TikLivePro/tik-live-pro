@@ -35,7 +35,7 @@ const userProfileSchema = {
       format: 'uri',
       nullable: true,
       description: 'CDN URL of the profile picture, or null if not set.',
-      example: 'https://cdn.tiklive.pro/avatars/a1b2c3.jpg',
+      example: 'https://cdn.tiklivepro.pro/avatars/a1b2c3.jpg',
     },
     subscriptionTier: {
       type: 'string',
@@ -183,7 +183,7 @@ Use \`Content-Type: multipart/form-data\` with the file under the \`file\` field
                     type: 'string',
                     format: 'uri',
                     description: 'CDN URL of the newly uploaded avatar.',
-                    example: 'https://cdn.tiklive.pro/avatars/a1b2c3.jpg',
+                    example: 'https://cdn.tiklivepro.pro/avatars/a1b2c3.jpg',
                   },
                 },
               },
@@ -197,7 +197,7 @@ Use \`Content-Type: multipart/form-data\` with the file under the \`file\` field
       },
     },
     async (_request, reply) => {
-      return reply.status(200).send({ data: { avatarUrl: 'https://cdn.tiklive.pro/avatars/placeholder.jpg' } });
+      return reply.status(200).send({ data: { avatarUrl: 'https://cdn.tiklivepro.pro/avatars/placeholder.jpg' } });
     },
   );
 

@@ -1,28 +1,51 @@
 # ==============================================================================
-# docker-compose.prod.yml — Production-like compose for local E2E testing
+# docker-compose.prod.managed.yml — Production stack with managed external DBs
 #
-# This file runs the pre-built container images (from ghcr.io or local build).
-# It does NOT mount source code — it mirrors the production deployment.
+# Postgres → Neon (free tier)    https://neon.tech
+# Redis    → Upstash (free tier) https://upstash.com
 #
-# Workflow:
-#   1. Build images:    bash infra/docker/build.sh all
-#   2. Copy .env file:  cp .env.example .env.prod  # fill in real values
-#   3. Start stack:     docker compose -f docker-compose.prod.yml up -d
-#   4. Check health:    docker compose -f docker-compose.prod.yml ps
-#   5. Tear down:       docker compose -f docker-compose.prod.yml down -v
+# This file is used by the GitHub Actions deploy workflow on the 4 GB Droplet.
+# The server only runs application containers — no heavy infra to self-host.
 #
-# RAM budget (4 GB Droplet — without observability profile):
-#   infra (postgres 512 m + redis 300 m + nats 128 m)   ~  940 MB
-#   10 microservices (128–320 m each)                    ~ 1 780 MB
-#   web (Next.js standalone)                             ~  512 MB
-#   ─────────────────────────────────────────────────────────────
-#   Total                                                ~ 3 232 MB  ← fits
+# Required env vars in /opt/tiklivepro/.env on the server:
 #
-# Observability profile adds ~2 GB (Jaeger + otel + Prometheus + Grafana).
-# Start it only on an 8 GB Droplet:
-#   docker compose -f docker-compose.prod.yml --profile observability up -d
+#   REGISTRY=ghcr.io/YOUR_GITHUB_USERNAME/tik-live-pro
+#   IMAGE_TAG=latest          # overridden by CI to the commit SHA
 #
-# For development use docker-compose.dev.yml instead.
+#   JWT_SECRET=<openssl rand -hex 64>
+#   TOKEN_ENCRYPTION_KEY=<openssl rand -hex 32>
+#   POSTGRES_PASSWORD=unused  # kept for compat, not used by managed version
+#
+#   # Neon connection strings (one per service — same host, different DB name)
+#   AUTH_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_auth?sslmode=require
+#   USERS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_users?sslmode=require
+#   SESSIONS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_sessions?sslmode=require
+#   BILLING_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_billing?sslmode=require
+#   INTEGRATIONS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_integrations?sslmode=require
+#   COMMENTS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_comments?sslmode=require
+#   NOTIFICATIONS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_notifications?sslmode=require
+#   ANALYTICS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_analytics?sslmode=require
+#   STREAM_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_stream?sslmode=require
+#
+#   # Upstash Redis (TLS URL from the Upstash console)
+#   REDIS_URL=rediss://default:TOKEN@HOST.upstash.io:6379
+#
+#   # Social OAuth
+#   TIKTOK_CLIENT_KEY=...
+#   TIKTOK_CLIENT_SECRET=...
+#   FACEBOOK_APP_ID=...
+#   FACEBOOK_APP_SECRET=...
+#
+#   # Stripe
+#   STRIPE_SECRET_KEY=...
+#   STRIPE_WEBHOOK_SECRET=...
+#   STRIPE_PREMIUM_PRICE_ID=...
+#
+#   # Grafana (only used with --profile observability)
+#   GRAFANA_PASSWORD=...
+#
+# RAM budget on 4 GB Droplet (no observability):
+#   NATS 128m + 10 services ~1780m + web 512m ≈ 2420m  ← comfortable
 # ==============================================================================
 
 x-service-defaults: &service-defaults
@@ -44,7 +67,7 @@ x-backend-env: &backend-env
 
 services:
 
-  # ── Infrastructure ──────────────────────────────────────────────────────────
+  # ── Infrastructure (NATS only — Postgres and Redis are managed externally) ───
 
   nats:
     <<: *service-defaults
@@ -65,52 +88,7 @@ services:
       timeout: 5s
       retries: 5
 
-  postgres:
-    <<: *service-defaults
-    image: postgres:16-alpine
-    # shared_buffers and work_mem tuned for a 512 m container
-    command: >
-      postgres
-        -c shared_buffers=128MB
-        -c effective_cache_size=384MB
-        -c work_mem=4MB
-        -c maintenance_work_mem=32MB
-        -c max_connections=100
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_DB: tiklivepro
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./infra/docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    deploy:
-      resources:
-        limits:
-          memory: 512m
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    <<: *service-defaults
-    image: redis:7-alpine
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis_data:/data
-    deploy:
-      resources:
-        limits:
-          memory: 300m
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # ── Observability (optional — start with --profile observability) ────────────
-  # Requires an 8 GB Droplet. On a 4 GB Droplet keep these off.
+  # ── Observability (opt-in — start with --profile observability) ──────────────
 
   jaeger:
     <<: *service-defaults
@@ -183,7 +161,7 @@ services:
         limits:
           memory: 256m
 
-  # ── Microservices ───────────────────────────────────────────────────────────
+  # ── Microservices ─────────────────────────────────────────────────────────────
 
   api-gateway:
     <<: *service-defaults
@@ -192,6 +170,7 @@ services:
       <<: *backend-env
       PORT: "3000"
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      REDIS_URL: ${REDIS_URL:-}
       AUTH_SERVICE_URL: http://auth:3001
       USER_SERVICE_URL: http://users:3002
       SESSION_SERVICE_URL: http://live-session:3003
@@ -224,14 +203,12 @@ services:
     environment:
       <<: *backend-env
       PORT: "3001"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklivepro_auth
+      DATABASE_URL: ${AUTH_DATABASE_URL:?AUTH_DATABASE_URL is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_ACCESS_EXPIRES_IN: "15m"
       JWT_REFRESH_EXPIRES_IN: "30d"
       NODE_OPTIONS: "--max-old-space-size=96"
     depends_on:
-      postgres:
-        condition: service_healthy
       nats:
         condition: service_healthy
     deploy:
@@ -251,13 +228,11 @@ services:
     environment:
       <<: *backend-env
       PORT: "3002"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklivepro_users
+      DATABASE_URL: ${USERS_DATABASE_URL:?USERS_DATABASE_URL is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       CDN_BASE_URL: ${CDN_BASE_URL:-https://cdn.tiklivepro.pro}
       NODE_OPTIONS: "--max-old-space-size=96"
     depends_on:
-      postgres:
-        condition: service_healthy
       nats:
         condition: service_healthy
     deploy:
@@ -277,12 +252,10 @@ services:
     environment:
       <<: *backend-env
       PORT: "3003"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklivepro_sessions
+      DATABASE_URL: ${SESSIONS_DATABASE_URL:?SESSIONS_DATABASE_URL is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       NODE_OPTIONS: "--max-old-space-size=96"
     depends_on:
-      postgres:
-        condition: service_healthy
       nats:
         condition: service_healthy
     deploy:
@@ -302,15 +275,13 @@ services:
     environment:
       <<: *backend-env
       PORT: "3004"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklivepro_billing
+      DATABASE_URL: ${BILLING_DATABASE_URL:?BILLING_DATABASE_URL is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY is required}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:?STRIPE_WEBHOOK_SECRET is required}
       STRIPE_PREMIUM_PRICE_ID: ${STRIPE_PREMIUM_PRICE_ID:?STRIPE_PREMIUM_PRICE_ID is required}
       NODE_OPTIONS: "--max-old-space-size=96"
     depends_on:
-      postgres:
-        condition: service_healthy
       nats:
         condition: service_healthy
     deploy:
@@ -330,18 +301,16 @@ services:
     environment:
       <<: *backend-env
       PORT: "3005"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklivepro_integrations
+      DATABASE_URL: ${INTEGRATIONS_DATABASE_URL:?INTEGRATIONS_DATABASE_URL is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       TIKTOK_CLIENT_KEY: ${TIKTOK_CLIENT_KEY:?TIKTOK_CLIENT_KEY is required}
       TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:?TIKTOK_CLIENT_SECRET is required}
       FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:?FACEBOOK_APP_ID is required}
       FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:?FACEBOOK_APP_SECRET is required}
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?TOKEN_ENCRYPTION_KEY is required}
-      OAUTH_REDIRECT_BASE_URL: ${OAUTH_REDIRECT_BASE_URL:-http://localhost:3005}
+      OAUTH_REDIRECT_BASE_URL: ${OAUTH_REDIRECT_BASE_URL:-https://api.tiklivepro.me}
       NODE_OPTIONS: "--max-old-space-size=128"
     depends_on:
-      postgres:
-        condition: service_healthy
       nats:
         condition: service_healthy
     deploy:
@@ -361,13 +330,11 @@ services:
     environment:
       <<: *backend-env
       PORT: "3006"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklivepro_comments
+      DATABASE_URL: ${COMMENTS_DATABASE_URL:?COMMENTS_DATABASE_URL is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       COMMENT_POLL_INTERVAL_MS: "2000"
       NODE_OPTIONS: "--max-old-space-size=128"
     depends_on:
-      postgres:
-        condition: service_healthy
       nats:
         condition: service_healthy
     deploy:
@@ -387,12 +354,10 @@ services:
     environment:
       <<: *backend-env
       PORT: "3007"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklivepro_notifications
+      DATABASE_URL: ${NOTIFICATIONS_DATABASE_URL:?NOTIFICATIONS_DATABASE_URL is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       NODE_OPTIONS: "--max-old-space-size=64"
     depends_on:
-      postgres:
-        condition: service_healthy
       nats:
         condition: service_healthy
     deploy:
@@ -412,12 +377,10 @@ services:
     environment:
       <<: *backend-env
       PORT: "3008"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklivepro_analytics
+      DATABASE_URL: ${ANALYTICS_DATABASE_URL:?ANALYTICS_DATABASE_URL is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       NODE_OPTIONS: "--max-old-space-size=64"
     depends_on:
-      postgres:
-        condition: service_healthy
       nats:
         condition: service_healthy
     deploy:
@@ -437,7 +400,7 @@ services:
     environment:
       <<: *backend-env
       PORT: "3009"
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklivepro_stream
+      DATABASE_URL: ${STREAM_DATABASE_URL:?STREAM_DATABASE_URL is required}
       RTMP_INGEST_PORT: "1935"
       RTMP_INGEST_HOST: "0.0.0.0"
       INTEGRATIONS_SERVICE_URL: http://integrations:3005
@@ -445,14 +408,11 @@ services:
       TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:?TIKTOK_CLIENT_SECRET is required}
       FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:?FACEBOOK_APP_ID is required}
       FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:?FACEBOOK_APP_SECRET is required}
-      # Higher cap — ffmpeg subprocesses share the cgroup limit
       NODE_OPTIONS: "--max-old-space-size=192"
     ports:
       - "3009:3009"
       - "1935:1935"
     depends_on:
-      postgres:
-        condition: service_healthy
       nats:
         condition: service_healthy
     deploy:
@@ -466,7 +426,7 @@ services:
       retries: 5
       start_period: 30s
 
-  # ── Web frontend ────────────────────────────────────────────────────────────
+  # ── Web frontend ─────────────────────────────────────────────────────────────
 
   web:
     <<: *service-defaults
@@ -502,7 +462,5 @@ networks:
 
 volumes:
   nats_data:
-  postgres_data:
-  redis_data:
   prometheus_data:
   grafana_data:
