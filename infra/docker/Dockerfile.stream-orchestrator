@@ -71,6 +71,8 @@ RUN pnpm --filter "@tik-live-pro/shared-types" build \
  && pnpm --filter "@tik-live-pro/platform-adapters" build \
  && pnpm --filter "@tik-live-pro/stream-orchestrator" build
 
+RUN pnpm --filter "@tik-live-pro/stream-orchestrator" deploy --prod /app/deploy
+
 # ── Stage 4: runtime ──────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-alpine AS runtime
 
@@ -81,8 +83,8 @@ RUN addgroup --system --gid 1001 nodejs \
 
 WORKDIR /app
 
-COPY --from=builder --chown=nodeuser:nodejs /app/services/stream-orchestrator/dist ./dist
-COPY --from=builder --chown=nodeuser:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nodeuser:nodejs /app/deploy/node_modules ./node_modules
+COPY --from=builder --chown=nodeuser:nodejs /app/deploy/dist ./dist
 
 USER nodeuser
 

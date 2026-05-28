@@ -96,6 +96,9 @@ RUN pnpm --filter "@tik-live-pro/shared-types" build \
  && pnpm --filter "@tik-live-pro/platform-adapters" build \
  && pnpm --filter "@tik-live-pro/${PACKAGE_NAME}" build
 
+# Produce a self-contained deployment: resolves all production deps without symlinks
+RUN pnpm --filter "@tik-live-pro/${PACKAGE_NAME}" deploy --prod /app/deploy
+
 # ── Stage 4: runtime (minimal production image) ───────────────────────────────
 FROM node:${NODE_VERSION}-alpine AS runtime
 ARG SERVICE_NAME
@@ -109,14 +112,9 @@ RUN addgroup --system --gid 1001 nodejs \
 
 WORKDIR /app
 
-# Copy compiled service output
-COPY --from=builder --chown=nodeuser:nodejs \
-  /app/services/${SERVICE_NAME}/dist ./dist
-
-# Copy the FULL node_modules (includes built workspace package dist files)
-# Using the builder stage so workspace symlinks resolve correctly.
-COPY --from=builder --chown=nodeuser:nodejs \
-  /app/node_modules ./node_modules
+# pnpm deploy produces a self-contained directory: flat node_modules (no symlinks) + dist/
+COPY --from=builder --chown=nodeuser:nodejs /app/deploy/node_modules ./node_modules
+COPY --from=builder --chown=nodeuser:nodejs /app/deploy/dist ./dist
 
 # Drop to non-root
 USER nodeuser
