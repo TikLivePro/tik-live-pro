@@ -18,6 +18,7 @@ export const Subjects = {
   INTEGRATION_ACCOUNT_DISCONNECTED: 'integration.account.disconnected',
   INTEGRATION_TOKEN_REFRESHED: 'integration.token.refreshed',
   INTEGRATION_TOKEN_EXPIRED: 'integration.token.expired',
+  INTEGRATION_PLATFORM_SESSION_ENDED: 'integration.platform.session_ended',
 
   // Live session lifecycle
   SESSION_CREATED: 'session.created',

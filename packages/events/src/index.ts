@@ -5,3 +5,4 @@ export * from './schemas/auth.events.js';
 export * from './schemas/stream.events.js';
 export * from './schemas/comment.events.js';
 export * from './schemas/billing.events.js';
+export * from './schemas/integration.events.js';

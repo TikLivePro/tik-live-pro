@@ -513,6 +513,29 @@ All error responses follow a consistent envelope:
           },
         },
 
+        '/integrations/webhooks/tiktok': {
+          get: {
+            tags: ['Integrations'],
+            summary: 'TikTok webhook challenge verification',
+            description: 'One-time endpoint called by TikTok when the Callback URL is saved in the developer portal. Echoes the `challenge` query parameter back to complete verification. Do not call directly.',
+            parameters: [
+              { in: 'query', name: 'challenge', required: false, schema: { type: 'string' }, description: 'Opaque token sent by TikTok. Echoed back in the response body.' },
+            ],
+            responses: {
+              200: { description: 'Challenge echoed back.', content: { 'application/json': { schema: { type: 'object', properties: { challenge: { type: 'string' } } } } } },
+            },
+          },
+          post: {
+            tags: ['Integrations'],
+            summary: 'TikTok webhook event receiver',
+            description: 'Receives push events from TikTok. All requests are validated with HMAC-SHA256 (`X-TikTok-Signature` header). Handled events: `user.authorization.revoke` (marks account inactive, publishes `integration.account.disconnected`) and `live.session.ended` (publishes `integration.platform.session_ended`). Do not call directly.',
+            responses: {
+              200: { description: 'Event acknowledged.', content: { 'application/json': { schema: { type: 'object', properties: { ok: { type: 'boolean' } } } } } },
+              400: { description: 'Invalid HMAC signature.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            },
+          },
+        },
+
         // -----------------------------------------------------------------------
         // LIVE SESSIONS
         // -----------------------------------------------------------------------

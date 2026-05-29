@@ -11,6 +11,7 @@ import { parseEnv, baseEnvSchema } from '@tik-live-pro/config';
 import { createLogger } from '@tik-live-pro/logger';
 import { NatsJetStreamClient, ensureStreams } from '@tik-live-pro/events';
 import { registerIntegrationsRoutes } from './interfaces/http/integrations.routes.js';
+import { registerTikTokWebhookRoutes } from './interfaces/http/tiktok-webhook.routes.js';
 
 const envSchema = baseEnvSchema.extend({
   DATABASE_URL: z.string().url(),
@@ -100,6 +101,7 @@ All endpoints except the OAuth callback require a JWT Bearer token.
       },
       tags: [
         { name: 'Integrations', description: 'Connected social account management and OAuth flow.' },
+        { name: 'Webhooks', description: 'TikTok push webhook receiver — challenge verification and event handling.' },
         { name: 'Health', description: 'Kubernetes liveness / readiness probes.' },
       ],
     },
@@ -121,6 +123,13 @@ All endpoints except the OAuth callback require a JWT Bearer token.
     db,
     tokenEncryptionKey: env.TOKEN_ENCRYPTION_KEY,
     internalApiKey: env.INTERNAL_API_KEY,
+  });
+
+  registerTikTokWebhookRoutes(fastify, {
+    db,
+    nats,
+    tiktokClientSecret: env.TIKTOK_CLIENT_SECRET,
+    logger,
   });
 
   fastify.get(

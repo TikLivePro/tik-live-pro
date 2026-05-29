@@ -1,6 +1,6 @@
 # TikLivePro — NATS JetStream Event Contracts
 
-> **Last updated:** 2026-05-22
+> **Last updated:** 2026-05-29
 > Update this file whenever a stream, consumer, or event schema is added or changed.
 > The canonical stream configuration lives in `infra/nats/jetstream-config.yaml`.
 
@@ -69,6 +69,7 @@ Pre-created durable pull-consumers (all use `ack_policy: explicit`):
 | BILLING | `analytics-billing` | `billing.>` | 5 | 30 s | analytics |
 | COMMENTS | `comments-websocket` | `comment.received` | 3 | 10 s | comments |
 | INTEGRATIONS | `stream-orchestrator-tokens` | `integration.token.rotated` | 5 | 30 s | stream-orchestrator |
+| INTEGRATIONS | `live-session-platform-ended` | `integration.platform.session_ended` | 5 | 30 s | live-session |
 | AUTH | `analytics-auth` | `auth.>` | 3 | 15 s | analytics |
 | NOTIFICATIONS | `notifications-worker` | `notification.>` | 5 | 30 s | notifications |
 
@@ -217,6 +218,36 @@ Consumers: `users-service` (update feature flags), `integrations-service` (enfor
 }
 ```
 Consumers: `stream-orchestrator` (re-fetch token before next broadcast)
+
+---
+
+**`integration.account.disconnected`** (v1)
+```typescript
+{
+  socialAccountId: SocialAccountId;
+  userId: UserId;
+  platform: 'tiktok' | 'facebook';
+  platformUserId: string;
+  reason: 'user_initiated' | 'token_expired' | 'platform_revoked';
+}
+```
+Published by: `integrations-service` — either when the user disconnects via the app (DELETE `/integrations/accounts/:id`) or when TikTok sends a `user.authorization.revoke` webhook (`reason: 'platform_revoked'`).
+
+Consumers: `stream-orchestrator` (remove destination from any active session), `live-session` (mark affected destinations as ended)
+
+---
+
+**`integration.platform.session_ended`** (v1)
+```typescript
+{
+  platform: 'tiktok' | 'facebook';
+  platformUserId: string;
+  socialAccountId: SocialAccountId;
+}
+```
+Published by: `integrations-service` when TikTok sends a `live.session.ended` webhook, meaning TikTok force-terminated a live session on their end (e.g., policy violation, network drop).
+
+Consumers: `live-session` (find active session with this `socialAccountId` as a destination and trigger graceful teardown)
 
 ---
 

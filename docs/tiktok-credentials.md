@@ -1,4 +1,4 @@
-> Last updated: 2026-05-28
+> Last updated: 2026-05-29
 
 # TikTok Credentials Setup
 
@@ -96,7 +96,49 @@ Login Kit is required for the social login (`TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT
 
 ---
 
-## 6. Get your credentials
+## 6. TikTok LIVE streaming — how it actually works
+
+> **Important:** TikTok does **not** have a public Live API in the developer portal. There is no "Live Kit" product, and no `live.stream.*` or `live.comment.*` scopes exist in the official developer portal. Live streaming and live comment access work through separate, non-portal mechanisms described below.
+
+### 6a. RTMP stream key (broadcasting)
+
+TikTok LIVE streaming uses RTMP, but stream keys are **not** obtained via the developer API. The flow is:
+
+1. The connected TikTok account must be part of a **TikTok Creator Network** (agency). Creator Networks unlock the RTMP option — there is no follower minimum for many networks and membership is free.
+2. Once unlocked, the creator visits **TikTok LIVE Producer** at `livecenter.tiktok.com/producer` to generate a stream key.
+3. A **new stream key is issued each session** — it cannot be retrieved programmatically via an official API.
+
+**Implication for TikLivePro:** The app must instruct users to copy their stream key from TikTok LIVE Producer and paste it into the platform, or TikLivePro must pursue a direct **TikTok partnership** to obtain keys on behalf of users.
+
+### 6b. Live comments and interactions
+
+TikTok does **not** expose a public API for live comment data. Comments, gifts, and viewer counts during a live are delivered via TikTok's internal **WebCast** service (a signed WebSocket). Accessing it requires:
+
+- A **signature server** that generates TikTok's required signed parameters (`msToken`, `X-Bogus`).
+- A third-party service or self-hosted solution:
+
+  | Service | Type | Notes |
+  |---|---|---|
+  | [Euler Stream](https://www.eulerstream.com/) | Paid managed API | Handles WebCast + signature server; recommended |
+  | [Tik.Tools](https://tik.tools/) | Paid managed API | Agency-focused, also covers WebCast |
+  | [TikTok-Live-Connector](https://github.com/zerodytrash/TikTok-Live-Connector) | Open-source (Node.js) | Requires a paid signature server backend |
+
+**Implication for TikLivePro:** The `comments` service must integrate with one of these services rather than calling a TikTok developer portal API directly.
+
+### 6c. Reactions
+
+TikTok provides no API for live reactions (hearts, etc.). Reactions are viewer-driven on TikTok's side only and cannot be read or triggered programmatically.
+
+### Full product checklist (developer portal)
+
+| Product | Required for |
+|---|---|
+| **Login Kit** | OAuth account connection (`user.info.basic`) |
+| *(no other portal product)* | Live streaming and comments are handled outside the developer portal — see 6a and 6b |
+
+---
+
+## 7. Get your credentials
 
 1. Go to the **App info** tab of your app.
 2. Copy the two values:
@@ -110,7 +152,7 @@ Login Kit is required for the social login (`TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT
 
 ---
 
-## 7. Add the credentials to your environment files
+## 8. Add the credentials to your environment files
 
 ### Web app (`apps/web/.env`)
 
@@ -128,7 +170,7 @@ TIKTOK_CLIENT_SECRET=your_client_secret_here
 
 ---
 
-## 8. Sandbox vs. production
+## 9. Sandbox vs. production
 
 | | Sandbox | Production |
 |---|---|---|
@@ -162,7 +204,69 @@ When you are ready for production:
 
 ---
 
-## 9. App Review — required explanation (paste into the submission form)
+## 10. Configure Webhooks (Callback URL)
+
+TikTok can push events to TikLivePro instead of waiting for the app to poll. Set this up once in the developer portal after your domain is verified.
+
+### Why configure webhooks
+
+| Without webhooks | With webhooks |
+|---|---|
+| App only knows a user revoked access when an API call fails during a live session | TikTok notifies immediately → account marked inactive proactively |
+| Comments fetched every 2 s regardless of activity | (Future) real-time comment push replaces polling |
+| App never knows if TikTok force-ends a session | `live.session.ended` event triggers graceful session teardown |
+
+### Supported webhook events
+
+| Event | What triggers it | What TikLivePro does |
+|---|---|---|
+| `user.authorization.revoke` | User removes your app from their TikTok privacy settings | Marks the social account `isActive: false` in the DB; publishes `integration.account.disconnected` (reason: `platform_revoked`) |
+| `live.session.ended` | TikTok force-terminates a live session | Publishes `integration.platform.session_ended`; `live-session` service handles teardown |
+
+### Portal setup
+
+1. In the developer portal, open your app and go to the **Webhooks** (or **Event Subscriptions**) tab.
+2. Set the **Callback URL** to:
+
+   ```
+   # Production
+   https://tiklivepro.me/integrations/webhooks/tiktok
+
+   # Local dev (requires a tunnel — see below)
+   https://<your-tunnel>.ngrok.io/integrations/webhooks/tiktok
+   ```
+
+3. Select the events to subscribe to:
+   - `user.authorization.revoke`
+   - `live.session.ended`
+
+4. Click **Save**. TikTok will immediately send a `GET` request with `?challenge=<token>` to verify the URL. The integrations service echoes the token back automatically — no action needed.
+
+### Local dev with ngrok
+
+TikTok cannot reach `localhost`. Use [ngrok](https://ngrok.com) to expose port 3005:
+
+```bash
+ngrok http 3005
+# Copy the HTTPS forwarding URL, e.g. https://abc123.ngrok.io
+# Set Callback URL: https://abc123.ngrok.io/integrations/webhooks/tiktok
+```
+
+### How signature verification works
+
+Every POST from TikTok includes a header:
+
+```
+X-TikTok-Signature: sha256=<hex_digest>
+```
+
+The integrations service computes `HMAC-SHA256(rawBody, TIKTOK_CLIENT_SECRET)` and compares using a timing-safe comparison. Requests with a missing or invalid signature are rejected with `400 INVALID_SIGNATURE`.
+
+No additional environment variable is needed — `TIKTOK_CLIENT_SECRET` (already set) is used as the HMAC key.
+
+---
+
+## 11. App Review — required explanation (paste into the submission form)
 
 > Copy the block below verbatim into the **"Explain how each product and scope works within your app or website"** field (996 characters, limit 1000).
 
@@ -172,8 +276,4 @@ TikLivePro lets creators stream live to TikTok and Facebook simultaneously from 
 
 Login Kit (user.info.basic): Used for OAuth account connection. After consent, we fetch open_id, display_name, and avatar_url to identify and display the linked account. Tokens are AES-256-GCM encrypted at rest and revoked on disconnect.
 
-Live Kit – stream create/end: On session start, we call /live/stream/create/ to get the RTMP URL and stream key and pass them to the user's broadcasting software. We call /live/stream/end/ when the session ends. TikLivePro does not proxy or store video.
-
-live.comment.read: We poll /live/comment/list/ every 2 s during a session to display TikTok comments in a unified feed alongside other platforms. Comments are deleted when the session ends.
-
-live.comment.write: Creators type replies in the dashboard; we post via /live/comment/create/, using reply_to_comment_id for threaded replies. No automation — every comment is manually initiated by the creator.
+Note: TikTok does not expose a public Live API through the developer portal. Live streaming uses RTMP keys obtained by the creator from TikTok LIVE Producer (livecenter.tiktok.com/producer). Live comment data is accessed via TikTok's WebCast service through a third-party integration (e.g. Euler Stream), not via developer portal scopes.
