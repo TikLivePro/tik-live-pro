@@ -14,6 +14,7 @@
 #
 #   JWT_SECRET=<openssl rand -hex 64>
 #   TOKEN_ENCRYPTION_KEY=<openssl rand -hex 32>
+#   INTERNAL_API_KEY=<openssl rand -hex 32>
 #   POSTGRES_PASSWORD=unused  # kept for compat, not used by managed version
 #
 #   # Neon connection strings (one per service — same host, different DB name)
@@ -321,6 +322,7 @@ services:
       PORT: "3005"
       DATABASE_URL: ${INTEGRATIONS_DATABASE_URL:?INTEGRATIONS_DATABASE_URL is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
       TIKTOK_CLIENT_KEY: ${TIKTOK_CLIENT_KEY:?TIKTOK_CLIENT_KEY is required}
       TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:?TIKTOK_CLIENT_SECRET is required}
       FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:?FACEBOOK_APP_ID is required}
@@ -350,6 +352,7 @@ services:
       PORT: "3006"
       DATABASE_URL: ${COMMENTS_DATABASE_URL:?COMMENTS_DATABASE_URL is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
       COMMENT_POLL_INTERVAL_MS: "2000"
       NODE_OPTIONS: "--max-old-space-size=128"
     depends_on:
