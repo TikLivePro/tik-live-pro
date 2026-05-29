@@ -48,6 +48,14 @@ COPY . .
 
 RUN pnpm install --frozen-lockfile --filter "@tik-live-pro/web..." --prod=false
 
+# NEXT_PUBLIC_* variables are baked into the JS bundle at build time.
+# Pass real production values via --build-arg when building the image.
+ARG NEXT_PUBLIC_API_URL=https://api.tiklivepro.me
+ARG NEXT_PUBLIC_COMMENTS_WS_URL=https://api.tiklivepro.me
+ARG NEXT_PUBLIC_GIPHY_API_KEY=
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_COMMENTS_WS_URL=$NEXT_PUBLIC_COMMENTS_WS_URL
+ENV NEXT_PUBLIC_GIPHY_API_KEY=$NEXT_PUBLIC_GIPHY_API_KEY
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN pnpm --filter "@tik-live-pro/shared-types" build \

@@ -1,0 +1,176 @@
+# ==============================================================================
+# Web Frontend — Deployment + Service + HPA
+# Port: 3010 (Next.js standalone)
+#
+# NOTE: NEXT_PUBLIC_* environment variables are baked into the JS bundle at
+# image build time. Changing them here requires rebuilding and redeploying the
+# image. The values below are provided for SSR paths only.
+# ==============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: tik-live-pro
+  labels:
+    app: web
+    tier: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: web
+          image: ghcr.io/tik-live-pro/web:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3010
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3010"
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            - name: NEXT_TELEMETRY_DISABLED
+              value: "1"
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=384"
+            # ── Server-side runtime vars ──────────────────────────────────────
+            - name: NEXTAUTH_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: web-config
+                  key: NEXTAUTH_URL
+            - name: AUTH_SERVICE_INTERNAL_URL
+              value: http://auth-service:3001
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: web-secrets
+                  key: nextauth-secret
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: web-secrets
+                  key: google-client-id
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: web-secrets
+                  key: google-client-secret
+            - name: FACEBOOK_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: integrations-service-secrets
+                  key: facebook-app-id
+            - name: FACEBOOK_APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: integrations-service-secrets
+                  key: facebook-app-secret
+            - name: TIKTOK_CLIENT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: integrations-service-secrets
+                  key: tiktok-client-key
+            - name: TIKTOK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: integrations-service-secrets
+                  key: tiktok-client-secret
+            # ── Build-time public vars (SSR reference only) ───────────────────
+            - name: NEXT_PUBLIC_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: web-config
+                  key: NEXT_PUBLIC_API_URL
+            - name: NEXT_PUBLIC_COMMENTS_WS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: web-config
+                  key: NEXT_PUBLIC_COMMENTS_WS_URL
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3010
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3010
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+
+---
+# ConfigMap for public / non-secret web configuration.
+# Update NEXT_PUBLIC_* values here for SSR paths; to change client-side bundle
+# values you must rebuild the image with the new --build-arg values.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+  namespace: tik-live-pro
+data:
+  NEXTAUTH_URL: "https://tiklivepro.me"
+  NEXT_PUBLIC_API_URL: "https://api.tiklivepro.me"
+  NEXT_PUBLIC_COMMENTS_WS_URL: "https://api.tiklivepro.me"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-service
+  namespace: tik-live-pro
+  labels:
+    app: web
+spec:
+  selector:
+    app: web
+  ports:
+    - port: 3010
+      targetPort: 3010
+      name: http
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web-hpa
+  namespace: tik-live-pro
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

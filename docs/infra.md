@@ -1,6 +1,6 @@
 # TikLivePro — Infrastructure Guide
 
-> **Last updated:** 2026-05-28
+> **Last updated:** 2026-05-29 (web frontend env vars, web K8s deployment)
 > Update whenever a Dockerfile, compose file, Kubernetes manifest, or build script changes.
 
 ## Table of Contents
@@ -40,6 +40,7 @@ infra/
 │   ├── notifications-deployment.yaml
 │   ├── analytics-deployment.yaml
 │   ├── stream-orchestrator-deployment.yaml  # Also exposes NodePort 31935 for RTMP
+│   ├── web-deployment.yaml             # Next.js frontend + ConfigMap + HPA
 │   ├── observability.yaml              # OTel, Jaeger, Prometheus (RBAC), Grafana
 │   └── ingress.yaml
 ├── nats/
@@ -93,6 +94,28 @@ Extends the standard pattern but also installs `ffmpeg` in both `base` and `runt
 - Port `3009` — HTTP API
 - Port `1935` — RTMP ingest
 
+### `Dockerfile.web` — Next.js standalone
+
+Three-stage build producing a minimal standalone Next.js image.
+
+**`NEXT_PUBLIC_*` build arguments** — these variables are inlined into the browser JS bundle by `next build`. They **must** be provided as `--build-arg` at image build time; setting them as Docker runtime env vars only affects SSR paths, not client-side code.
+
+| ARG | Default | Description |
+|-----|---------|-------------|
+| `NEXT_PUBLIC_API_URL` | `https://api.tiklivepro.me` | Public API gateway URL |
+| `NEXT_PUBLIC_COMMENTS_WS_URL` | `https://api.tiklivepro.me` | Base URL for the comments WebSocket |
+| `NEXT_PUBLIC_GIPHY_API_KEY` | _(empty)_ | Optional Giphy embed key |
+
+```bash
+# Build with custom public URLs
+docker build \
+  -f infra/docker/Dockerfile.web \
+  --build-arg NEXT_PUBLIC_API_URL=https://api.example.com \
+  --build-arg NEXT_PUBLIC_COMMENTS_WS_URL=https://api.example.com \
+  -t ghcr.io/tik-live-pro/web:latest \
+  .
+```
+
 ### `build.sh` — helper script
 
 ```bash
@@ -110,9 +133,14 @@ PUSH=1 bash infra/docker/build.sh all 1.2.3
 
 # With GitHub Actions cache
 CACHE_FROM=type=gha bash infra/docker/build.sh auth
+
+# Web with custom public URLs (NEXT_PUBLIC_* baked into the bundle)
+NEXT_PUBLIC_API_URL=https://api.example.com \
+NEXT_PUBLIC_COMMENTS_WS_URL=https://api.example.com \
+bash infra/docker/build.sh web
 ```
 
-The script looks for `infra/docker/Dockerfile.${SERVICE_NAME}` first; falls back to `Dockerfile.service`.
+The script looks for `infra/docker/Dockerfile.${SERVICE_NAME}` first; falls back to `Dockerfile.service`. For `web`, it reads `NEXT_PUBLIC_*` from the environment and forwards them as `--build-arg`.
 
 **Makefile shortcuts:**
 ```bash
@@ -199,8 +227,9 @@ make prod-down
 6. api-gateway, auth, users, live-session, billing,
    integrations, comments, notifications, analytics,
    stream-orchestrator
-7. observability.yaml
-8. ingress.yaml
+7. web-deployment.yaml   (includes web-config ConfigMap + HPA)
+8. observability.yaml
+9. ingress.yaml
 ```
 
 ### NATS StatefulSet
@@ -249,10 +278,17 @@ Requires an NGINX Ingress Controller installed in the cluster.
 
 | Hostname | Backend |
 |---------|---------|
+| `tiklivepro.pro` | web-service:3010 |
 | `api.tiklivepro.pro` | api-gateway:3000 |
 | `grafana.tiklivepro.pro` | grafana:3000 |
 | `jaeger.tiklivepro.pro` | jaeger:16686 |
 | `prometheus.tiklivepro.pro` | prometheus:9090 |
+
+### Web frontend — `NEXT_PUBLIC_*` in Kubernetes
+
+The `web-deployment.yaml` includes a `web-config` ConfigMap for `NEXTAUTH_URL`, `NEXT_PUBLIC_API_URL`, and `NEXT_PUBLIC_COMMENTS_WS_URL`. These values feed into SSR paths at runtime.
+
+**For client-side code**, the values are frozen at image build time. To change them you must rebuild the image with updated `--build-arg` values and roll out the new image.
 
 ---
 

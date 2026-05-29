@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-05-29
+> Dernière mise à jour : 2026-05-29 (ajout des secrets web frontend)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -217,7 +217,8 @@ mkdir -p /opt/tiklivepro
 > | Variable | Où la mettre | Pourquoi |
 > |----------|-------------|---------|
 > | `DROPLET_IP`, `DROPLET_SSH_KEY` | **GitHub Secrets** | utilisées par le runner pour se connecter au serveur via SSH |
-> | Tout le reste (JWT, DB, OAuth…) | **GitHub Secrets** | le CI écrit le fichier `.env` sur le serveur à chaque déploiement — pas de maintenance manuelle |
+> | Tout le reste (JWT, DB, OAuth, NextAuth…) | **GitHub Secrets** | le CI écrit le fichier `.env` sur le serveur à chaque déploiement — pas de maintenance manuelle |
+> | `NEXT_PUBLIC_*` | **GitHub Secrets** | passées en `--build-arg` lors du build de l'image — intégrées dans le bundle JS à la compilation |
 > | `REGISTRY`, `IMAGE_TAG` | **injectées par le CI** | calculées depuis le tag git — pas besoin de les configurer |
 
 Le fichier `/opt/tiklivepro/.env` est **écrit automatiquement par le workflow CI** à chaque déploiement. Vous n'avez pas à le créer ni à le maintenir manuellement sur le serveur.
@@ -317,12 +318,41 @@ Format attendu : `postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_
 
 **TikTok & Facebook**
 
+Ces credentials sont utilisés à la fois par les services backend (`integrations`, `stream-orchestrator`) et par le frontend Next.js (NextAuth pour la connexion sociale).
+
 | Secret | Comment l'obtenir |
 |--------|------------------|
 | `TIKTOK_CLIENT_KEY` | TikTok Developer Portal > votre app > App Key |
 | `TIKTOK_CLIENT_SECRET` | TikTok Developer Portal > votre app > App Secret |
 | `FACEBOOK_APP_ID` | Meta for Developers > votre app > App ID |
 | `FACEBOOK_APP_SECRET` | Meta for Developers > votre app > App Secret |
+
+**Web frontend (NextAuth + OAuth côté serveur)**
+
+Ces secrets servent à NextAuth (gestion des sessions côté serveur du frontend).
+
+| Secret | Comment l'obtenir |
+|--------|------------------|
+| `NEXTAUTH_URL` | URL publique du site web — ex : `https://tiklivepro.me` |
+| `NEXTAUTH_SECRET` | `openssl rand -base64 32` |
+| `GOOGLE_CLIENT_ID` | Google Cloud Console > APIs & Services > Credentials > votre app OAuth 2.0 > Client ID |
+| `GOOGLE_CLIENT_SECRET` | Google Cloud Console > APIs & Services > Credentials > votre app OAuth 2.0 > Client Secret |
+
+> **Paramétrer Google OAuth :**
+> 1. [console.cloud.google.com](https://console.cloud.google.com) > **APIs & Services > Credentials > Create Credentials > OAuth 2.0 Client ID**
+> 2. Type d'application : **Web application**
+> 3. Origines autorisées : `https://tiklivepro.me`
+> 4. URI de redirection autorisés : `https://tiklivepro.me/api/auth/callback/google`
+
+**Variables publiques du frontend (baked at build time)**
+
+> **Important :** les variables `NEXT_PUBLIC_*` sont **intégrées dans le bundle JavaScript** lors du build de l'image Docker — elles ne peuvent pas être changées à l'exécution. Le CI les passe en `--build-arg` avant le `next build`. Changer ces secrets nécessite de rebuilder et redéployer l'image.
+
+| Secret | Valeur pour la prod |
+|--------|-------------------|
+| `NEXT_PUBLIC_API_URL` | `https://api.tiklivepro.me` — URL publique de l'API Gateway |
+| `NEXT_PUBLIC_COMMENTS_WS_URL` | `https://api.tiklivepro.me` — base URL pour le WebSocket des commentaires (proxié via l'API Gateway) |
+| `NEXT_PUBLIC_GIPHY_API_KEY` | _(optionnel)_ Clé API Giphy — [developers.giphy.com](https://developers.giphy.com) — laisser vide pour désactiver |
 
 **Stripe**
 
@@ -517,6 +547,11 @@ ssh -i ~/.ssh/id_rsa root@188.166.197.25 "docker ps"
 Le fichier `.env` est écrit par le CI depuis les secrets GitHub. Si une variable est absente :
 1. Vérifiez que le secret correspondant existe dans **GitHub > Settings > Secrets and variables > Actions**
 2. Relancez le déploiement (nouveau tag ou `workflow_dispatch`)
+
+### Le frontend affiche "Something went wrong" à la connexion
+Deux causes possibles :
+- **`NEXTAUTH_SECRET` ou `NEXTAUTH_URL` manquant** — vérifiez ces deux secrets et relancez le déploiement.
+- **`NEXT_PUBLIC_API_URL` pointe vers `localhost`** — ces variables sont baked dans le bundle JS à la compilation. Vérifiez que `NEXT_PUBLIC_API_URL` et `NEXT_PUBLIC_COMMENTS_WS_URL` sont bien définis dans les secrets GitHub **avant** de déclencher un build (`git tag v...`). Modifier uniquement le `.env` sur le serveur ne suffit pas — il faut rebuilder l'image.
 
 Vérifier le `.env` actuel sur le serveur :
 ```bash

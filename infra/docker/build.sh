@@ -83,10 +83,19 @@ build_web() {
   local image_tag="${REGISTRY}/web:${TAG}"
   local dockerfile="${DOCKERFILE_DIR}/Dockerfile.web"
 
+  # NEXT_PUBLIC_* vars are baked into the JS bundle at build time.
+  # Override via env vars before running this script, e.g.:
+  #   NEXT_PUBLIC_API_URL=https://api.example.com bash infra/docker/build.sh web
+  local api_url="${NEXT_PUBLIC_API_URL:-https://api.tiklivepro.me}"
+  local ws_url="${NEXT_PUBLIC_COMMENTS_WS_URL:-https://api.tiklivepro.me}"
+  local giphy_key="${NEXT_PUBLIC_GIPHY_API_KEY:-}"
+
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "  Building: ${image_tag}  (Next.js standalone)"
   echo "  Dockerfile: ${dockerfile}"
+  echo "  NEXT_PUBLIC_API_URL=${api_url}"
+  echo "  NEXT_PUBLIC_COMMENTS_WS_URL=${ws_url}"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   local cache_args=()
@@ -96,6 +105,9 @@ build_web() {
 
   docker build \
     -f "${dockerfile}" \
+    --build-arg "NEXT_PUBLIC_API_URL=${api_url}" \
+    --build-arg "NEXT_PUBLIC_COMMENTS_WS_URL=${ws_url}" \
+    --build-arg "NEXT_PUBLIC_GIPHY_API_KEY=${giphy_key}" \
     -t "${image_tag}" \
     "${cache_args[@]+"${cache_args[@]}"}" \
     "${REPO_ROOT}"

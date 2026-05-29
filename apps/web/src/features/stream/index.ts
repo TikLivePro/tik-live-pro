@@ -1,4 +1,8 @@
 export { LiveDashboard } from './components/LiveDashboard';
+export { FullscreenLiveView } from './components/FullscreenLiveView';
+export { LiveCommentFloat } from './components/LiveCommentFloat';
+export { LiveReactionFloat } from './components/LiveReactionFloat';
+export type { LiveReaction } from './store/stream.store';
 export { StreamPanel } from './components/StreamPanel';
 export { GoLiveForm } from './components/GoLiveForm';
 export { AccountSelector } from './components/AccountSelector';

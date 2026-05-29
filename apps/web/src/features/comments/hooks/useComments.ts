@@ -8,13 +8,14 @@ import type { Comment, LiveSessionId } from '@tik-live-pro/shared-types';
 
 type WsMessage =
   | { type: 'comment'; data: Comment }
+  | { type: 'reaction'; data: { emoji: string } }
   | { type: 'ping' }
   | { type: 'session_ended' };
 
 export function useComments(sessionId: LiveSessionId | null) {
   const wsRef = useRef<WebSocket | null>(null);
   const { accessToken } = useAuthStore();
-  const { comments, addComment, replyingTo, setReplyingTo } = useStreamStore();
+  const { comments, addComment, addReaction, replyingTo, setReplyingTo } = useStreamStore();
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
 
@@ -30,6 +31,12 @@ export function useComments(sessionId: LiveSessionId | null) {
         const msg = JSON.parse(event.data) as WsMessage;
         if (msg.type === 'comment') {
           addComment(msg.data);
+        } else if (msg.type === 'reaction') {
+          addReaction({
+            id: crypto.randomUUID(),
+            emoji: msg.data.emoji,
+            left: Math.floor(Math.random() * 36),
+          });
         }
       } catch {
         // ignore malformed messages
@@ -46,7 +53,7 @@ export function useComments(sessionId: LiveSessionId | null) {
       ws.close();
       wsRef.current = null;
     };
-  }, [sessionId, accessToken, addComment]);
+  }, [sessionId, accessToken, addComment, addReaction]);
 
   const sendComment = useCallback(
     async (content: string, mediaUrls?: string[]): Promise<void> => {

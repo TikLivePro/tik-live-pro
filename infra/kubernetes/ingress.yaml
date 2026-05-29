@@ -33,6 +33,18 @@ spec:
   #       - tiklivepro.pro
   #     secretName: tiklivepro-tls
   rules:
+    # Web frontend
+    - host: tiklivepro.pro
+      http:
+        paths:
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: web-service
+                port:
+                  number: 3010
+
     # All API traffic routes through the gateway
     - host: api.tiklivepro.pro
       http:

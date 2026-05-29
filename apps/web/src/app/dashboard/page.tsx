@@ -3,7 +3,7 @@
 import { StreamPanel } from '@/features/stream/components/StreamPanel';
 import { CommentFeed } from '@/features/comments/components/CommentFeed';
 import { AccountList } from '@/features/accounts/components/AccountList';
-import { LiveDashboard } from '@/features/stream/components/LiveDashboard';
+import { FullscreenLiveView } from '@/features/stream/components/FullscreenLiveView';
 import { UserMenu } from '@/features/auth/components/UserMenu';
 import { useStreamStore } from '@/features/stream/store/stream.store';
 
@@ -11,7 +11,7 @@ export default function DashboardPage(): React.ReactElement {
   const isLive = useStreamStore((s) => s.currentSession?.status === 'live');
 
   if (isLive) {
-    return <LiveDashboard />;
+    return <FullscreenLiveView />;
   }
 
   return (

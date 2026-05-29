@@ -117,6 +117,12 @@ jobs:
         with:
           context: .
           file: infra/docker/Dockerfile.web
+          # NEXT_PUBLIC_* must be provided at build time — they are baked into
+          # the JS bundle and cannot be changed via runtime env vars.
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_COMMENTS_WS_URL=${{ secrets.NEXT_PUBLIC_COMMENTS_WS_URL }}
+            NEXT_PUBLIC_GIPHY_API_KEY=${{ secrets.NEXT_PUBLIC_GIPHY_API_KEY }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=web
@@ -190,11 +196,22 @@ jobs:
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
+          # Web frontend — server-side runtime vars
+          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          # NEXT_PUBLIC_* are baked at build time (see build-web job above).
+          # They are written to .env so the compose file reference is satisfied,
+          # but changing them here requires a new image build to take effect.
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_COMMENTS_WS_URL: ${{ secrets.NEXT_PUBLIC_COMMENTS_WS_URL }}
+          NEXT_PUBLIC_GIPHY_API_KEY: ${{ secrets.NEXT_PUBLIC_GIPHY_API_KEY }}
         with:
           host: ${{ secrets.DROPLET_IP }}
           username: root
           key: ${{ secrets.DROPLET_SSH_KEY }}
-          envs: IMAGE_TAG,REGISTRY,JWT_SECRET,TOKEN_ENCRYPTION_KEY,AUTH_DATABASE_URL,USERS_DATABASE_URL,SESSIONS_DATABASE_URL,BILLING_DATABASE_URL,INTEGRATIONS_DATABASE_URL,COMMENTS_DATABASE_URL,NOTIFICATIONS_DATABASE_URL,ANALYTICS_DATABASE_URL,STREAM_DATABASE_URL,REDIS_URL,TIKTOK_CLIENT_KEY,TIKTOK_CLIENT_SECRET,FACEBOOK_APP_ID,FACEBOOK_APP_SECRET,STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET,STRIPE_PREMIUM_PRICE_ID,INTERNAL_API_KEY,GRAFANA_PASSWORD,SMTP_PROVIDER,SMTP_USER,SMTP_PASS,SMTP_FROM,SMTP_HOST,SMTP_PORT,SMTP_SECURE
+          envs: IMAGE_TAG,REGISTRY,JWT_SECRET,TOKEN_ENCRYPTION_KEY,AUTH_DATABASE_URL,USERS_DATABASE_URL,SESSIONS_DATABASE_URL,BILLING_DATABASE_URL,INTEGRATIONS_DATABASE_URL,COMMENTS_DATABASE_URL,NOTIFICATIONS_DATABASE_URL,ANALYTICS_DATABASE_URL,STREAM_DATABASE_URL,REDIS_URL,TIKTOK_CLIENT_KEY,TIKTOK_CLIENT_SECRET,FACEBOOK_APP_ID,FACEBOOK_APP_SECRET,STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET,STRIPE_PREMIUM_PRICE_ID,INTERNAL_API_KEY,GRAFANA_PASSWORD,SMTP_PROVIDER,SMTP_USER,SMTP_PASS,SMTP_FROM,SMTP_HOST,SMTP_PORT,SMTP_SECURE,NEXTAUTH_URL,NEXTAUTH_SECRET,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,NEXT_PUBLIC_API_URL,NEXT_PUBLIC_COMMENTS_WS_URL,NEXT_PUBLIC_GIPHY_API_KEY
           script: |
             set -e
             cd /opt/tiklivepro
@@ -233,6 +250,13 @@ jobs:
               "SMTP_HOST=$SMTP_HOST" \
               "SMTP_PORT=$SMTP_PORT" \
               "SMTP_SECURE=$SMTP_SECURE" \
+              "NEXTAUTH_URL=$NEXTAUTH_URL" \
+              "NEXTAUTH_SECRET=$NEXTAUTH_SECRET" \
+              "GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID" \
+              "GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET" \
+              "NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL" \
+              "NEXT_PUBLIC_COMMENTS_WS_URL=$NEXT_PUBLIC_COMMENTS_WS_URL" \
+              "NEXT_PUBLIC_GIPHY_API_KEY=$NEXT_PUBLIC_GIPHY_API_KEY" \
               > .env
 
             n=0

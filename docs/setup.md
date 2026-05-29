@@ -1,6 +1,6 @@
 # TikLivePro — Setup Guide
 
-> **Last updated:** 2026-05-29
+> **Last updated:** 2026-05-29 (added web frontend env vars)
 > Update this file whenever prerequisites, ports, environment variables, or workflow steps change.
 
 ## Prerequisites
@@ -94,10 +94,16 @@ Update values as needed — critical variables:
 | `DATABASE_URL` | all | Auto-created by init.sql on first `make infra-up` |
 | `NATS_URL` | all | Default: `nats://localhost:4222` |
 | `STRIPE_SECRET_KEY` | billing | Use `sk_test_…` for dev |
-| `TIKTOK_CLIENT_KEY` / `SECRET` | integrations, stream-orchestrator | From TikTok Developer Portal |
-| `FACEBOOK_APP_ID` / `SECRET` | integrations, stream-orchestrator | From Meta Developer Portal |
+| `TIKTOK_CLIENT_KEY` / `SECRET` | integrations, stream-orchestrator, web | From TikTok Developer Portal |
+| `FACEBOOK_APP_ID` / `SECRET` | integrations, stream-orchestrator, web | From Meta Developer Portal |
 | `TOKEN_ENCRYPTION_KEY` | integrations | ≥ 32 chars, AES-256-GCM key |
+| `NEXTAUTH_URL` | apps/web | Public URL of the web app, e.g. `https://tiklivepro.me` |
 | `NEXTAUTH_SECRET` | apps/web | Generate: `openssl rand -base64 32` |
+| `GOOGLE_CLIENT_ID` / `SECRET` | apps/web | From Google Cloud Console → Credentials |
+| `AUTH_SERVICE_INTERNAL_URL` | apps/web | Internal URL NextAuth uses to call the auth service |
+| `NEXT_PUBLIC_API_URL` | apps/web | **Build-time** — public URL of the API gateway. See note below. |
+| `NEXT_PUBLIC_COMMENTS_WS_URL` | apps/web | **Build-time** — base URL for the comments WebSocket. See note below. |
+| `NEXT_PUBLIC_GIPHY_API_KEY` | apps/web | **Build-time** — optional; from developers.giphy.com |
 | `SMTP_PROVIDER` | auth | `gmail` \| `sendgrid` \| `custom` (default: `gmail`) |
 | `SMTP_USER` | auth | SMTP login. Leave blank to disable welcome emails. |
 | `SMTP_PASS` | auth | SMTP password / app-password |
@@ -105,6 +111,10 @@ Update values as needed — critical variables:
 | `SMTP_HOST` | auth | Required only when `SMTP_PROVIDER=custom` |
 | `SMTP_PORT` | auth | Required only when `SMTP_PROVIDER=custom` |
 | `SMTP_SECURE` | auth | `true`/`false` — only when `SMTP_PROVIDER=custom` |
+
+> **`NEXT_PUBLIC_*` are baked at build time.** Next.js inlines these variables into the browser JS bundle during `next build`. Setting them only in the container's runtime environment has no effect on client-side code — only on SSR paths. For Docker and CI builds, pass them as build arguments (`--build-arg`). For local dev, they live in `apps/web/.env` as usual.
+>
+> **Mobile / LAN testing:** if you access the web app from a phone on the same Wi-Fi, `localhost` resolves to the phone itself, not your machine. Set `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_COMMENTS_WS_URL` to your machine's LAN IP (e.g. `http://192.168.1.x:3000`) in `apps/web/.env`, then restart `pnpm dev`.
 
 ---
 
@@ -216,25 +226,37 @@ Images are tagged as `ghcr.io/tik-live-pro/<package-name>:<tag>`.
 Test the full stack using pre-built images locally:
 
 ```bash
-# 1. Build images
-make docker-images
+# 1. Build web image with correct public URLs baked in
+#    (NEXT_PUBLIC_* must be set BEFORE building — they are frozen into the bundle)
+export NEXT_PUBLIC_API_URL=http://localhost:3000
+export NEXT_PUBLIC_COMMENTS_WS_URL=http://localhost:3000
+make docker-images   # builds all services + web with the above build args
 
 # 2. Set required environment variables
 export POSTGRES_PASSWORD=strongpassword
 export JWT_SECRET=$(openssl rand -base64 64)
+export NEXTAUTH_SECRET=$(openssl rand -base64 32)
+export NEXTAUTH_URL=http://localhost:3010
+export AUTH_SERVICE_INTERNAL_URL=http://auth:3001
 export GRAFANA_PASSWORD=adminpass
 export STRIPE_SECRET_KEY=sk_test_...
 export TIKTOK_CLIENT_KEY=...
 export TIKTOK_CLIENT_SECRET=...
 export FACEBOOK_APP_ID=...
 export FACEBOOK_APP_SECRET=...
+export GOOGLE_CLIENT_ID=...
+export GOOGLE_CLIENT_SECRET=...
 export TOKEN_ENCRYPTION_KEY=$(openssl rand -base64 32)
+export INTERNAL_API_KEY=$(openssl rand -hex 32)
 
 # SMTP (optional — skip to disable welcome emails)
 export SMTP_PROVIDER=gmail
 export SMTP_USER=you@gmail.com
 export SMTP_PASS=your-app-password
 export SMTP_FROM="TikLive Pro <noreply@tiklivepro.me>"
+
+# Giphy (optional)
+export NEXT_PUBLIC_GIPHY_API_KEY=...
 
 # 3. Start
 make prod-up

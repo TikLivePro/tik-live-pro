@@ -109,6 +109,27 @@
     color: hsl(var(--foreground));
   }
 
+  /* Live streaming overlay animations */
+  @keyframes float-reaction {
+    0%   { opacity: 1; transform: translateY(0) scale(1) rotate(-5deg); }
+    30%  { opacity: 1; transform: translateY(-70px) scale(1.35) rotate(8deg); }
+    60%  { opacity: 0.7; transform: translateY(-140px) scale(1.1) rotate(-3deg); }
+    100% { opacity: 0; transform: translateY(-210px) scale(0.7) rotate(12deg); }
+  }
+
+  @keyframes slide-comment-in {
+    from { opacity: 0; transform: translateX(-18px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  .animate-float-reaction {
+    animation: float-reaction 2.6s ease-out forwards;
+  }
+
+  .animate-slide-comment {
+    animation: slide-comment-in 0.35s ease-out both;
+  }
+
   /* Safari-style thin scrollbars — brand-colored, hidden until hover */
   * {
     scrollbar-width: thin;

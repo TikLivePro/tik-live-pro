@@ -3,10 +3,18 @@ import type { LiveSession, LiveSessionStatus } from '@tik-live-pro/shared-types'
 import type { Comment } from '@tik-live-pro/shared-types';
 
 const MAX_COMMENTS = 200;
+const MAX_REACTIONS = 20;
+
+export interface LiveReaction {
+  id: string;
+  emoji: string;
+  left: number;
+}
 
 interface StreamState {
   currentSession: LiveSession | null;
   comments: Comment[];
+  liveReactions: LiveReaction[];
   replyingTo: Comment | null;
   isStarting: boolean;
   isEnding: boolean;
@@ -15,6 +23,8 @@ interface StreamState {
   addComment: (comment: Comment) => void;
   addComments: (comments: Comment[]) => void;
   clearComments: () => void;
+  addReaction: (reaction: LiveReaction) => void;
+  removeReaction: (id: string) => void;
   setReplyingTo: (comment: Comment | null) => void;
   setStarting: (value: boolean) => void;
   setEnding: (value: boolean) => void;
@@ -23,6 +33,7 @@ interface StreamState {
 export const useStreamStore = create<StreamState>()((set) => ({
   currentSession: null,
   comments: [],
+  liveReactions: [],
   replyingTo: null,
   isStarting: false,
   isEnding: false,
@@ -47,6 +58,17 @@ export const useStreamStore = create<StreamState>()((set) => ({
     }),
 
   clearComments: () => set({ comments: [] }),
+
+  addReaction: (reaction) =>
+    set((state) => ({
+      liveReactions: [...state.liveReactions, reaction].slice(-MAX_REACTIONS),
+    })),
+
+  removeReaction: (id) =>
+    set((state) => ({
+      liveReactions: state.liveReactions.filter((r) => r.id !== id),
+    })),
+
   setReplyingTo: (comment) => set({ replyingTo: comment }),
   setStarting: (value) => set({ isStarting: value }),
   setEnding: (value) => set({ isEnding: value }),
