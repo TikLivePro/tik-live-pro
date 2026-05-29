@@ -16,7 +16,7 @@
 
 # -- Config --------------------------------------------------------------------
 
-TURBO        := pnpm turbo run --concurrency=15
+TURBO        := pnpm turbo run --concurrency=12
 DOCKER       := docker compose -f docker-compose.dev.yml
 DOCKER_PROD  := docker compose -f docker-compose.prod.yml
 IMAGE_TAG    ?= latest
@@ -48,7 +48,7 @@ PACKAGES := \
 # Declare all targets as phony (never match a file name)
 .PHONY: \
   install \
-  dev dev-services dev-web dev-mobile \
+  dev dev-no-turbo dev-services dev-web dev-web-no-turbo dev-mobile \
   infra-up infra-down infra-logs infra-ps infra-reset \
   build build-services build-web build-packages \
   start \
@@ -57,7 +57,7 @@ PACKAGES := \
   lint lint-fix \
   format \
   clean clean-dist clean-deps \
-  db-generate db-migrate db-studio db-seed db-seed-billing \
+  db-create db-generate db-migrate db-studio db-seed db-seed-billing \
   db-logs nats-logs nats-streams nats-streams-prod \
   logs-gateway logs-auth logs-users logs-integrations logs-live-session \
   logs-orchestrator logs-comments logs-billing logs-notifications logs-analytics \
@@ -82,14 +82,22 @@ install:
 dev:
 	$(TURBO) dev $(SERVICES) --filter=@tik-live-pro/web
 
+## dev-no-turbo: Start all backend services + web app without turbopack
+dev-no-turbo:
+	$(TURBO) dev $(SERVICES) & pnpm --filter=@tik-live-pro/web run dev:no-turbo
+
 ## dev-services: Start backend services only (all 10 microservices)
 ##               Useful when the web app is already running separately.
 dev-services:
 	$(TURBO) dev $(SERVICES)
 
-## dev-web: Start the Next.js web app only (port 3000, turbopack)
+## dev-web: Start the Next.js web app only (port 3010, turbopack)
 dev-web:
 	$(TURBO) dev --filter=@tik-live-pro/web
+
+## dev-web-no-turbo: Start the Next.js web app without turbopack (port 3010)
+dev-web-no-turbo:
+	pnpm --filter=@tik-live-pro/web run dev:no-turbo
 
 ## dev-mobile: Start the React Native dev server (Metro bundler)
 ##             Use `make android` or `make ios` in a separate terminal to run the app.
@@ -114,7 +122,7 @@ ios:
 #   otel        OpenTelemetry        4317 (gRPC)    4318 (HTTP)
 #   jaeger      Jaeger tracing UI    16686
 #   prometheus  Prometheus metrics   9090
-#   grafana     Grafana dashboards   3001  (admin / admin)
+#   grafana     Grafana dashboards   3099  (admin / admin)
 # ==============================================================================
 
 ## infra-up: Start all local infrastructure services (detached)
@@ -126,7 +134,7 @@ infra-up:
 	@echo "  NATS        → localhost:4222  |  monitoring: http://localhost:8222"
 	@echo "  Jaeger      → http://localhost:16686"
 	@echo "  Prometheus  → http://localhost:9090"
-	@echo "  Grafana     → http://localhost:3001  (admin / admin)"
+	@echo "  Grafana     → http://localhost:3099  (admin / admin)"
 	@echo ""
 
 ## infra-down: Stop all infrastructure containers (keep volumes)
@@ -223,7 +231,7 @@ prod-up:
 	$(DOCKER_PROD) up -d
 	@echo ""
 	@echo "  API Gateway → http://localhost:3000"
-	@echo "  Grafana     → http://localhost:3001"
+	@echo "  Grafana     → http://localhost:3099"
 	@echo "  Prometheus  → http://localhost:9090"
 	@echo "  Jaeger      → http://localhost:16686"
 	@echo ""
@@ -307,17 +315,29 @@ format:
 # ==============================================================================
 # DATABASE
 #
+# db-create    — creates all service databases (idempotent, skips existing).
+#                Requires Postgres to be running (make infra-up).
+#                Override host/credentials with DB_BASE_URL:
+#                  DB_BASE_URL=postgresql://user:pass@host:5432 make db-create
+#
 # db-generate  — reads each service's schema.ts and outputs SQL migration files.
 #                No running database required.
 #
 # db-migrate   — applies pending migrations to each service's database.
 #                Requires Postgres to be running (make infra-up).
+#                Run db-create first if databases don't exist yet.
 #                Override the host/credentials with DB_BASE_URL:
 #                  DB_BASE_URL=postgresql://user:pass@host:5432 make db-migrate
 #
 # db-studio    — opens Drizzle Studio for a single service.
 #                  Usage: make db-studio svc=auth
 # ==============================================================================
+
+## db-create: Create all service databases (idempotent — skips existing ones)
+##            Requires Postgres to be running: make infra-up
+##            Override host: DB_BASE_URL=postgresql://user:pass@host:5432 make db-create
+db-create:
+	bash scripts/db-create.sh
 
 ## db-generate: Generate SQL migration files for all services (no DB needed)
 db-generate:

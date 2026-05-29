@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { useStreamStore } from '../store/stream.store';
 import { API_BASE, apiFetch } from '@/lib/api';
-import type { LiveSessionId, SocialAccountId } from '@tik-live-pro/shared-types';
+import type { LiveSession, LiveSessionId, SocialAccountId } from '@tik-live-pro/shared-types';
 
 export function useStream() {
   const t = useTranslations('stream');
@@ -76,6 +76,49 @@ export function useStream() {
     [setEnding, updateSessionStatus, t],
   );
 
+  const goLive = useCallback(
+    async (params: { title: string; description?: string; destinationIds: SocialAccountId[] }) => {
+      setStarting(true);
+      try {
+        const createRes = await apiFetch(`${API_BASE}/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: params.title,
+            description: params.description,
+            destinationAccountIds: params.destinationIds,
+          }),
+        });
+        if (!createRes.ok) {
+          toast.error(t('errors.createFailed'));
+          return;
+        }
+        const { data: createData } = (await createRes.json()) as { data: { sessionId: LiveSessionId } };
+        const sessionId = createData.sessionId;
+
+        // Load the full session into the store so subsequent status updates work
+        const sessionRes = await apiFetch(`${API_BASE}/sessions/${sessionId}`);
+        if (sessionRes.ok) {
+          const { data: sessionData } = (await sessionRes.json()) as { data: LiveSession };
+          setSession(sessionData);
+        }
+
+        const startRes = await apiFetch(`${API_BASE}/sessions/${sessionId}/start`, { method: 'POST' });
+        if (!startRes.ok) {
+          toast.error(t('errors.startFailed'));
+          return;
+        }
+        updateSessionStatus('starting');
+        toast.success(t('sessionStarted'));
+      } catch {
+        toast.error(t('errors.createFailed'));
+      } finally {
+        setStarting(false);
+      }
+    },
+    [setStarting, setSession, updateSessionStatus, t],
+  );
+
   return {
     currentSession,
     isStarting,
@@ -83,6 +126,7 @@ export function useStream() {
     createSession,
     startSession,
     endSession,
+    goLive,
     setSession,
   };
 }

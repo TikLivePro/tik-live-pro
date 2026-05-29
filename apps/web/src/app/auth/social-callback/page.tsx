@@ -36,7 +36,12 @@ export default function SocialCallbackPage() {
       });
       const next = searchParams.get('next') ?? '/dashboard';
       router.replace(next);
+      return;
     }
+
+    // Session is authenticated but tokens are missing — the auth service exchange failed
+    // without setting session.error (e.g. unexpected response shape).
+    router.replace('/auth/login?error=oauth_failed');
   }, [session, status, setAuth, router, searchParams]);
 
   return (

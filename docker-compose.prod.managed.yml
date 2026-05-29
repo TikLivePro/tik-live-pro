@@ -44,6 +44,16 @@
 #   # Grafana (only used with --profile observability)
 #   GRAFANA_PASSWORD=...
 #
+#   # SMTP — welcome email on registration (optional; omit SMTP_USER to disable)
+#   SMTP_PROVIDER=gmail          # gmail | sendgrid | custom
+#   SMTP_USER=you@gmail.com
+#   SMTP_PASS=your-app-password
+#   SMTP_FROM=TikLive Pro <noreply@tiklivepro.me>
+#   # Only for SMTP_PROVIDER=custom:
+#   # SMTP_HOST=smtp.example.com
+#   # SMTP_PORT=587
+#   # SMTP_SECURE=false
+#
 # RAM budget on 4 GB Droplet (no observability):
 #   NATS 128m + 10 services ~1780m + web 512m ≈ 2420m  ← comfortable
 # ==============================================================================
@@ -207,6 +217,14 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_ACCESS_EXPIRES_IN: "15m"
       JWT_REFRESH_EXPIRES_IN: "30d"
+      # SMTP — optional. Leave SMTP_USER blank to disable welcome emails.
+      SMTP_PROVIDER: ${SMTP_PROVIDER:-gmail}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
       NODE_OPTIONS: "--max-old-space-size=96"
     depends_on:
       nats:

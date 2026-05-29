@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-05-28
+> Dernière mise à jour : 2026-05-29
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -331,6 +331,38 @@ Format attendu : `postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_
 | `STRIPE_SECRET_KEY` | Stripe Dashboard > Developers > API keys > Secret key |
 | `STRIPE_WEBHOOK_SECRET` | Stripe Dashboard > Developers > Webhooks > votre endpoint > Signing secret |
 | `STRIPE_PREMIUM_PRICE_ID` | Stripe Dashboard > Products > votre plan Premium > Price ID (format `price_xxx`) |
+
+**SMTP — emails de bienvenue (optionnel)**
+
+Le service `auth` envoie un email de bienvenue après chaque inscription. Si `SMTP_USER` est absent (ou vide), l'envoi est silencieusement désactivé — les inscriptions fonctionnent normalement.
+
+Trois fournisseurs sont supportés via `SMTP_PROVIDER` : `gmail`, `sendgrid`, ou `custom`.
+
+| Secret | Description |
+|--------|-------------|
+| `SMTP_PROVIDER` | Fournisseur SMTP : `gmail` \| `sendgrid` \| `custom` |
+| `SMTP_USER` | Identifiant SMTP (ex : `vous@gmail.com`). Laisser vide pour désactiver. |
+| `SMTP_PASS` | Mot de passe SMTP ou App Password |
+| `SMTP_FROM` | Expéditeur affiché (ex : `TikLive Pro <noreply@tiklivepro.me>`) |
+| `SMTP_HOST` | _(custom uniquement)_ Hôte SMTP (ex : `smtp.example.com`) |
+| `SMTP_PORT` | _(custom uniquement)_ Port SMTP (ex : `587`) |
+| `SMTP_SECURE` | _(custom uniquement)_ `true` pour TLS direct (port 465), `false` pour STARTTLS |
+
+> **Gmail — App Password (recommandé pour les étudiants)**
+>
+> Gmail bloque les connexions SMTP avec votre mot de passe principal. Créez un **App Password** dédié :
+> 1. Activez la **vérification en deux étapes** sur votre compte Google (obligatoire)
+> 2. Allez sur [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+> 3. Créez un mot de passe pour l'app **Mail** — vous obtenez un code à 16 caractères
+> 4. Configurez les secrets :
+>    ```
+>    SMTP_PROVIDER = gmail
+>    SMTP_USER     = vous@gmail.com
+>    SMTP_PASS     = xxxx xxxx xxxx xxxx   ← code 16 caractères (espaces optionnels)
+>    SMTP_FROM     = TikLive Pro <noreply@tiklivepro.me>
+>    ```
+>
+> **Limite Gmail gratuit :** 500 emails/jour — largement suffisant pour un projet étudiant.
 
 **Observability (optionnel)**
 

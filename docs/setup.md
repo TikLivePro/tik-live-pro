@@ -1,6 +1,6 @@
 # TikLivePro — Setup Guide
 
-> **Last updated:** 2026-05-23
+> **Last updated:** 2026-05-29
 > Update this file whenever prerequisites, ports, environment variables, or workflow steps change.
 
 ## Prerequisites
@@ -39,10 +39,23 @@ This starts:
 | NATS JetStream | `nats://localhost:4222` · monitoring: http://localhost:8222 | — |
 | PostgreSQL 16 | `localhost:5432` | user: `postgres`, password: `password` |
 | Redis 7 | `localhost:6379` | — |
+| Mailpit (SMTP catch-all) | SMTP: `localhost:1025` · UI: http://localhost:8025 | — |
 | OTel Collector | gRPC: `localhost:4317` · HTTP: `localhost:4318` | — |
 | Jaeger UI | http://localhost:16686 | — |
 | Prometheus | http://localhost:9090 | — |
-| Grafana | http://localhost:3001 | admin / admin |
+| Grafana | http://localhost:3099 | admin / admin |
+
+> **Email in development:** Mailpit traps all outbound SMTP traffic — nothing reaches a real inbox. To enable it for the auth service, set these in `services/auth/.env`:
+> ```
+> SMTP_PROVIDER=custom
+> SMTP_HOST=localhost
+> SMTP_PORT=1025
+> SMTP_SECURE=false
+> SMTP_USER=dev
+> SMTP_PASS=dev
+> SMTP_FROM=TikLive Pro <dev@tiklivepro.me>
+> ```
+> Then open http://localhost:8025 to see captured messages.
 
 > **Linux note:** `host.docker.internal` is aliased to the Docker bridge gateway via `extra_hosts: host-gateway` in `docker-compose.dev.yml`, so Prometheus can scrape services running on the host without any manual config.
 
@@ -75,16 +88,23 @@ cp apps/web/.env.example apps/web/.env
 
 Update values as needed — critical variables:
 
-| Variable | All services | Notes |
-|----------|-------------|-------|
-| `JWT_SECRET` | ✓ | Must be ≥ 64 chars; identical across all services |
-| `DATABASE_URL` | ✓ | Auto-created by init.sql on first `make infra-up` |
-| `NATS_URL` | ✓ | Default: `nats://localhost:4222` |
-| `STRIPE_SECRET_KEY` | billing only | Use `sk_test_…` for dev |
+| Variable | Service(s) | Notes |
+|----------|-----------|-------|
+| `JWT_SECRET` | all | Must be ≥ 64 chars; identical across all services |
+| `DATABASE_URL` | all | Auto-created by init.sql on first `make infra-up` |
+| `NATS_URL` | all | Default: `nats://localhost:4222` |
+| `STRIPE_SECRET_KEY` | billing | Use `sk_test_…` for dev |
 | `TIKTOK_CLIENT_KEY` / `SECRET` | integrations, stream-orchestrator | From TikTok Developer Portal |
 | `FACEBOOK_APP_ID` / `SECRET` | integrations, stream-orchestrator | From Meta Developer Portal |
 | `TOKEN_ENCRYPTION_KEY` | integrations | ≥ 32 chars, AES-256-GCM key |
 | `NEXTAUTH_SECRET` | apps/web | Generate: `openssl rand -base64 32` |
+| `SMTP_PROVIDER` | auth | `gmail` \| `sendgrid` \| `custom` (default: `gmail`) |
+| `SMTP_USER` | auth | SMTP login. Leave blank to disable welcome emails. |
+| `SMTP_PASS` | auth | SMTP password / app-password |
+| `SMTP_FROM` | auth | Sender address, e.g. `TikLive Pro <noreply@tiklivepro.me>` |
+| `SMTP_HOST` | auth | Required only when `SMTP_PROVIDER=custom` |
+| `SMTP_PORT` | auth | Required only when `SMTP_PROVIDER=custom` |
+| `SMTP_SECURE` | auth | `true`/`false` — only when `SMTP_PROVIDER=custom` |
 
 ---
 
@@ -209,6 +229,12 @@ export TIKTOK_CLIENT_SECRET=...
 export FACEBOOK_APP_ID=...
 export FACEBOOK_APP_SECRET=...
 export TOKEN_ENCRYPTION_KEY=$(openssl rand -base64 32)
+
+# SMTP (optional — skip to disable welcome emails)
+export SMTP_PROVIDER=gmail
+export SMTP_USER=you@gmail.com
+export SMTP_PASS=your-app-password
+export SMTP_FROM="TikLive Pro <noreply@tiklivepro.me>"
 
 # 3. Start
 make prod-up

@@ -24,7 +24,7 @@ Services (all 10)
     │                           │
     │                           └──► Prometheus exporter :8889
     │                                    │
-    │                           Prometheus :9090 ──► Grafana :3001
+    │                           Prometheus :9090 ──► Grafana :3099
     │
     └── /metrics (prom-client) ──► Prometheus :9090  (direct scrape in dev)
 ```
@@ -121,7 +121,7 @@ Loaded from: `/etc/prometheus/alerts/*.yml` (mounted from `infra/observability/a
 
 ## Grafana
 
-URL (dev): http://localhost:3001 · Credentials: `admin / admin`
+URL (dev): http://localhost:3099 · Credentials: `admin / admin`
 
 ### Auto-provisioned datasources
 

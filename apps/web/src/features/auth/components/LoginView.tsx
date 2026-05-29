@@ -1,7 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { useSearchParams } from 'next/navigation';
 import { useLoginForm } from '../hooks/useLoginForm';
+import { useRegisterForm } from '../hooks/useRegisterForm';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '@/lib/utils';
@@ -24,14 +27,28 @@ const SOCIAL_PROVIDERS: { provider: OAuthProvider; icon: React.ReactNode; labelK
   { provider: 'tiktok', icon: <TikTokIcon className="w-5 h-5" />, labelKey: 'socialTikTok' },
 ];
 
+const OAUTH_ERROR_PARAMS = new Set(['oauth_failed', 'OAuthCallback', 'OAuthSignin', 'OAuthCreateAccount']);
+
 export function LoginView() {
   const t = useTranslations('auth');
+  const searchParams = useSearchParams();
   const { loginWithProvider, isLoading: authLoading } = useAuth();
   const { theme, toggle } = useTheme();
-  const { email, setEmail, password, setPassword, showPassword, setShowPassword, handleSubmit, isLoading, error } =
-    useLoginForm();
+  const [mode, setMode] = useState<'login' | 'register'>('login');
 
-  const loading = isLoading || authLoading;
+  const loginForm = useLoginForm();
+  const registerForm = useRegisterForm();
+
+  const isLogin = mode === 'login';
+  const { isLoading: formLoading, error: formError } = isLogin ? loginForm : registerForm;
+  const loading = formLoading || authLoading;
+
+  const urlErrorParam = searchParams.get('error');
+  const urlError = urlErrorParam && OAUTH_ERROR_PARAMS.has(urlErrorParam) ? t('errors.oauthFailed') : null;
+
+  function switchMode(next: 'login' | 'register'): void {
+    setMode(next);
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
@@ -55,8 +72,16 @@ export function LoginView() {
               <BroadcastIcon className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-2xl font-bold text-foreground tracking-tight">TikLive Pro</h1>
-            <p className="text-muted-foreground text-sm mt-1.5">{t('subtitle')}</p>
+            <p className="text-muted-foreground text-sm mt-1.5">
+              {isLogin ? t('subtitle') : t('subtitleSignUp')}
+            </p>
           </div>
+
+          {urlError && (
+            <p className="text-destructive text-sm bg-destructive/10 px-3 py-2 rounded-lg border border-destructive/20 mb-5">
+              {urlError}
+            </p>
+          )}
 
           <div className="space-y-3">
             {SOCIAL_PROVIDERS.map(({ provider, icon, labelKey }) => (
@@ -85,87 +110,268 @@ export function LoginView() {
             <div className="flex-1 h-px bg-border" />
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground" htmlFor="email">
-                {t('email')}
-              </label>
-              <input
-                id="email"
-                type="email"
-                required
-                autoComplete="email"
-                placeholder={t('emailPlaceholder')}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className={cn(
-                  'w-full px-4 py-2.5 rounded-lg text-sm',
-                  'bg-input border border-border text-foreground',
-                  'placeholder:text-muted-foreground',
-                  'focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand/60',
-                  'transition-colors',
-                )}
-              />
-            </div>
+          {isLogin ? (
+            <LoginForm form={loginForm} loading={loading} />
+          ) : (
+            <RegisterForm form={registerForm} loading={loading} />
+          )}
 
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground" htmlFor="password">
-                {t('password')}
-              </label>
-              <div className="relative">
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className={cn(
-                    'w-full px-4 py-2.5 pr-11 rounded-lg text-sm',
-                    'bg-input border border-border text-foreground',
-                    'placeholder:text-muted-foreground',
-                    'focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand/60',
-                    'transition-colors',
-                  )}
-                />
+          <p className="text-center text-xs text-muted-foreground mt-5">
+            {isLogin ? (
+              <>
+                {t('noAccount')}{' '}
                 <button
                   type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  onClick={() => switchMode('register')}
+                  className="text-brand hover:underline font-medium"
                 >
-                  {showPassword ? <EyeOffIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
+                  {t('signUp')}
                 </button>
-              </div>
-            </div>
-
-            {error && (
-              <p className="text-destructive text-sm bg-destructive/10 px-3 py-2 rounded-lg border border-destructive/20">
-                {error}
-              </p>
+              </>
+            ) : (
+              <>
+                {t('alreadyHaveAccount')}{' '}
+                <button
+                  type="button"
+                  onClick={() => switchMode('login')}
+                  className="text-brand hover:underline font-medium"
+                >
+                  {t('signIn')}
+                </button>
+              </>
             )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className={cn(
-                'w-full flex items-center justify-center gap-2.5',
-                'py-3 px-6 rounded-lg font-semibold text-sm text-white',
-                'bg-brand hover:bg-brand/90 active:scale-[0.98]',
-                'disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100',
-                'transition-all shadow-md shadow-brand/30',
-              )}
-            >
-              <LogInIcon className="w-4 h-4 shrink-0" />
-              {loading ? t('signingIn') : t('signIn')}
-            </button>
-
-            <p className="text-center text-xs text-muted-foreground leading-relaxed">
-              {t('forgotPasswordContact')}
-            </p>
-          </form>
+          </p>
         </div>
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+interface LoginFormProps {
+  form: ReturnType<typeof useLoginForm>;
+  loading: boolean;
+}
+
+function LoginForm({ form, loading }: LoginFormProps) {
+  const t = useTranslations('auth');
+  const { email, setEmail, password, setPassword, showPassword, setShowPassword, handleSubmit, error } = form;
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <EmailField email={email} setEmail={setEmail} />
+      <PasswordField
+        id="password"
+        label={t('password')}
+        value={password}
+        onChange={setPassword}
+        show={showPassword}
+        onToggleShow={() => setShowPassword((v) => !v)}
+        autoComplete="current-password"
+      />
+
+      {error && <ErrorBanner message={error} />}
+
+      <button
+        type="submit"
+        disabled={loading}
+        className={cn(
+          'w-full flex items-center justify-center gap-2.5',
+          'py-3 px-6 rounded-lg font-semibold text-sm text-white',
+          'bg-brand hover:bg-brand/90 active:scale-[0.98]',
+          'disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100',
+          'transition-all shadow-md shadow-brand/30',
+        )}
+      >
+        <LogInIcon className="w-4 h-4 shrink-0" />
+        {loading ? t('signingIn') : t('signIn')}
+      </button>
+
+      <p className="text-center text-xs text-muted-foreground leading-relaxed">
+        {t('forgotPasswordContact')}
+      </p>
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+interface RegisterFormProps {
+  form: ReturnType<typeof useRegisterForm>;
+  loading: boolean;
+}
+
+function RegisterForm({ form, loading }: RegisterFormProps) {
+  const t = useTranslations('auth');
+  const {
+    email,
+    setEmail,
+    displayName,
+    setDisplayName,
+    password,
+    setPassword,
+    confirmPassword,
+    setConfirmPassword,
+    showPassword,
+    setShowPassword,
+    handleSubmit,
+    error,
+  } = form;
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <EmailField email={email} setEmail={setEmail} />
+
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium text-foreground" htmlFor="displayName">
+          {t('displayName')}
+        </label>
+        <input
+          id="displayName"
+          type="text"
+          required
+          minLength={2}
+          maxLength={50}
+          autoComplete="name"
+          placeholder={t('displayNamePlaceholder')}
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          className={cn(
+            'w-full px-4 py-2.5 rounded-lg text-sm',
+            'bg-input border border-border text-foreground',
+            'placeholder:text-muted-foreground',
+            'focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand/60',
+            'transition-colors',
+          )}
+        />
+      </div>
+
+      <PasswordField
+        id="password"
+        label={t('password')}
+        value={password}
+        onChange={setPassword}
+        show={showPassword}
+        onToggleShow={() => setShowPassword((v) => !v)}
+        autoComplete="new-password"
+      />
+
+      <PasswordField
+        id="confirmPassword"
+        label={t('confirmPassword')}
+        value={confirmPassword}
+        onChange={setConfirmPassword}
+        show={showPassword}
+        onToggleShow={() => setShowPassword((v) => !v)}
+        autoComplete="new-password"
+      />
+
+      {error && <ErrorBanner message={error} />}
+
+      <button
+        type="submit"
+        disabled={loading}
+        className={cn(
+          'w-full flex items-center justify-center gap-2.5',
+          'py-3 px-6 rounded-lg font-semibold text-sm text-white',
+          'bg-brand hover:bg-brand/90 active:scale-[0.98]',
+          'disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100',
+          'transition-all shadow-md shadow-brand/30',
+        )}
+      >
+        <LogInIcon className="w-4 h-4 shrink-0" />
+        {loading ? t('signingUp') : t('signUp')}
+      </button>
+    </form>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shared sub-components
+
+interface EmailFieldProps {
+  email: string;
+  setEmail: (v: string) => void;
+}
+
+function EmailField({ email, setEmail }: EmailFieldProps) {
+  const t = useTranslations('auth');
+  return (
+    <div className="space-y-1.5">
+      <label className="text-sm font-medium text-foreground" htmlFor="email">
+        {t('email')}
+      </label>
+      <input
+        id="email"
+        type="email"
+        required
+        autoComplete="email"
+        placeholder={t('emailPlaceholder')}
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        className={cn(
+          'w-full px-4 py-2.5 rounded-lg text-sm',
+          'bg-input border border-border text-foreground',
+          'placeholder:text-muted-foreground',
+          'focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand/60',
+          'transition-colors',
+        )}
+      />
+    </div>
+  );
+}
+
+interface PasswordFieldProps {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  show: boolean;
+  onToggleShow: () => void;
+  autoComplete?: string;
+}
+
+function PasswordField({ id, label, value, onChange, show, onToggleShow, autoComplete }: PasswordFieldProps) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-sm font-medium text-foreground" htmlFor={id}>
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          id={id}
+          type={show ? 'text' : 'password'}
+          required
+          minLength={8}
+          autoComplete={autoComplete}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={cn(
+            'w-full px-4 py-2.5 pr-11 rounded-lg text-sm',
+            'bg-input border border-border text-foreground',
+            'placeholder:text-muted-foreground',
+            'focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand/60',
+            'transition-colors',
+          )}
+        />
+        <button
+          type="button"
+          onClick={onToggleShow}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+          aria-label={show ? 'Hide password' : 'Show password'}
+        >
+          {show ? <EyeOffIcon className="w-5 h-5" /> : <EyeIcon className="w-5 h-5" />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ErrorBanner({ message }: { message: string }) {
+  return (
+    <p className="text-destructive text-sm bg-destructive/10 px-3 py-2 rounded-lg border border-destructive/20">
+      {message}
+    </p>
   );
 }

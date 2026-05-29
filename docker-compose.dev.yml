@@ -9,15 +9,24 @@
 #   nats        NATS JetStream          4222 (client)  8222 (monitoring)
 #   postgres    PostgreSQL 16           5432
 #   redis       Redis 7                 6379
+#   mailpit     SMTP catch-all + UI     1025 (SMTP)    8025 (Web UI)
 #   otel        OpenTelemetry Collector 4317 (gRPC)    4318 (HTTP)
 #   jaeger      Jaeger all-in-one       16686 (UI)
 #   prometheus  Prometheus              9090
-#   grafana     Grafana                 3001 → 3000
+#   grafana     Grafana                 3099 → 3000
 #
 # Quickstart:
 #   make infra-up     # start all containers (detached)
 #   make dev          # start all microservices with hot-reload
 #   make nats-streams # create JetStream streams (run once after infra-up)
+#
+# Email in development:
+#   Mailpit traps all outbound SMTP traffic — no real emails are ever sent.
+#   Point the auth service at localhost:1025 with any credentials:
+#     SMTP_PROVIDER=custom  SMTP_HOST=localhost  SMTP_PORT=1025
+#     SMTP_SECURE=false     SMTP_USER=dev        SMTP_PASS=dev
+#     SMTP_FROM=TikLive Pro <dev@tiklivepro.me>
+#   Then open http://localhost:8025 to read captured messages.
 #
 # Notes:
 #   - On Linux, host.docker.internal is not available by default.
@@ -73,6 +82,13 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"   # SMTP — auth service connects here in dev
+      - "8025:8025"   # Web UI — http://localhost:8025
     restart: unless-stopped
 
   jaeger:
@@ -132,7 +148,7 @@ services:
       # Provisioning directory — auto-configures datasources on startup
       - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
-      - "3001:3000"   # Grafana UI — http://localhost:3001 (admin/admin)
+      - "3099:3000"   # Grafana UI — http://localhost:3099 (admin/admin)
     depends_on:
       - prometheus
       - jaeger

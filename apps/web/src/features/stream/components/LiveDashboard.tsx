@@ -6,6 +6,8 @@ import { useElapsedTime } from '../hooks/useElapsedTime';
 import { useSocialAccounts } from '@/features/accounts/hooks/useSocialAccounts';
 import { UserMenu } from '@/features/auth/components/UserMenu';
 import { StatsCard } from './StatsCard';
+import { CameraPreview } from './CameraPreview';
+import { ShareLivePanel } from './ShareLivePanel';
 import { AVATAR_COLORS } from '../consts/stream.consts';
 import { getInitials } from '@/lib/text.utils';
 import { cn } from '@/lib/utils';
@@ -48,8 +50,17 @@ export function LiveDashboard(): React.ReactElement {
       </header>
 
       <main className="mx-auto w-full max-w-lg flex-1 space-y-4 px-4 py-5 sm:max-w-2xl sm:px-6 lg:max-w-3xl">
+        {/* Camera feed — auto-starts when dashboard mounts */}
+        <CameraPreview autoStart className="w-full" />
+
         <StatsCard elapsed={elapsed} liveCount={liveCount} totalCount={destinations.length} />
 
+        {/* Share link */}
+        {currentSession && (
+          <ShareLivePanel sessionId={currentSession.id} />
+        )}
+
+        {/* Per-account live status */}
         {destinations.length > 0 && (
           <section className="space-y-2.5">
             <p className="px-1 text-[11px] font-semibold uppercase tracking-widest text-slate-500">

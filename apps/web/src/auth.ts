@@ -107,6 +107,8 @@ const TikTok: OAuthConfig<{
 } as OAuthConfig<{ open_id?: string; display_name?: string; email?: string; avatar_url?: string }>;
 
 const AUTH_SERVICE_URL = process.env['AUTH_SERVICE_INTERNAL_URL'] ?? 'http://localhost:3001';
+const FETCH_TIMEOUT_MS = 10_000;
+const MAX_RETRIES = 2;
 
 function getTokenExpiry(jwt: string): number {
   try {
@@ -115,6 +117,30 @@ function getTokenExpiry(jwt: string): number {
   } catch {
     return 0;
   }
+}
+
+async function fetchAuthService(url: string, options: RequestInit): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
+      if (res.status >= 500 && attempt < MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, 300 * Math.pow(2, attempt)));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      clearTimeout(timer);
+      lastError = err;
+      if (attempt < MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, 300 * Math.pow(2, attempt)));
+      }
+    }
+  }
+  throw lastError;
 }
 
 export const authOptions: AuthOptions = {
@@ -138,7 +164,7 @@ export const authOptions: AuthOptions = {
     async jwt({ token, account }: { token: JWT; account: Account | null }) {
       if (account?.access_token) {
         try {
-          const res = await fetch(`${AUTH_SERVICE_URL}/auth/oauth/social`, {
+          const res = await fetchAuthService(`${AUTH_SERVICE_URL}/auth/oauth/social`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -181,7 +207,7 @@ export const authOptions: AuthOptions = {
         now >= token.appAccessTokenExpiresAt - 60
       ) {
         try {
-          const res = await fetch(`${AUTH_SERVICE_URL}/auth/refresh`, {
+          const res = await fetchAuthService(`${AUTH_SERVICE_URL}/auth/refresh`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ refreshToken: token.appRefreshToken }),

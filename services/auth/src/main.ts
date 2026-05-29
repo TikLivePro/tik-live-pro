@@ -18,12 +18,24 @@ import { LoginUseCase } from './application/use-cases/login.use-case.js';
 import { RefreshTokenUseCase } from './application/use-cases/refresh-token.use-case.js';
 import { OAuthSocialLoginUseCase } from './application/use-cases/oauth-social-login.use-case.js';
 import { registerAuthRoutes } from './interfaces/http/auth.routes.js';
+import { SmtpEmailService, type SmtpProvider } from './infrastructure/email/smtp-email.service.js';
 
 const envSchema = baseEnvSchema.extend({
   DATABASE_URL: z.string().url(),
   JWT_SECRET: z.string().min(64),
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('30d'),
+  // SMTP — optional; email is skipped when SMTP_USER is absent
+  SMTP_PROVIDER: z.enum(['gmail', 'sendgrid', 'custom']).default('gmail'),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
+  SMTP_SECURE: z
+    .string()
+    .transform((v) => v === 'true')
+    .optional(),
 });
 
 const env = parseEnv(envSchema);
@@ -139,7 +151,27 @@ Authorization: Bearer <accessToken>
     logger,
   );
 
-  const registerUseCase = new RegisterUseCase(userRepo, tokenService, nats, logger);
+  const emailService =
+    env.SMTP_USER && env.SMTP_PASS && env.SMTP_FROM
+      ? new SmtpEmailService(
+          {
+            provider: env.SMTP_PROVIDER as SmtpProvider,
+            user: env.SMTP_USER,
+            pass: env.SMTP_PASS,
+            from: env.SMTP_FROM,
+            ...(env.SMTP_HOST !== undefined && { host: env.SMTP_HOST }),
+            ...(env.SMTP_PORT !== undefined && { port: env.SMTP_PORT }),
+            ...(env.SMTP_SECURE !== undefined && { secure: env.SMTP_SECURE }),
+          },
+          logger,
+        )
+      : undefined;
+
+  if (!emailService) {
+    logger.warn('SMTP not configured — welcome emails disabled');
+  }
+
+  const registerUseCase = new RegisterUseCase(userRepo, tokenService, nats, logger, emailService);
   const loginUseCase = new LoginUseCase(userRepo, tokenService, nats, logger);
   const refreshTokenUseCase = new RefreshTokenUseCase(userRepo, tokenService, logger);
   const oauthSocialLoginUseCase = new OAuthSocialLoginUseCase(userRepo, tokenService, nats, logger);

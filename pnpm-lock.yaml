@@ -474,6 +474,9 @@ importers:
       '@tik-live-pro/validation':
         specifier: workspace:*
         version: link:../../packages/validation
+      '@types/nodemailer':
+        specifier: ^8.0.0
+        version: 8.0.0
       drizzle-orm:
         specifier: ^0.38.0
         version: 0.38.4(@types/pg@8.20.0)(@types/react@19.2.14)(pg@8.21.0)(react@19.2.6)
@@ -483,6 +486,9 @@ importers:
       nats:
         specifier: ^2.28.0
         version: 2.29.3
+      nodemailer:
+        specifier: ^8.0.9
+        version: 8.0.9
       pg:
         specifier: ^8.13.0
         version: 8.21.0
@@ -2803,6 +2809,9 @@ packages:
 
   '@types/node@22.19.19':
     resolution: {integrity: sha512-dyh/xO2Fh5bYrfWaaqGrRQQGkNdmYw6AmaAUvYeUMNTWQtvb796ikLdmTchRmOlOiIJ1TDXfWgVx1QkUlQ6Hew==}
+
+  '@types/nodemailer@8.0.0':
+    resolution: {integrity: sha512-fyf8jWULsCo0d0BuoQ75i6IeoHs47qcqxWc7yUdUcV0pOZGjUTTOvwdG1PRXUDqN/8A64yQdQdnA2pZgcdi+cA==}
 
   '@types/pg@8.20.0':
     resolution: {integrity: sha512-bEPFOaMAHTEP1EzpvHTbmwR8UsFyHSKsRisLIHVMXnpNefSbGA1bD6CVy+qKjGSqmZqNqBDV2azOBo8TgkcVow==}
@@ -5488,6 +5497,10 @@ packages:
   node-stream-zip@1.15.0:
     resolution: {integrity: sha512-LN4fydt9TqhZhThkZIVQnF9cwjU3qmUH9h78Mx/K7d3VvfRqqwthLwJEUOEL0QPZ0XQmNN7be5Ggit5+4dq3Bw==}
     engines: {node: '>=0.12.0'}
+
+  nodemailer@8.0.9:
+    resolution: {integrity: sha512-5ofa7BUN8+C+Hckh5V2GjeeOGRQBx0CJQA6KxrvuZfC8iU4/q7sLn8XrtEEhJkjV6HdyIiQs7Bba6bTao8JhkA==}
+    engines: {node: '>=6.0.0'}
 
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
@@ -8910,6 +8923,10 @@ snapshots:
     dependencies:
       undici-types: 6.21.0
 
+  '@types/nodemailer@8.0.0':
+    dependencies:
+      '@types/node': 22.19.19
+
   '@types/pg@8.20.0':
     dependencies:
       '@types/node': 22.19.19
@@ -12166,6 +12183,8 @@ snapshots:
   node-releases@2.0.44: {}
 
   node-stream-zip@1.15.0: {}
+
+  nodemailer@8.0.9: {}
 
   normalize-path@3.0.0: {}
 

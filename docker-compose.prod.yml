@@ -228,6 +228,14 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_ACCESS_EXPIRES_IN: "15m"
       JWT_REFRESH_EXPIRES_IN: "30d"
+      # SMTP — optional. Leave SMTP_USER blank to disable welcome emails.
+      SMTP_PROVIDER: ${SMTP_PROVIDER:-gmail}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
       NODE_OPTIONS: "--max-old-space-size=96"
     depends_on:
       postgres:
@@ -332,6 +340,7 @@ services:
       PORT: "3005"
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklivepro_integrations
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
       TIKTOK_CLIENT_KEY: ${TIKTOK_CLIENT_KEY:?TIKTOK_CLIENT_KEY is required}
       TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:?TIKTOK_CLIENT_SECRET is required}
       FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:?FACEBOOK_APP_ID is required}
@@ -363,6 +372,7 @@ services:
       PORT: "3006"
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/tiklivepro_comments
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
       COMMENT_POLL_INTERVAL_MS: "2000"
       NODE_OPTIONS: "--max-old-space-size=128"
     depends_on:

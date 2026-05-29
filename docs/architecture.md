@@ -88,7 +88,7 @@
 | OTel Collector | 4317 (gRPC), 4318 (HTTP), 8888 (self-metrics), 8889 (prom export) | Receives OTLP traces/metrics/logs from all services; exports to Jaeger + Prometheus |
 | Jaeger | 16686 (UI), 14268 (HTTP), 4317 (OTLP) | Distributed trace visualization |
 | Prometheus | 9090 | Metrics scraping and alerting |
-| Grafana | 3001 → 3000 | Dashboards (Prometheus + Jaeger datasources auto-provisioned) |
+| Grafana | 3099 → 3000 | Dashboards (Prometheus + Jaeger datasources auto-provisioned) |
 
 ---
 
@@ -193,7 +193,7 @@ All events carry a `version: number` field. Rules:
 |--------|----------|-----------|---------|---------------|
 | Structured logs | `packages/logger` (pino) → stdout | Container runtime / k8s logs | — | `kubectl logs` / Loki (future) |
 | Distributed traces | OTel SDK → OTLP :4317 | OTel Collector | Jaeger | Jaeger UI :16686 |
-| Metrics | OTel SDK + prom-client → OTLP :4317 | OTel Collector → Prometheus :8889 | Prometheus :9090 | Grafana :3001 |
+| Metrics | OTel SDK + prom-client → OTLP :4317 | OTel Collector → Prometheus :8889 | Prometheus :9090 | Grafana :3099 |
 | Health | `GET /health` (liveness) | Kubernetes liveness probe | — | k8s pod status |
 | Readiness | `GET /ready` (readiness) | Kubernetes readiness probe | — | k8s pod status |
 | Alerts | Prometheus rules | `infra/observability/alerts/` | Alertmanager (future) | — |

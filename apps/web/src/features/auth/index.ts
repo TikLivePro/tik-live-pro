@@ -1,5 +1,6 @@
 export { useAuth } from './hooks/useAuth';
 export { useLoginForm } from './hooks/useLoginForm';
+export { useRegisterForm } from './hooks/useRegisterForm';
 export { useTheme } from './hooks/useTheme';
 export { useProfile } from './hooks/useProfile';
 export { useLocale, setLocaleCookie } from './hooks/useLocale';

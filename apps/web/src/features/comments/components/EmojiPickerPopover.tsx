@@ -2,18 +2,24 @@
 
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import data from '@emoji-mart/data';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const EmojiMart = dynamic(
   () =>
-    import('@emoji-mart/react').then((m) => {
-      const Comp: React.ComponentType<any> = (m as any).default ?? m;
-      return { default: Comp };
-    }),
-  { ssr: false },
+    Promise.all([import('@emoji-mart/react'), import('@emoji-mart/data')]).then(
+      ([reactMod, dataMod]) => {
+        const Picker: React.ComponentType<any> = (reactMod as any).default ?? reactMod;
+        const emojiData = (dataMod as any).default ?? dataMod;
+        const Wrapper = (props: any) => <Picker {...props} data={emojiData} />;
+        Wrapper.displayName = 'EmojiPicker';
+        return { default: Wrapper };
+      },
+    ),
+  {
+    ssr: false,
+    loading: () => <div className="h-[357px] w-[340px] bg-card rounded-xl animate-pulse" />,
+  },
 ) as React.ComponentType<{
-  data: unknown;
   onEmojiSelect: (emoji: { native: string }) => void;
   theme?: string;
   previewPosition?: string;
@@ -58,7 +64,6 @@ export function EmojiPickerPopover({ onSelect, disabled }: EmojiPickerPopoverPro
       {open && (
         <div className="absolute bottom-full mb-2 left-0 z-50 bg-card [backdrop-filter:none] border border-border/60 shadow-2xl rounded-xl overflow-hidden">
           <EmojiMart
-            data={data}
             onEmojiSelect={(emoji) => {
               onSelect(emoji.native);
               setOpen(false);

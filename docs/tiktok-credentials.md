@@ -1,4 +1,4 @@
-> Last updated: 2026-05-23
+> Last updated: 2026-05-28
 
 # TikTok Credentials Setup
 
@@ -31,7 +31,50 @@ This guide walks through obtaining `TIKTOK_CLIENT_KEY` and `TIKTOK_CLIENT_SECRET
 
 ---
 
-## 3. Enable Login Kit
+## 3. App description (120-character limit)
+
+TikTok requires a short description of your app (max 120 characters). Use the following:
+
+```
+Stream live to TikTok & Facebook at once, view aggregated comments, and manage your social accounts in one platform.
+```
+
+*(118 characters)*
+
+---
+
+## 4. Verify your domain via DNS TXT record
+
+TikTok requires you to prove ownership of `tiklivepro.me` before allowing it as a redirect URI in production.
+
+1. In the developer portal, go to your app → **App info** → **Domain verification** (or the **Redirect URIs** section — the verification prompt appears there).
+2. TikTok displays a TXT record value such as:
+   ```
+   tiktok-developers-site-verification=<unique-token>
+   ```
+3. Log in to your DNS provider (where `tiklivepro.me` is managed — e.g. Namecheap, Cloudflare, GoDaddy).
+4. Add a new **TXT** record:
+
+   | Field | Value |
+   |---|---|
+   | **Type** | `TXT` |
+   | **Host / Name** | `@` (root domain) |
+   | **Value** | The full string TikTok gave you |
+   | **TTL** | 3600 (or default) |
+
+5. Save the record, then click **Verify** in the TikTok portal.
+
+> **Note:** DNS propagation can take a few minutes to several hours. If verification fails immediately, wait 30 minutes and try again.
+
+You can check that the record is live before clicking Verify:
+```bash
+dig TXT tiklivepro.me +short
+```
+The output should include the TikTok verification string.
+
+---
+
+## 5. Enable Login Kit
 
 Login Kit is required for the social login (`TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET` used in `apps/web` and `apps/mobile`).
 
@@ -53,7 +96,7 @@ Login Kit is required for the social login (`TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT
 
 ---
 
-## 4. Get your credentials
+## 6. Get your credentials
 
 1. Go to the **App info** tab of your app.
 2. Copy the two values:
@@ -67,7 +110,7 @@ Login Kit is required for the social login (`TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT
 
 ---
 
-## 5. Add the credentials to your environment files
+## 7. Add the credentials to your environment files
 
 ### Web app (`apps/web/.env`)
 
@@ -85,7 +128,7 @@ TIKTOK_CLIENT_SECRET=your_client_secret_here
 
 ---
 
-## 6. Sandbox vs. production
+## 8. Sandbox vs. production
 
 | | Sandbox | Production |
 |---|---|---|
@@ -116,3 +159,21 @@ When you are ready for production:
 | `invalid_client` | Wrong client key or secret | Re-copy the values from **App info** — watch for trailing spaces |
 | `access_denied` | User denied permission or account is not whitelisted | In Sandbox, add the account to **Test accounts** |
 | Login button does nothing | Missing or empty env vars | Confirm `TIKTOK_CLIENT_KEY` and `TIKTOK_CLIENT_SECRET` are set and the dev server was restarted after editing `.env` |
+
+---
+
+## 9. App Review — required explanation (paste into the submission form)
+
+> Copy the block below verbatim into the **"Explain how each product and scope works within your app or website"** field (996 characters, limit 1000).
+
+---
+
+TikLivePro lets creators stream live to TikTok and Facebook simultaneously from one dashboard.
+
+Login Kit (user.info.basic): Used for OAuth account connection. After consent, we fetch open_id, display_name, and avatar_url to identify and display the linked account. Tokens are AES-256-GCM encrypted at rest and revoked on disconnect.
+
+Live Kit – stream create/end: On session start, we call /live/stream/create/ to get the RTMP URL and stream key and pass them to the user's broadcasting software. We call /live/stream/end/ when the session ends. TikLivePro does not proxy or store video.
+
+live.comment.read: We poll /live/comment/list/ every 2 s during a session to display TikTok comments in a unified feed alongside other platforms. Comments are deleted when the session ends.
+
+live.comment.write: Creators type replies in the dashboard; we post via /live/comment/create/, using reply_to_comment_id for threaded replies. No automation — every comment is manually initiated by the creator.

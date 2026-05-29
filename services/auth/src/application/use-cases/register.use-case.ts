@@ -10,6 +10,7 @@ import type { UserId } from '@tik-live-pro/shared-types';
 import { SubscriptionTier } from '@tik-live-pro/shared-types';
 import type { UserRegisteredPayload } from '@tik-live-pro/events';
 import type { Logger } from '@tik-live-pro/logger';
+import type { IEmailService } from '../ports/email.service.port.js';
 
 export interface RegisterInput {
   email: string;
@@ -28,6 +29,7 @@ export class RegisterUseCase {
     private readonly tokenService: ITokenService,
     private readonly nats: NatsJetStreamClient,
     private readonly logger: Logger,
+    private readonly emailService?: IEmailService,
   ) {}
 
   async execute(input: RegisterInput, correlationId: string): Promise<RegisterOutput> {
@@ -86,6 +88,15 @@ export class RegisterUseCase {
     await this.nats.publish(Subjects.AUTH_USER_REGISTERED, eventPayload, { correlationId });
 
     log.info({ userId, email: emailVO.branded }, 'Register: user registered successfully');
+
+    if (this.emailService) {
+      void this.emailService.sendWelcome({
+        to: emailVO.branded,
+        displayName: input.displayName.trim(),
+        locale,
+      });
+    }
+
     return { userId, ...tokens };
   }
 }
