@@ -57,7 +57,7 @@ PACKAGES := \
   lint lint-fix \
   format \
   clean clean-dist clean-deps \
-  db-create db-generate db-migrate db-studio db-seed db-seed-billing \
+  db-create db-create-prod db-generate db-migrate db-migrate-prod db-studio db-seed db-seed-billing db-seed-prod \
   db-logs nats-logs nats-streams nats-streams-prod \
   logs-gateway logs-auth logs-users logs-integrations logs-live-session \
   logs-orchestrator logs-comments logs-billing logs-notifications logs-analytics \
@@ -339,6 +339,15 @@ format:
 db-create:
 	bash scripts/db-create.sh
 
+## db-create-prod: Create all service databases on production (Neon / managed Postgres)
+##   Uses 'neondb' as the admin database (Neon default) instead of 'postgres'.
+##   Usage: DB_BASE_URL=postgresql://user:pass@direct-host:5432 make db-create-prod
+db-create-prod:
+ifndef DB_BASE_URL
+	$(error DB_BASE_URL is required. Usage: DB_BASE_URL=postgresql://user:pass@host:5432 make db-create-prod)
+endif
+	DB_ADMIN_DB=neondb DB_SSL_PARAMS="?sslmode=require" bash scripts/db-create.sh
+
 ## db-generate: Generate SQL migration files for all services (no DB needed)
 db-generate:
 	bash scripts/db-generate.sh
@@ -364,6 +373,24 @@ db-seed:
 ## db-seed-billing: Seed only the billing service (subscription plans)
 db-seed-billing:
 	pnpm --filter=@tik-live-pro/billing-service run db:seed
+
+## db-migrate-prod: Apply pending migrations to every service database in production
+##   Requires a direct (non-pooler) connection URL for Neon / managed Postgres.
+##   Usage: DB_BASE_URL=postgresql://user:pass@host:5432 make db-migrate-prod
+db-migrate-prod:
+ifndef DB_BASE_URL
+	$(error DB_BASE_URL is required. Usage: DB_BASE_URL=postgresql://user:pass@host:5432 make db-migrate-prod)
+endif
+	DB_SSL_PARAMS="?sslmode=require&channel_binding=require" bash scripts/db-migrate.sh
+
+## db-seed-prod: Seed the production databases (billing plans) — run after db-migrate-prod
+##   Requires a direct (non-pooler) connection URL for Neon / managed Postgres.
+##   Usage: DB_BASE_URL=postgresql://user:pass@host:5432 make db-seed-prod
+db-seed-prod:
+ifndef DB_BASE_URL
+	$(error DB_BASE_URL is required. Usage: DB_BASE_URL=postgresql://user:pass@host:5432 make db-seed-prod)
+endif
+	DB_SSL_PARAMS="?sslmode=require&channel_binding=require" bash scripts/db-seed.sh
 
 # ==============================================================================
 # CLEANUP

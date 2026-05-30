@@ -2,8 +2,11 @@
 set -euo pipefail
 
 BASE="${DB_BASE_URL:-postgresql://postgres:password@localhost:5432}"
-# Connect to the default "postgres" maintenance database to run CREATE DATABASE
-ADMIN_URL="${BASE}/postgres"
+SSL="${DB_SSL_PARAMS:-}"
+# Connect to the admin/maintenance database to run CREATE DATABASE.
+# Override with DB_ADMIN_DB=neondb for Neon (default: postgres).
+ADMIN_DB="${DB_ADMIN_DB:-postgres}"
+ADMIN_URL="${BASE}/${ADMIN_DB}${SSL}"
 
 DATABASES=(
   tiklivepro_auth
@@ -18,9 +21,16 @@ DATABASES=(
 
 for db in "${DATABASES[@]}"; do
   echo -n "  creating $db ... "
-  psql "$ADMIN_URL" -c "CREATE DATABASE \"$db\";" 2>/dev/null \
-    && echo "created" \
-    || echo "already exists (skipped)"
+  result=$(psql "$ADMIN_URL" -c "CREATE DATABASE \"$db\";" 2>&1) || true
+  if echo "$result" | grep -q "already exists"; then
+    echo "already exists (skipped)"
+  elif echo "$result" | grep -q "ERROR\|error\|fatal\|FATAL"; then
+    echo "FAILED"
+    echo "  → $result" >&2
+    exit 1
+  else
+    echo "created"
+  fi
 done
 
 echo ""
