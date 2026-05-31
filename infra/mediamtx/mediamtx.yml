@@ -21,7 +21,7 @@ rtmpEncryption: "no"
 
 # ── HLS ──────────────────────────────────────────────────────────────────────
 hlsAddress: :8888
-hlsEncryption: "no"
+hlsEncryption: false
 hlsAlwaysRemux: true
 hlsVariant: lowLatency
 hlsSegmentCount: 7
