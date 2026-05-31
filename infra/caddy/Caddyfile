@@ -1,21 +1,16 @@
-# Caddy reverse proxy — tiklivepro.me
-# Caddy automatically provisions and renews TLS certificates via Let's Encrypt.
-# All three subdomains must have A records pointing to this server's IP.
-
 tiklivepro.me, www.tiklivepro.me {
-    reverse_proxy web:3010
+    reverse_proxy localhost:3010
 }
 
 api.tiklivepro.me {
-    reverse_proxy api-gateway:3000
+    reverse_proxy localhost:3000
 }
 
-# HLS streaming relay — browsers fetch manifests and segments from here
 hls.tiklivepro.me {
-    reverse_proxy mediamtx:8888
+    reverse_proxy localhost:8888
     header {
         Access-Control-Allow-Origin  "*"
-        Access-Control-Allow-Methods "GET, OPTIONS"
+        Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
         Access-Control-Allow-Headers "Range"
     }
 }
