@@ -22,7 +22,7 @@ export function AccountSelector({ accounts, selectedIds, onChange }: Props): Rea
 
   const byPlatform = PLATFORM_ORDER.reduce<Record<SocialPlatform, SocialAccount[]>>(
     (acc, p) => ({ ...acc, [p]: activeAccounts.filter((a) => a.platform === p) }),
-    { tiktok: [], facebook: [] },
+    { tiktok: [], facebook: [], platform: [] },
   );
 
   function toggle(id: SocialAccountId) {
