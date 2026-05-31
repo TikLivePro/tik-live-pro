@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-05-31 (Caddy system service, auto-deploy Caddyfile, CORS Range header)
+> Dernière mise à jour : 2026-05-31 (Caddy system service, auto-deploy Caddyfile, CORS Range header, DNS NXDOMAIN troubleshooting)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -102,10 +102,15 @@ Services externes gratuits
 | CNAME Record | `api` | `tiklivepro.me.` | Automatic |
 | CNAME Record | `hls` | `tiklivepro.me.` | Automatic |
 
-Vérifier la propagation (5–30 min) :
+Vérifier la propagation (5–30 min) — **tous les enregistrements** doivent retourner `188.166.197.25` :
 ```bash
 dig tiklivepro.me +short
+dig www.tiklivepro.me +short
+dig api.tiklivepro.me +short
+dig hls.tiklivepro.me +short
 ```
+
+> **Erreur fréquente :** si l'un des sous-domaines retourne vide ou une erreur `NXDOMAIN`, l'enregistrement correspondant est absent dans Namecheap. Retournez dans **Advanced DNS** et ajoutez l'enregistrement manquant — les CNAME `api` et `hls` sont souvent oubliés.
 
 ---
 
@@ -590,6 +595,27 @@ Re-connectez Docker à GHCR sur le serveur :
 ```bash
 echo "VOTRE_PAT" | docker login ghcr.io -u VOTRE_USERNAME --password-stdin
 ```
+
+### Un sous-domaine est inaccessible (`DNS_PROBE_FINISHED_NXDOMAIN`)
+
+Symptôme : `hls.tiklivepro.me`, `api.tiklivepro.me`, ou `www.tiklivepro.me` retourne une erreur DNS dans le navigateur.
+
+Cause : l'enregistrement DNS correspondant est absent dans Namecheap.
+
+```bash
+# Vérifier quel enregistrement est manquant
+dig hls.tiklivepro.me +short   # doit retourner 188.166.197.25
+dig api.tiklivepro.me +short
+```
+
+Fix : **Namecheap > Domain List > Manage > Advanced DNS** — ajoutez l'enregistrement manquant :
+
+| Type | Host | Value |
+|------|------|-------|
+| CNAME Record | `hls` | `tiklivepro.me.` |
+| CNAME Record | `api` | `tiklivepro.me.` |
+
+Attendez 5–30 min puis relancez le `dig`. Une fois le DNS propagé, Caddy émet automatiquement le certificat SSL Let's Encrypt pour le sous-domaine.
 
 ### Le stream HLS ne se charge pas dans le navigateur
 
