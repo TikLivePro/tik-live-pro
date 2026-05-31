@@ -21,7 +21,7 @@ export function LiveCommentFloat({ comment, animate = true }: Props): React.Reac
   return (
     <div
       className={cn(
-        'flex max-w-[260px] items-start gap-2 rounded-2xl bg-black/55 px-3 py-2 backdrop-blur-sm',
+        'flex max-w-[260px] items-start gap-2 rounded-2xl border border-white/20 bg-black/55 px-3 py-2 backdrop-blur-xl shadow-lg shadow-black/30',
         animate && 'animate-slide-comment',
       )}
     >

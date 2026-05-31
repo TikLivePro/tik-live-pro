@@ -8,6 +8,34 @@
       "when": 1779336150084,
       "tag": "0000_high_toro",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1748563200000,
+      "tag": "0001_session_recording",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780127805333,
+      "tag": "0002_sparkling_toxin",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1780300000000,
+      "tag": "0003_platform_hls_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1780198123744,
+      "tag": "0004_fancy_doctor_strange",
+      "breakpoints": true
     }
   ]
 }

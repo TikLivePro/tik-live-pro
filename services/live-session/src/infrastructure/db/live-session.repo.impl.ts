@@ -15,7 +15,7 @@ import type {
 
 type DbRow = typeof liveSessions.$inferSelect;
 
-const INACTIVE_STATUSES: LiveSessionStatus[] = ['ended', 'error'];
+const INACTIVE_STATUSES: LiveSessionStatus[] = ['ending', 'ended', 'error'];
 
 export class DrizzleLiveSessionRepository implements ILiveSessionRepository {
   constructor(private readonly db: NodePgDatabase) {}
@@ -65,6 +65,8 @@ export class DrizzleLiveSessionRepository implements ILiveSessionRepository {
         rtmpUrl: d.rtmpUrl,
         status: d.status,
       })),
+      shouldRecord: session.shouldRecord,
+      platformHlsUrl: session.platformHlsUrl,
       startedAt: session.startedAt,
       endedAt: session.endedAt,
       createdAt: session.createdAt,
@@ -84,6 +86,7 @@ export class DrizzleLiveSessionRepository implements ILiveSessionRepository {
           rtmpUrl: d.rtmpUrl,
           status: d.status,
         })),
+        platformHlsUrl: session.platformHlsUrl,
         startedAt: session.startedAt,
         endedAt: session.endedAt,
         updatedAt: new Date(),
@@ -115,6 +118,8 @@ export class DrizzleLiveSessionRepository implements ILiveSessionRepository {
       description: row.description,
       status: row.status as LiveSessionStatus,
       destinations,
+      shouldRecord: row.shouldRecord,
+      platformHlsUrl: row.platformHlsUrl ?? null,
       startedAt: row.startedAt,
       endedAt: row.endedAt,
       createdAt: row.createdAt,

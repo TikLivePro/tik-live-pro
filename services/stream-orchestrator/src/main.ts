@@ -32,6 +32,11 @@ const envSchema = baseEnvSchema.extend({
   TIKTOK_CLIENT_SECRET: z.string(),
   FACEBOOK_APP_ID: z.string(),
   FACEBOOK_APP_SECRET: z.string(),
+  // MediaMTX — platform-native streaming relay (Go binary, ~5 MB RAM)
+  // MEDIAMTX_RTMP_URL: internal URL ffmpeg pushes to (container-to-container)
+  // MEDIAMTX_HLS_URL:  public URL browsers use to watch the HLS stream
+  MEDIAMTX_RTMP_URL: z.string().default('rtmp://localhost:1936'),
+  MEDIAMTX_HLS_URL: z.string().default('http://localhost:8888'),
 });
 
 const env = parseEnv(envSchema);
@@ -80,6 +85,7 @@ async function main(): Promise<void> {
     eventPublisher,
     () => new FfmpegStreamWorker(logger),
     localRtmpBase,
+    env.MEDIAMTX_HLS_URL,
     logger,
   );
   const startBroadcast = new StartBroadcastUseCase(
@@ -87,6 +93,7 @@ async function main(): Promise<void> {
     tokenProvider,
     adapterRegistry,
     eventPublisher,
+    env.MEDIAMTX_RTMP_URL,
     logger,
   );
   const stopBroadcast = new StopBroadcastUseCase(
@@ -202,6 +209,7 @@ This service is primarily driven by NATS JetStream events from the \`live-sessio
     streamArrivalHandler,
     rtmpIngestHost: env.RTMP_INGEST_HOST === '0.0.0.0' ? 'localhost' : env.RTMP_INGEST_HOST,
     rtmpIngestPort: env.RTMP_INGEST_PORT,
+    mediaMtxHlsUrl: env.MEDIAMTX_HLS_URL,
   });
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });

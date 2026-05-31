@@ -35,7 +35,8 @@ export class StopBroadcastUseCase {
       session.status === StreamSessionStatus.ERROR ||
       session.status === StreamSessionStatus.IDLE
     ) {
-      this.logger.info({ sessionId: input.sessionId, status: session.status }, 'Session already stopped');
+      this.logger.info({ sessionId: input.sessionId, status: session.status }, 'Session already stopped — notifying live-session to finalize');
+      await this.eventPublisher.sessionBroadcastStopped(session.sessionId, session.userId, input.correlationId);
       return;
     }
 
@@ -87,6 +88,12 @@ export class StopBroadcastUseCase {
 
     session.markEnded();
     await this.sessionRepo.update(session);
+
+    await this.eventPublisher.sessionBroadcastStopped(
+      session.sessionId,
+      session.userId,
+      input.correlationId,
+    );
 
     this.logger.info({ sessionId: input.sessionId }, 'Broadcast stopped');
   }

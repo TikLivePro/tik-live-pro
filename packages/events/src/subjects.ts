@@ -24,8 +24,13 @@ export const Subjects = {
   SESSION_CREATED: 'session.created',
   SESSION_STARTING: 'session.starting',
   SESSION_LIVE: 'session.live',
+  SESSION_PAUSED: 'session.paused',
+  SESSION_RESUMED: 'session.resumed',
   SESSION_ENDED: 'session.ended',
   SESSION_ERROR: 'session.error',
+  // Published by stream-orchestrator once all platform streams and workers are fully stopped.
+  // Consumed by live-session to transition ENDING → ENDED.
+  SESSION_BROADCAST_STOPPED: 'session.broadcast.stopped',
 
   // Stream orchestration
   STREAM_DESTINATION_ADDED: 'stream.destination.added',

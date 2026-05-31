@@ -12,13 +12,13 @@ import { parseEnv, baseEnvSchema } from '@tik-live-pro/config';
 import { createLogger } from '@tik-live-pro/logger';
 import { NatsJetStreamClient, ensureStreams, Subjects } from '@tik-live-pro/events';
 import type { SessionCreatedPayload, CommentReceivedPayload } from '@tik-live-pro/events';
-import { consumerOpts, createInbox } from 'nats';
+import { StringCodec, consumerOpts, createInbox } from 'nats';
 import { AdapterRegistry, TikTokAdapter, FacebookAdapter } from '@tik-live-pro/platform-adapters';
 import { registerCommentsRoutes, broadcastComment } from './interfaces/http/comments.routes.js';
 import { CommentPoller } from './application/comment-poller.js';
 import { CommentPoster } from './application/comment-poster.js';
 import { SessionRegistry } from './application/session-registry.js';
-import type { SocialPlatform, LiveSessionId, SocialAccountId } from '@tik-live-pro/shared-types';
+import type { BaseEvent, SocialPlatform, LiveSessionId, SocialAccountId } from '@tik-live-pro/shared-types';
 
 const envSchema = baseEnvSchema.extend({
   DATABASE_URL: z.string().url(),
@@ -36,6 +36,7 @@ const env = parseEnv(envSchema);
 const logger = createLogger('comments-service', { level: env.LOG_LEVEL });
 
 async function bootstrap(): Promise<void> {
+  const sc = StringCodec();
   const pool = new Pool({ connectionString: env.DATABASE_URL });
   const db = drizzle(pool);
 
@@ -85,12 +86,12 @@ async function bootstrap(): Promise<void> {
   void (async () => {
     for await (const msg of sessionCreatedSub) {
       try {
-        const payload = msg.json<SessionCreatedPayload>();
+        const event = JSON.parse(sc.decode(msg.data)) as BaseEvent<SessionCreatedPayload>;
         sessionRegistry.register(
-          payload.sessionId,
-          payload.destinationAccountIds.map((id) => ({
+          event.payload.sessionId,
+          event.payload.destinationAccountIds.map((id) => ({
             socialAccountId: id as SocialAccountId,
-            platform: 'unknown' as SocialPlatform, // platform resolved when polling starts
+            platform: 'unknown' as SocialPlatform,
           })),
         );
         msg.ack();
@@ -106,11 +107,11 @@ async function bootstrap(): Promise<void> {
   void (async () => {
     for await (const msg of sessionStartingSub) {
       try {
-        const payload = msg.json<{ sessionId: LiveSessionId; userId: string }>();
-        const accounts = sessionRegistry.getAccounts(payload.sessionId);
+        const event = JSON.parse(sc.decode(msg.data)) as BaseEvent<{ sessionId: LiveSessionId; userId: string }>;
+        const accounts = sessionRegistry.getAccounts(event.payload.sessionId);
         for (const account of accounts) {
           commentPoller.start({
-            sessionId: payload.sessionId,
+            sessionId: event.payload.sessionId,
             socialAccountId: account.socialAccountId,
             platform: account.platform,
             accessToken: '', // Token will be fetched dynamically by poster; poller uses integrations service
@@ -131,9 +132,9 @@ async function bootstrap(): Promise<void> {
   void (async () => {
     for await (const msg of sessionEndedSub) {
       try {
-        const payload = msg.json<{ sessionId: LiveSessionId }>();
-        commentPoller.stopAll(payload.sessionId);
-        sessionRegistry.remove(payload.sessionId);
+        const event = JSON.parse(sc.decode(msg.data)) as BaseEvent<{ sessionId: LiveSessionId }>;
+        commentPoller.stopAll(event.payload.sessionId);
+        sessionRegistry.remove(event.payload.sessionId);
         msg.ack();
       } catch (err) {
         logger.error({ err }, 'Failed to process session.ended event');
@@ -147,8 +148,8 @@ async function bootstrap(): Promise<void> {
   void (async () => {
     for await (const msg of commentReceivedSub) {
       try {
-        const comment = msg.json<CommentReceivedPayload>();
-        broadcastComment(comment.sessionId, comment);
+        const event = JSON.parse(sc.decode(msg.data)) as BaseEvent<CommentReceivedPayload>;
+        broadcastComment(event.payload.sessionId, event.payload);
         msg.ack();
       } catch (err) {
         logger.error({ err }, 'Failed to process comment.received event');

@@ -9,6 +9,7 @@ export interface SessionCreatedPayload {
   title: string;
   description: string | null;
   destinationAccountIds: SocialAccountId[];
+  shouldRecord: boolean;
 }
 
 export type SessionCreatedEvent = BaseEvent<SessionCreatedPayload>;
@@ -19,6 +20,7 @@ export interface SessionStatusChangedPayload {
   previousStatus: LiveSessionStatus;
   status: LiveSessionStatus;
   occurredAt: string;
+  hlsUrl?: string;
 }
 
 export type SessionStatusChangedEvent = BaseEvent<SessionStatusChangedPayload>;

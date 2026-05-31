@@ -213,6 +213,11 @@ All error responses follow a consistent envelope:
                   },
                 },
               },
+              shouldRecord: {
+                type: 'boolean',
+                description: 'Whether this session is being saved to cloud storage. Requires an active subscription with stream_recording.',
+                example: false,
+              },
               startedAt: { type: 'string', format: 'date-time', nullable: true },
               endedAt: { type: 'string', format: 'date-time', nullable: true },
               createdAt: { type: 'string', format: 'date-time' },
@@ -540,10 +545,20 @@ All error responses follow a consistent envelope:
         // LIVE SESSIONS
         // -----------------------------------------------------------------------
         '/sessions': {
+          get: {
+            tags: ['Live Sessions'],
+            summary: 'List sessions',
+            description: 'Returns all live sessions for the authenticated user, sorted newest first.',
+            security: [{ BearerAuth: [] }],
+            responses: {
+              200: { description: 'Session list.', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'array', items: { $ref: '#/components/schemas/LiveSession' } } } } } } },
+              401: { description: 'Unauthorized.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            },
+          },
           post: {
             tags: ['Live Sessions'],
             summary: 'Create a live session',
-            description: 'Creates a new live session targeting one or more connected social accounts. Only one active session per user is allowed.',
+            description: 'Creates a new live session. Social account destinations are optional — omit them to go live without broadcasting to any platform. Only one active session per user is allowed. If the user has an active subscription with stream_recording, the session will be saved to cloud storage.',
             security: [{ BearerAuth: [] }],
             requestBody: {
               required: true,
@@ -551,15 +566,15 @@ All error responses follow a consistent envelope:
                 'application/json': {
                   schema: {
                     type: 'object',
-                    required: ['title', 'destinationAccountIds'],
+                    required: ['title'],
                     properties: {
                       title: { type: 'string', minLength: 1, maxLength: 100, example: 'Morning coding stream' },
                       description: { type: 'string', maxLength: 500, example: 'Building a live streaming platform live!' },
                       destinationAccountIds: {
                         type: 'array',
-                        minItems: 1,
+                        minItems: 0,
                         items: { type: 'string', format: 'uuid' },
-                        description: 'IDs of the connected social accounts to stream to.',
+                        description: 'IDs of connected social accounts to stream to. Omit or pass an empty array to go live without broadcasting to any social platform.',
                         example: ['c3d4e5f6-a7b8-9012-cdef-123456789012'],
                       },
                     },
@@ -587,6 +602,20 @@ All error responses follow a consistent envelope:
               200: { description: 'Session details.', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/LiveSession' } } } } } },
               401: { description: 'Unauthorized.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
               403: { description: 'Session belongs to another user.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              404: { description: 'Session not found.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            },
+          },
+        },
+        '/sessions/{sessionId}/public': {
+          get: {
+            tags: ['Live Sessions'],
+            summary: 'Get public session info',
+            description: 'Returns limited, public-facing session info (title, status, platforms, timestamps). No authentication required. Used for shared watch pages.',
+            parameters: [
+              { in: 'path', name: 'sessionId', required: true, schema: { type: 'string', format: 'uuid' }, description: 'Live session ID.' },
+            ],
+            responses: {
+              200: { description: 'Public session info.', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'object', properties: { id: { type: 'string' }, title: { type: 'string' }, status: { type: 'string' }, platforms: { type: 'array', items: { type: 'string' } }, platformHlsUrl: { type: 'string', nullable: true }, startedAt: { type: 'string', nullable: true }, endedAt: { type: 'string', nullable: true } } } } } } } },
               404: { description: 'Session not found.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
             },
           },
@@ -1007,7 +1036,7 @@ All error responses follow a consistent envelope:
   for (const [prefix, upstream] of Object.entries(SERVICE_ROUTES)) {
     const isPublic = PUBLIC_PREFIXES.has(prefix);
 
-    fastify.all(`${prefix}/*`, async (request, reply) => {
+    const handler = async (request: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => {
       if (!isPublic && !PUBLIC_PATHS.has(request.url.split('?')[0]!)) {
         await request.jwtVerify();
       }
@@ -1033,13 +1062,20 @@ All error responses follow a consistent envelope:
 
       try {
         const response = await fetch(targetUrl, fetchOptions);
+        if (response.status === 204 || response.headers.get('content-length') === '0') {
+          return reply.status(response.status).send();
+        }
         const data = await response.json();
         return reply.status(response.status).send(data);
       } catch (err) {
         logger.error({ err, targetUrl, method: request.method }, 'Proxy fetch failed');
         return reply.status(502).send({ error: { code: 'BAD_GATEWAY', message: 'Upstream service unavailable' } });
       }
-    });
+    };
+
+    // Register both the exact prefix (e.g. POST /sessions) and sub-paths (e.g. GET /sessions/:id)
+    fastify.all(prefix, handler);
+    fastify.all(`${prefix}/*`, handler);
   }
 
   // ---------------------------------------------------------------------------

@@ -21,6 +21,8 @@ export interface LiveSession {
   description: string | null;
   status: LiveSessionStatus;
   destinations: PlatformStreamDestination[];
+  shouldRecord: boolean;
+  platformHlsUrl: string | null;
   startedAt: Date | null;
   endedAt: Date | null;
   createdAt: Date;

@@ -87,13 +87,21 @@
       "button": "Partager",
       "copy": "Copier le lien",
       "copied": "Copié !",
-      "title": "Rejoignez mon live sur TikLive Pro"
+      "title": "Rejoignez mon live sur TikLive Pro",
+      "popup": {
+        "heading": "Partager vers",
+        "noAccounts": "Aucun compte connecté"
+      }
     },
     "liveDuration": "Durée du live",
     "liveAccounts": "Comptes en direct",
     "accountStatus": "ÉTAT DES COMPTES",
     "streamActive": "Stream actif",
     "stopLive": "Arrêter le live",
+    "pauseLive": "Pause",
+    "resumeLive": "Continuer",
+    "sessionPaused": "Stream en pause",
+    "sessionResumed": "Stream repris",
     "ok": "OK",
     "status": {
       "created": "Prêt",
@@ -114,11 +122,30 @@
     },
     "sessionStarted": "Le stream est en direct !",
     "sessionEnded": "Stream terminé",
+    "history": {
+      "sectionLabel": "STREAMS PASSÉS",
+      "empty": "Aucun stream passé",
+      "duration": "{duration}",
+      "shareEmail": "Partager par e-mail"
+    },
+    "returnToLive": "Retourner au live",
+    "goHome": "Tableau de bord",
+    "minimize": "Réduire",
+    "restore": "Restaurer",
+    "volume": {
+      "mic": "Microphone",
+      "monitor": "Moniteur"
+    },
+    "noDestinationsHint": "Aucune plateforme sélectionnée — le stream tournera sans diffuser sur les réseaux sociaux",
+    "recordingEnabled": "Votre stream sera sauvegardé dans le stockage cloud",
+    "recordingDisabled": "Améliorez votre abonnement pour sauvegarder vos enregistrements",
     "errors": {
       "noDestinations": "Veuillez ajouter au moins une destination",
       "createFailed": "Échec de la création de la session",
       "startFailed": "Échec du démarrage du stream",
-      "endFailed": "Échec de la fin du stream"
+      "endFailed": "Échec de la fin du stream",
+      "pauseFailed": "Échec de la mise en pause du stream",
+      "resumeFailed": "Échec de la reprise du stream"
     }
   },
   "comments": {
@@ -197,7 +224,13 @@
     "streamEnded": "Stream terminé",
     "accountConnected": "Compte {platform} connecté",
     "accountDisconnected": "Compte {platform} déconnecté",
-    "paymentFailed": "Paiement échoué — veuillez mettre à jour votre mode de paiement"
+    "paymentFailed": "Paiement échoué — veuillez mettre à jour votre mode de paiement",
+    "bell": {
+      "label": "Notifications",
+      "empty": "Aucune notification",
+      "markAllRead": "Tout marquer comme lu",
+      "delete": "Supprimer"
+    }
   },
   "legal": {
     "backHome": "Retour à l'accueil",
@@ -397,5 +430,19 @@
       "removed": "Compte déconnecté",
       "removeFailed": "Échec de la déconnexion du compte"
     }
+  },
+  "watch": {
+    "liveOn": "En direct sur",
+    "startingDesc": "Le stream démarre — patientez quelques instants…",
+    "endedDesc": "Ce live est terminé.",
+    "notFound": "Stream introuvable",
+    "notFoundDesc": "Ce lien est invalide ou le stream a été supprimé.",
+    "poweredBy": "Propulsé par TikLivePro",
+    "goToApp": "Aller sur TikLivePro"
+  },
+  "notFound": {
+    "heading": "Page introuvable",
+    "message": "La page que vous recherchez n'existe pas ou a été déplacée.",
+    "goHome": "Retour à l'accueil"
   }
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "live_sessions" ADD COLUMN "should_record" boolean DEFAULT false NOT NULL;

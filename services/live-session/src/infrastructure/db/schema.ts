@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb, uuid, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, uuid, index, boolean } from 'drizzle-orm/pg-core';
 
 interface StoredDestination {
   socialAccountId: string;
@@ -17,6 +17,8 @@ export const liveSessions = pgTable(
     description: text('description'),
     status: text('status').notNull().default('created'),
     destinations: jsonb('destinations').$type<StoredDestination[]>().notNull(),
+    shouldRecord: boolean('should_record').notNull().default(false),
+    platformHlsUrl: text('platform_hls_url'),
     startedAt: timestamp('started_at', { withTimezone: true }),
     endedAt: timestamp('ended_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

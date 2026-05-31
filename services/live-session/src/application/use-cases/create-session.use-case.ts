@@ -12,6 +12,7 @@ export interface CreateSessionInput {
   title: string;
   description?: string;
   destinationAccountIds: SocialAccountId[];
+  shouldRecord: boolean;
 }
 
 export interface CreateSessionOutput {
@@ -40,6 +41,7 @@ export class CreateSessionUseCase {
       input.userId,
       input.title.trim(),
       input.description?.trim() ?? null,
+      input.shouldRecord,
     );
     log.debug({ sessionId: session.id }, 'CreateSession: session entity created');
 
@@ -53,6 +55,7 @@ export class CreateSessionUseCase {
       title: session.title,
       description: session.description,
       destinationAccountIds: input.destinationAccountIds,
+      shouldRecord: session.shouldRecord,
     };
 
     log.debug({ sessionId: session.id, subject: Subjects.SESSION_CREATED }, 'CreateSession: publishing NATS event');

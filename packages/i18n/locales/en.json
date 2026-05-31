@@ -87,13 +87,21 @@
       "button": "Share",
       "copy": "Copy link",
       "copied": "Copied!",
-      "title": "Join my live stream on TikLive Pro"
+      "title": "Join my live stream on TikLive Pro",
+      "popup": {
+        "heading": "Share to",
+        "noAccounts": "No connected accounts"
+      }
     },
     "liveDuration": "Live duration",
     "liveAccounts": "Live accounts",
     "accountStatus": "ACCOUNT STATUS",
     "streamActive": "Active stream",
     "stopLive": "Stop live",
+    "pauseLive": "Pause",
+    "resumeLive": "Continue",
+    "sessionPaused": "Stream paused",
+    "sessionResumed": "Stream resumed",
     "ok": "OK",
     "status": {
       "created": "Ready",
@@ -114,11 +122,30 @@
     },
     "sessionStarted": "Stream is live!",
     "sessionEnded": "Stream ended",
+    "history": {
+      "sectionLabel": "PAST STREAMS",
+      "empty": "No past streams yet",
+      "duration": "{duration}",
+      "shareEmail": "Share via email"
+    },
+    "returnToLive": "Return to live",
+    "goHome": "Dashboard",
+    "minimize": "Minimize",
+    "restore": "Restore",
+    "volume": {
+      "mic": "Microphone",
+      "monitor": "Monitor"
+    },
+    "noDestinationsHint": "No platform selected — stream will run without broadcasting to social media",
+    "recordingEnabled": "Your stream will be saved to cloud storage",
+    "recordingDisabled": "Upgrade your plan to save stream recordings",
     "errors": {
       "noDestinations": "Please add at least one destination",
       "createFailed": "Failed to create the session",
       "startFailed": "Failed to start the stream",
-      "endFailed": "Failed to end the stream"
+      "endFailed": "Failed to end the stream",
+      "pauseFailed": "Failed to pause the stream",
+      "resumeFailed": "Failed to resume the stream"
     }
   },
   "comments": {
@@ -197,7 +224,13 @@
     "streamEnded": "Stream ended",
     "accountConnected": "{platform} account connected",
     "accountDisconnected": "{platform} account disconnected",
-    "paymentFailed": "Payment failed — please update your payment method"
+    "paymentFailed": "Payment failed — please update your payment method",
+    "bell": {
+      "label": "Notifications",
+      "empty": "No notifications",
+      "markAllRead": "Mark all as read",
+      "delete": "Delete"
+    }
   },
   "legal": {
     "backHome": "Back to home",
@@ -397,5 +430,19 @@
       "removed": "Account disconnected",
       "removeFailed": "Failed to disconnect account"
     }
+  },
+  "watch": {
+    "liveOn": "Live on",
+    "startingDesc": "The stream is starting up — hang tight…",
+    "endedDesc": "This live stream has ended.",
+    "notFound": "Stream Not Found",
+    "notFoundDesc": "This link is invalid or the stream has been removed.",
+    "poweredBy": "Powered by TikLivePro",
+    "goToApp": "Go to TikLivePro"
+  },
+  "notFound": {
+    "heading": "Page Not Found",
+    "message": "The page you're looking for doesn't exist or has been moved.",
+    "goHome": "Back to home"
   }
 }

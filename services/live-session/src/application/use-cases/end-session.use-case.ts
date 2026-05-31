@@ -28,7 +28,13 @@ export class EndSessionUseCase {
     }
 
     const previousStatus = session.status;
-    session.end();
+    const didChange = session.end();
+
+    if (!didChange) {
+      log.info({ sessionId, status: session.status }, 'EndSession: already ending/ended — idempotent no-op');
+      return;
+    }
+
     await this.sessionRepo.update(session);
     log.debug({ sessionId, newStatus: session.status }, 'EndSession: updated in DB');
 

@@ -13,6 +13,7 @@ export class HandleStreamArrivedUseCase {
     private readonly eventPublisher: StreamEventPublisher,
     private readonly workerFactory: StreamWorkerFactory,
     private readonly localRtmpBase: string,
+    private readonly mediaMtxHlsUrl: string,
     private readonly logger: Logger,
   ) {}
 
@@ -64,7 +65,8 @@ export class HandleStreamArrivedUseCase {
 
           if (session.hasAnyLiveDestination()) {
             session.markLive();
-            await this.eventPublisher.sessionLive(session.sessionId, session.userId, randomUUID());
+            const hlsUrl = `${this.mediaMtxHlsUrl}/live/${ingestKey}/index.m3u8`;
+            await this.eventPublisher.sessionLive(session.sessionId, session.userId, hlsUrl, randomUUID());
             await this.sessionRepo.update(session);
           }
         }

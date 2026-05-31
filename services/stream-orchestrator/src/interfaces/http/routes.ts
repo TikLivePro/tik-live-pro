@@ -29,6 +29,7 @@ export function registerRoutes(
     streamArrivalHandler: HandleStreamArrivedUseCase;
     rtmpIngestHost: string;
     rtmpIngestPort: number;
+    mediaMtxHlsUrl: string;
   },
 ): void {
   // GET /health ---------------------------------------------------------------
@@ -149,7 +150,7 @@ rtmp://<host>:<port>/live/<ingestKey>
           200: {
             description: 'Ingest endpoint is ready.',
             type: 'object',
-            required: ['ingestUrl', 'ingestKey', 'status'],
+            required: ['ingestUrl', 'ingestKey', 'hlsUrl', 'status'],
             properties: {
               ingestUrl: {
                 type: 'string',
@@ -162,6 +163,11 @@ rtmp://<host>:<port>/live/<ingestKey>
                 description:
                   'Unique stream key for this session. Included in the ingestUrl but provided separately for OBS-style configuration.',
                 example: 'abc123def456',
+              },
+              hlsUrl: {
+                type: 'string',
+                description: 'HLS playlist URL for platform-native playback (MediaMTX). Share with viewers or embed in a player.',
+                example: 'http://localhost:8888/live/abc123def456/index.m3u8',
               },
               status: {
                 type: 'string',
@@ -201,6 +207,7 @@ rtmp://<host>:<port>/live/<ingestKey>
       await reply.status(200).send({
         ingestUrl: `rtmp://${deps.rtmpIngestHost}:${deps.rtmpIngestPort}/live/${session.ingestKey}`,
         ingestKey: session.ingestKey,
+        hlsUrl: `${deps.mediaMtxHlsUrl}/live/${session.ingestKey}/index.m3u8`,
         status: session.status,
       });
     },

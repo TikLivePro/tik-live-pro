@@ -1,8 +1,12 @@
 export const SocialPlatform = {
   TIKTOK: 'tiktok',
   FACEBOOK: 'facebook',
+  PLATFORM: 'platform',
 } as const;
 export type SocialPlatform = (typeof SocialPlatform)[keyof typeof SocialPlatform];
+
+// Sentinel used for the platform-native MediaMTX destination (no social account)
+export const PLATFORM_DESTINATION_ID = '__platform__' as SocialAccountId;
 
 export type SocialAccountId = string & { readonly _brand: 'SocialAccountId' };
 

@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-05-29 (ajout des secrets web frontend)
+> Dernière mise à jour : 2026-05-31 (ajout MediaMTX — relay HLS/WebRTC natif)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -37,6 +37,7 @@ Services externes gratuits
 | Conteneur | Limite mémoire |
 |-----------|---------------|
 | NATS | 128 m |
+| MediaMTX (relay HLS/WebRTC) | 64 m |
 | api-gateway | 192 m |
 | auth | 160 m |
 | users | 160 m |
@@ -48,8 +49,10 @@ Services externes gratuits
 | analytics | 128 m |
 | stream-orchestrator | 320 m |
 | web (Next.js) | 512 m |
-| **Total** | **~2 432 m** |
-| OS + marge | ~1 600 m |
+| **Total** | **~2 496 m** |
+| OS + marge | ~1 504 m |
+
+> **MediaMTX** (binaire Go) consomme ~10–30 MB en runtime — bien en dessous de la limite de 64 m. Aucun impact perceptible sur le Droplet 4 GB.
 
 ---
 
@@ -97,6 +100,7 @@ Services externes gratuits
 | A Record | `@` | `188.166.197.25` | Automatic |
 | A Record | `www` | `188.166.197.25` | Automatic |
 | CNAME Record | `api` | `tiklivepro.me.` | Automatic |
+| CNAME Record | `hls` | `tiklivepro.me.` | Automatic |
 
 Vérifier la propagation (5–30 min) :
 ```bash
@@ -201,10 +205,23 @@ tiklivepro.me, www.tiklivepro.me {
 api.tiklivepro.me {
     reverse_proxy localhost:3000
 }
+
+# MediaMTX — HLS and WebRTC viewer endpoint
+# Caddy obtient automatiquement un certificat TLS pour ce sous-domaine.
+# Les spectateurs regardent le stream en clair à https://hls.tiklivepro.me/live/<ingestKey>/index.m3u8
+hls.tiklivepro.me {
+    reverse_proxy localhost:8888
+
+    # Autorise les navigateurs à charger le flux depuis le frontend (CORS)
+    header Access-Control-Allow-Origin "*"
+    header Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+}
 ```
 ```bash
 systemctl reload caddy
 ```
+
+> **Pourquoi CORS sur `/hls` ?** Le player HLS dans le navigateur fait des requêtes XHR vers `hls.tiklivepro.me` depuis l'origine `tiklivepro.me`. Sans le header `Access-Control-Allow-Origin`, le navigateur bloque les segments `.m3u8` et `.ts`.
 
 ### 6d — Dossier du projet
 
@@ -354,6 +371,12 @@ Ces secrets servent à NextAuth (gestion des sessions côté serveur du frontend
 | `NEXT_PUBLIC_COMMENTS_WS_URL` | `https://api.tiklivepro.me` — base URL pour le WebSocket des commentaires (proxié via l'API Gateway) |
 | `NEXT_PUBLIC_GIPHY_API_KEY` | _(optionnel)_ Clé API Giphy — [developers.giphy.com](https://developers.giphy.com) — laisser vide pour désactiver |
 
+**MediaMTX (relay HLS/WebRTC)**
+
+| Secret | Valeur pour la prod |
+|--------|-------------------|
+| `MEDIAMTX_HLS_URL` | `https://hls.tiklivepro.me` — URL publique Caddy-frontée que les navigateurs utilisent pour charger les segments HLS. Doit correspondre exactement au sous-domaine configuré dans le Caddyfile. |
+
 **Stripe**
 
 | Secret | Comment l'obtenir |
@@ -421,7 +444,7 @@ Le pipeline a deux comportements distincts :
 ```bash
 git push origin main
 ```
-GitHub Actions build les 11 images en parallèle sur les runners (7 GB RAM — aucun risque d'OOM) et les pousse vers GHCR. Le serveur n'est pas touché.
+GitHub Actions build les 11 images applicatives en parallèle sur les runners (7 GB RAM — aucun risque d'OOM) et les pousse vers GHCR. MediaMTX est tiré directement depuis Docker Hub au déploiement — aucun build nécessaire. Le serveur n'est pas touché pendant le build.
 
 ### Déployer en production (tag de release)
 ```bash
@@ -506,6 +529,8 @@ Le fichier `.env` est **recréé à chaque déploiement** depuis les secrets Git
 |-------|--------|
 | Site web | `https://tiklivepro.me` |
 | API Gateway | `https://api.tiklivepro.me` |
+| HLS viewer (stream natif) | `https://hls.tiklivepro.me/live/<ingestKey>/index.m3u8` |
+| WebRTC viewer (stream natif) | `https://hls.tiklivepro.me/live/<ingestKey>` (port 8888) |
 | Terms of Service | `https://tiklivepro.me/legal/terms` |
 | Privacy Policy | `https://tiklivepro.me/legal/privacy` |
 | OAuth Redirect (TikTok) | `https://api.tiklivepro.me/integrations/oauth/tiktok/callback` |
@@ -563,6 +588,30 @@ Re-connectez Docker à GHCR sur le serveur :
 ```bash
 echo "VOTRE_PAT" | docker login ghcr.io -u VOTRE_USERNAME --password-stdin
 ```
+
+### Le stream HLS ne se charge pas dans le navigateur
+
+Vérifiez l'ordre de cause le plus probable :
+
+```bash
+# 1. MediaMTX est-il en cours d'exécution ?
+docker compose -f /opt/tiklivepro/docker-compose.prod.managed.yml ps mediamtx
+
+# 2. Y a-t-il un stream actif ?
+curl https://hls.tiklivepro.me/v3/paths/list
+
+# 3. Caddy forward-il bien le port 8888 ?
+curl http://localhost:8888/v3/paths/list
+
+# 4. Les logs MediaMTX montrent-ils une connexion RTMP entrant ?
+docker compose -f /opt/tiklivepro/docker-compose.prod.managed.yml logs mediamtx --tail=50
+```
+
+Si `/v3/paths/list` retourne `{"items":[]}` alors que la session est `live`, cela signifie que le worker ffmpeg n'a pas réussi à connecter au port 1936 de MediaMTX. Vérifiez les logs de stream-orchestrator.
+
+### La session reste en statut `starting`
+
+Le passage à `live` ne se produit que quand le worker ffmpeg reçoit ses premières stats du flux RTMP. Un client externe (OBS, ffmpeg CLI) doit pousser sur `rtmp://<DROPLET_IP>:1935/live/<ingestKey>`. Récupérez la clé via `GET /stream/sessions/<id>/ingest`.
 
 ### Swap saturé
 ```bash

@@ -92,7 +92,14 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
           {t('selectAccounts')}
           <span className="ml-1.5 text-xs font-normal text-muted-foreground">({t('optionalLabel')})</span>
         </p>
-        <AccountSelector accounts={accounts} selectedIds={selectedIds} onChange={setSelectedIds} />
+        <AccountSelector
+          accounts={accounts}
+          selectedIds={selectedIds}
+          onChange={setSelectedIds}
+        />
+        {selectedIds.size === 0 && (
+          <p className="text-xs text-muted-foreground">{t('noDestinationsHint')}</p>
+        )}
       </div>
 
       <button

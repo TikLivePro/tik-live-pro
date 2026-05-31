@@ -5,7 +5,13 @@ import type {
   StreamHealthUpdatedPayload,
   SessionStatusChangedPayload,
 } from '@tik-live-pro/events';
-import type { LiveSessionId, UserId, SocialAccountId, SocialPlatform, DestinationStatus } from '@tik-live-pro/shared-types';
+import type {
+  LiveSessionId,
+  UserId,
+  SocialAccountId,
+  SocialPlatform,
+  DestinationStatus,
+} from '@tik-live-pro/shared-types';
 import { LiveSessionStatus } from '@tik-live-pro/shared-types';
 import type { StreamWorkerStats } from '../../application/ports/stream-worker.port.js';
 
@@ -31,6 +37,7 @@ export class StreamEventPublisher {
   async sessionLive(
     sessionId: LiveSessionId,
     userId: UserId,
+    hlsUrl: string,
     correlationId: string,
   ): Promise<void> {
     const payload: SessionStatusChangedPayload = {
@@ -39,8 +46,27 @@ export class StreamEventPublisher {
       previousStatus: LiveSessionStatus.STARTING,
       status: LiveSessionStatus.LIVE,
       occurredAt: new Date().toISOString(),
+      hlsUrl,
     };
     await this.nats.publish(Subjects.SESSION_LIVE, payload, { correlationId });
+  }
+
+  async sessionBroadcastStopped(
+    sessionId: LiveSessionId,
+    userId: UserId,
+    correlationId: string,
+  ): Promise<void> {
+    const payload: SessionStatusChangedPayload = {
+      sessionId,
+      userId,
+      previousStatus: LiveSessionStatus.ENDING,
+      status: LiveSessionStatus.ENDED,
+      occurredAt: new Date().toISOString(),
+    };
+
+    console.log('payload :>> ', JSON.stringify(payload, null, 2));
+
+    await this.nats.publish(Subjects.SESSION_BROADCAST_STOPPED, payload, { correlationId });
   }
 
   async sessionError(

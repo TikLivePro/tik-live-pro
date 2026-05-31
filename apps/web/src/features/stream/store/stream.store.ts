@@ -18,27 +18,46 @@ interface StreamState {
   replyingTo: Comment | null;
   isStarting: boolean;
   isEnding: boolean;
+  isPausing: boolean;
+  isMinimized: boolean;
+  activeStream: MediaStream | null;
   setSession: (session: LiveSession | null) => void;
   updateSessionStatus: (status: LiveSessionStatus) => void;
   addComment: (comment: Comment) => void;
   addComments: (comments: Comment[]) => void;
+  removeComment: (id: string) => void;
   clearComments: () => void;
   addReaction: (reaction: LiveReaction) => void;
   removeReaction: (id: string) => void;
   setReplyingTo: (comment: Comment | null) => void;
   setStarting: (value: boolean) => void;
   setEnding: (value: boolean) => void;
+  setPausing: (value: boolean) => void;
+  setMinimized: (value: boolean) => void;
+  setActiveStream: (stream: MediaStream | null) => void;
 }
 
-export const useStreamStore = create<StreamState>()((set) => ({
+export const useStreamStore = create<StreamState>()((set, get) => ({
   currentSession: null,
   comments: [],
   liveReactions: [],
   replyingTo: null,
   isStarting: false,
   isEnding: false,
+  isPausing: false,
+  isMinimized: false,
+  activeStream: null,
 
-  setSession: (session) => set({ currentSession: session }),
+  setSession: (session) => {
+    if (session === null) {
+      // Stop camera tracks and clear mini player when session ends
+      const stream = get().activeStream;
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      set({ currentSession: null, activeStream: null, isMinimized: false });
+    } else {
+      set({ currentSession: session });
+    }
+  },
 
   updateSessionStatus: (status) =>
     set((state) => ({
@@ -57,6 +76,9 @@ export const useStreamStore = create<StreamState>()((set) => ({
       return { comments };
     }),
 
+  removeComment: (id) =>
+    set((state) => ({ comments: state.comments.filter((c) => c.id !== id) })),
+
   clearComments: () => set({ comments: [] }),
 
   addReaction: (reaction) =>
@@ -72,4 +94,7 @@ export const useStreamStore = create<StreamState>()((set) => ({
   setReplyingTo: (comment) => set({ replyingTo: comment }),
   setStarting: (value) => set({ isStarting: value }),
   setEnding: (value) => set({ isEnding: value }),
+  setPausing: (value) => set({ isPausing: value }),
+  setMinimized: (value) => set({ isMinimized: value }),
+  setActiveStream: (stream) => set({ activeStream: stream }),
 }));

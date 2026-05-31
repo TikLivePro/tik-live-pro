@@ -14,11 +14,15 @@ import { DrizzleLiveSessionRepository } from './infrastructure/db/live-session.r
 import { CreateSessionUseCase } from './application/use-cases/create-session.use-case.js';
 import { StartSessionUseCase } from './application/use-cases/start-session.use-case.js';
 import { EndSessionUseCase } from './application/use-cases/end-session.use-case.js';
+import { PauseSessionUseCase } from './application/use-cases/pause-session.use-case.js';
+import { ResumeSessionUseCase } from './application/use-cases/resume-session.use-case.js';
 import { registerLiveSessionRoutes } from './interfaces/http/live-session.routes.js';
+import { OrchestratorEventConsumer } from './infrastructure/nats/orchestrator-event-consumer.js';
 
 const envSchema = baseEnvSchema.extend({
   DATABASE_URL: z.string().url(),
   JWT_SECRET: z.string().min(64),
+  BILLING_SERVICE_URL: z.string().url().optional(),
 });
 
 const env = parseEnv(envSchema);
@@ -34,9 +38,16 @@ async function bootstrap(): Promise<void> {
   await ensureStreams(nats.getJetStreamManager());
 
   const sessionRepo = new DrizzleLiveSessionRepository(db);
+
+  const orchestratorConsumer = new OrchestratorEventConsumer(nats, sessionRepo, logger);
+  orchestratorConsumer.start();
+  logger.info('Orchestrator event consumer started');
+
   const createSession = new CreateSessionUseCase(sessionRepo, nats, logger);
   const startSession = new StartSessionUseCase(sessionRepo, nats, logger);
   const endSession = new EndSessionUseCase(sessionRepo, nats, logger);
+  const pauseSession = new PauseSessionUseCase(sessionRepo, nats, logger);
+  const resumeSession = new ResumeSessionUseCase(sessionRepo, nats, logger);
 
   const fastify = Fastify({
     logger: false,
@@ -119,7 +130,15 @@ All endpoints require a valid JWT Bearer token (obtained from the Auth Service).
     staticCSP: true,
   });
 
-  registerLiveSessionRoutes(fastify, { createSession, startSession, endSession, sessionRepo });
+  registerLiveSessionRoutes(fastify, {
+    createSession,
+    startSession,
+    endSession,
+    pauseSession,
+    resumeSession,
+    sessionRepo,
+    ...(env.BILLING_SERVICE_URL ? { billingServiceUrl: env.BILLING_SERVICE_URL } : {}),
+  });
 
   fastify.get(
     '/health',

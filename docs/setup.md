@@ -1,6 +1,6 @@
 # TikLivePro — Setup Guide
 
-> **Last updated:** 2026-05-29 (added web frontend env vars)
+> **Last updated:** 2026-05-31 (added MediaMTX platform-native streaming relay)
 > Update this file whenever prerequisites, ports, environment variables, or workflow steps change.
 
 ## Prerequisites
@@ -44,6 +44,7 @@ This starts:
 | Jaeger UI | http://localhost:16686 | — |
 | Prometheus | http://localhost:9090 | — |
 | Grafana | http://localhost:3099 | admin / admin |
+| MediaMTX (HLS/WebRTC relay) | RTMP: `localhost:1936` · HLS: http://localhost:8888 · WebRTC: http://localhost:8889 · API: http://localhost:9997 | — |
 
 > **Email in development:** Mailpit traps all outbound SMTP traffic — nothing reaches a real inbox. To enable it for the auth service, set these in `services/auth/.env`:
 > ```
@@ -98,6 +99,8 @@ Update values as needed — critical variables:
 | `FACEBOOK_APP_ID` / `SECRET` | integrations, stream-orchestrator, web | From Meta Developer Portal |
 | `TOKEN_ENCRYPTION_KEY` | integrations | ≥ 32 chars, AES-256-GCM key |
 | `NEXTAUTH_URL` | apps/web | Public URL of the web app, e.g. `https://tiklivepro.me` |
+| `MEDIAMTX_RTMP_URL` | stream-orchestrator | Internal RTMP push URL for ffmpeg workers. Default: `rtmp://localhost:1936` (dev) · `rtmp://mediamtx:1936` (Docker/prod) |
+| `MEDIAMTX_HLS_URL` | stream-orchestrator | **Public** HLS base URL browsers use to watch the stream. Default: `http://localhost:8888` (dev) · set to public hostname in prod, e.g. `https://hls.tiklivepro.me` |
 | `NEXTAUTH_SECRET` | apps/web | Generate: `openssl rand -base64 32` |
 | `GOOGLE_CLIENT_ID` / `SECRET` | apps/web | From Google Cloud Console → Credentials |
 | `AUTH_SERVICE_INTERNAL_URL` | apps/web | Internal URL NextAuth uses to call the auth service |
@@ -142,7 +145,11 @@ Service ports:
 | Stream Orchestrator | 3009 | http://localhost:3009/docs |
 | Web App (Next.js) | 3010 | http://localhost:3010 |
 
-> **Note:** `stream-orchestrator` also listens on RTMP port **1935** for local stream ingestion.
+> **RTMP & HLS ports (Docker — `make infra-up`):**
+> - `stream-orchestrator` ingest: `rtmp://localhost:1935/live/<ingestKey>` — push your video here (OBS, ffmpeg CLI, etc.)
+> - MediaMTX RTMP relay: `rtmp://localhost:1936` — internal; ffmpeg workers push here automatically
+> - MediaMTX HLS output: `http://localhost:8888/live/<ingestKey>/index.m3u8` — share with viewers or embed in a player
+> - MediaMTX WebRTC output: `http://localhost:8889/live/<ingestKey>` — zero-latency browser preview
 
 ---
 
@@ -249,6 +256,10 @@ export GOOGLE_CLIENT_SECRET=...
 export TOKEN_ENCRYPTION_KEY=$(openssl rand -base64 32)
 export INTERNAL_API_KEY=$(openssl rand -hex 32)
 
+# MediaMTX — public HLS URL browsers use to watch platform-native streams
+# In production, set this to your real public hostname:
+export MEDIAMTX_HLS_URL=http://localhost:8888   # dev default; use https://hls.tiklivepro.me in prod
+
 # SMTP (optional — skip to disable welcome emails)
 export SMTP_PROVIDER=gmail
 export SMTP_USER=you@gmail.com
@@ -330,3 +341,13 @@ open http://localhost:9090/targets   # all targets should be UP
 extra_hosts:
   - "host.docker.internal:host-gateway"
 ```
+
+**HLS stream not loading in browser** — check that MediaMTX is running and receiving the relay:
+```bash
+make mediamtx-logs           # check for RTMP push from ffmpeg
+make mediamtx-ps             # confirm container is up
+curl http://localhost:9997/v3/paths/list  # list active stream paths via MediaMTX API
+```
+If no paths appear, the ffmpeg worker hasn't connected yet — confirm `RTMP_INGEST_PORT=1935` is reachable and an RTMP client is pushing.
+
+**Session stays in `starting` status** — the session transitions to `live` only after the ffmpeg worker receives its first stats from the RTMP ingest. Confirm an RTMP client (OBS, ffmpeg, etc.) is pushing to `rtmp://localhost:1935/live/<ingestKey>`. Retrieve the ingest key from `GET /stream/sessions/<id>/ingest`.

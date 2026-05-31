@@ -206,6 +206,24 @@ consumers:
     deliver_policy: all
 
   - stream: SESSIONS
+    name: live-session-session-live
+    durable: live-session-session-live
+    filter_subject: "session.live"
+    ack_policy: explicit
+    max_deliver: 5
+    ack_wait: 30s
+    deliver_policy: all
+
+  - stream: SESSIONS
+    name: live-session-broadcast-stopped
+    durable: live-session-broadcast-stopped
+    filter_subject: "session.broadcast.stopped"
+    ack_policy: explicit
+    max_deliver: 5
+    ack_wait: 30s
+    deliver_policy: all
+
+  - stream: SESSIONS
     name: analytics-sessions
     durable: analytics-sessions
     filter_subject: "session.ended"

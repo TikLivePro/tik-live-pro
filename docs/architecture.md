@@ -1,6 +1,6 @@
 # TikLivePro — Architecture Overview
 
-> **Last updated:** 2026-05-23
+> **Last updated:** 2026-05-31 (added MediaMTX platform-native streaming relay)
 > Keep this file up-to-date whenever services, ports, infrastructure, or data flows change.
 
 ## Table of Contents
@@ -52,11 +52,11 @@
     Stream Orchestrator         Analytics           Notifications
          :3009                   :3008               :3007 (worker)
            │
-  ┌────────▼────────────┐
-  │   Platform Adapters │
-  │   TikTok  Facebook  │
-  │   (RTMP push)       │
-  └─────────────────────┘
+  ┌────────▼────────────────────────────┐
+  │   Platform Adapters + MediaMTX     │
+  │   TikTok  Facebook  (RTMP push)    │
+  │   MediaMTX (HLS/WebRTC for viewers)│
+  └────────────────────────────────────┘
 ```
 
 ---
@@ -74,7 +74,7 @@
 | comments | 3006 | `@tik-live-pro/comments-service` | `tiklivepro_comments` | Platform comment polling, WebSocket fan-out |
 | notifications | 3007 | `@tik-live-pro/notifications-service` | `tiklivepro_notifications` | Push and email notifications via NATS workqueue |
 | analytics | 3008 | `@tik-live-pro/analytics-service` | `tiklivepro_analytics` | Event aggregation, usage metrics |
-| stream-orchestrator | 3009 | `@tik-live-pro/stream-orchestrator` | `tiklivepro_stream` | RTMP ingestion (port 1935), multi-destination broadcast via TikTok/Facebook adapters |
+| stream-orchestrator | 3009 | `@tik-live-pro/stream-orchestrator` | `tiklivepro_stream` | RTMP ingestion (port 1935), multi-destination broadcast via TikTok/Facebook adapters and platform-native MediaMTX relay |
 
 ---
 
@@ -85,6 +85,7 @@
 | NATS JetStream | 4222 (client), 6222 (cluster), 8222 (monitoring) | Event bus — 3-node StatefulSet with `replicas: 3` on all streams |
 | PostgreSQL 16 | 5432 | Primary datastore — one database per service |
 | Redis 7 | 6379 | Session cache, rate-limiting counters, idempotency keys |
+| MediaMTX | 1936 (RTMP in), 8888 (HLS out), 8889 (WebRTC out), 9997 (REST API) | Platform-native streaming relay — Go binary, ~5 MB RAM. Receives RTMP relay from ffmpeg workers; serves HLS and WebRTC to browser viewers. Config: `infra/mediamtx/mediamtx.yml` |
 | OTel Collector | 4317 (gRPC), 4318 (HTTP), 8888 (self-metrics), 8889 (prom export) | Receives OTLP traces/metrics/logs from all services; exports to Jaeger + Prometheus |
 | Jaeger | 16686 (UI), 14268 (HTTP), 4317 (OTLP) | Distributed trace visualization |
 | Prometheus | 9090 | Metrics scraping and alerting |
@@ -98,17 +99,33 @@
 
 ```
 User → "Go Live" → API Gateway (JWT check)
-  → Live Session Service: create session record
+  → Live Session Service: create session record (status: created)
   → NATS: publish session.created
-  → Stream Orchestrator: consume session.created
-      → Integrations Service: fetch OAuth tokens
-      → Platform Adapters: create TikTok/FB RTMP endpoints
-      → NATS: publish stream.destination.status_changed
-  → Live Session Service: update destination statuses
-  → User: OBS/WebRTC → RTMP :1935 → stream-orchestrator → platforms
-  → NATS: publish session.started / session.live
+  → Stream Orchestrator: consume session.created → register internal session
+
+User → POST /sessions/:id/start
+  → Live Session Service: status → starting
+  → NATS: publish session.starting
+  → Stream Orchestrator: consume session.starting (StartBroadcastUseCase)
+      → always: add platform destination → MediaMTX rtmp://mediamtx:1936/live/{ingestKey}
+      → if social accounts: fetch OAuth tokens → create TikTok/FB RTMP endpoints
+      → NATS: publish stream.destination.status_changed (PENDING→CONNECTING)
+      → session status → waiting_for_stream (ingestKey assigned)
+
+User (OBS / ffmpeg / mobile) → RTMP :1935/live/{ingestKey}
+  → stream-orchestrator receives stream (HandleStreamArrivedUseCase)
+  → ffmpeg worker fans out to ALL connecting destinations in parallel:
+      ├─ MediaMTX :1936/live/{ingestKey}  ← platform-native (always)
+      ├─ TikTok RTMP endpoint             ← if account connected
+      └─ Facebook RTMP endpoint           ← if account connected
+  → first stats received → all destinations marked LIVE
+  → NATS: publish session.live  { hlsUrl: "http://<host>:8888/live/{ingestKey}/index.m3u8" }
+  → Live Session Service: status → live, platformHlsUrl stored
   → Notifications Service: "You are live!" push notification
   → Analytics Service: record session start event
+
+Viewers → http://<host>:8888/live/{ingestKey}/index.m3u8  (HLS, ~1 s latency)
+         → http://<host>:8889/live/{ingestKey}             (WebRTC, sub-second)
 ```
 
 ### Comment Aggregation
@@ -220,6 +237,7 @@ Host machine (Node.js processes via Turborepo)
 
 Docker Compose (docker-compose.dev.yml)
   └── NATS, PostgreSQL, Redis, OTel Collector, Jaeger, Prometheus, Grafana
+  └── MediaMTX (Go)  — RTMP :1936  HLS :8888  WebRTC :8889  API :9997
 ```
 
 ### Production (Kubernetes)
@@ -237,12 +255,13 @@ Namespace: tik-live-pro
 │   ├── comments           replicas: 2–15  cpu: 65%  (high-traffic)
 │   ├── notifications      replicas: 2–10
 │   ├── analytics          replicas: 2–10
-│   └── stream-orchestrator replicas: 2–10 (+ NodePort 31935 for RTMP)
+│   └── stream-orchestrator replicas: 2–10 (+ NodePort 31935 for RTMP ingest)
 ├── StatefulSets
 │   ├── nats (3 replicas, 10 Gi each)
 │   └── postgres (1 replica, 20 Gi)
-├── Deployments (single replica — observability)
-│   ├── redis, otel-collector, jaeger, prometheus, grafana
+├── Deployments (single replica)
+│   ├── mediamtx  — RTMP :1936 (internal)  HLS :8888 (public)  WebRTC :8889
+│   ├── redis, otel-collector, jaeger, prometheus, grafana  (observability)
 └── Secrets (one per service — never committed to git)
 ```
 

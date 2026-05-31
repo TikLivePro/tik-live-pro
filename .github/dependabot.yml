@@ -1,0 +1,141 @@
+version: 2
+
+updates:
+  # ──────────────────────────────────────────────────────────────
+  # npm / pnpm monorepo
+  # A single root entry covers all workspace packages.
+  # ──────────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps(dev)"
+      include: scope
+    ignore:
+      # next-auth v4 → v5 is a breaking migration, not a semver bump.
+      # Track manually; do not let Dependabot auto-open a v5 PR.
+      - dependency-name: "next-auth"
+        update-types: ["version-update:semver-major"]
+    groups:
+      # Fastify core + official plugins — move together (tight peer deps)
+      fastify:
+        patterns:
+          - "fastify"
+          - "@fastify/*"
+        update-types:
+          - minor
+          - patch
+      # React Native ecosystem — pinned exact versions, keep all in sync
+      react-native:
+        patterns:
+          - "react-native"
+          - "@react-native/*"
+          - "@react-native-community/*"
+          - "react-native-*"
+        update-types:
+          - minor
+          - patch
+      # Drizzle ORM + kit — always move together
+      drizzle:
+        patterns:
+          - "drizzle-orm"
+          - "drizzle-kit"
+        update-types:
+          - minor
+          - patch
+      # React + React DOM — peer deps, keep in sync
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "@types/react"
+          - "@types/react-dom"
+        update-types:
+          - minor
+          - patch
+      # Typescript toolchain
+      typescript-toolchain:
+        patterns:
+          - "typescript"
+          - "@typescript-eslint/*"
+          - "ts-jest"
+          - "tsx"
+          - "@types/node"
+        update-types:
+          - minor
+          - patch
+      # ESLint toolchain
+      eslint:
+        patterns:
+          - "eslint"
+          - "eslint-*"
+          - "@eslint/*"
+        update-types:
+          - minor
+          - patch
+      # Next.js — keep next + eslint-config-next together
+      nextjs:
+        patterns:
+          - "next"
+          - "eslint-config-next"
+        update-types:
+          - minor
+          - patch
+      # Testing — Jest ecosystem
+      jest:
+        patterns:
+          - "jest"
+          - "@types/jest"
+          - "ts-jest"
+        update-types:
+          - minor
+          - patch
+      # All other patch-level bumps batched together (low-risk)
+      patch-all:
+        update-types:
+          - patch
+
+  # ──────────────────────────────────────────────────────────────
+  # Docker base images
+  # Note: base images use ARG NODE_VERSION=22 + variable substitution
+  # in FROM. Consider pinning the version literally in each FROM line
+  # (e.g. FROM node:22-alpine) to make Dependabot tracking reliable.
+  # ──────────────────────────────────────────────────────────────
+  - package-ecosystem: docker
+    directory: /infra/docker
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - docker
+    commit-message:
+      prefix: "deps(docker)"
+
+  # ──────────────────────────────────────────────────────────────
+  # GitHub Actions
+  # ──────────────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "ci"

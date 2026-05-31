@@ -1,6 +1,6 @@
 # TikLivePro — NATS JetStream Event Contracts
 
-> **Last updated:** 2026-05-29
+> **Last updated:** 2026-05-31 (session.live gains hlsUrl; destination platform gains 'platform' value)
 > Update this file whenever a stream, consumer, or event schema is added or changed.
 > The canonical stream configuration lives in `infra/nats/jetstream-config.yaml`.
 
@@ -62,7 +62,11 @@ Pre-created durable pull-consumers (all use `ack_policy: explicit`):
 
 | Stream | Consumer name | Filter subject | Max deliver | Ack wait | Owner service |
 |--------|--------------|----------------|-------------|----------|---------------|
-| SESSIONS | `stream-orchestrator` | `session.created` | 5 | 30 s | stream-orchestrator |
+| SESSIONS | `stream-orchestrator-session-created` | `session.created` | 5 | 30 s | stream-orchestrator |
+| SESSIONS | `stream-orchestrator-session-starting` | `session.starting` | 5 | 30 s | stream-orchestrator |
+| SESSIONS | `stream-orchestrator-session-ended` | `session.ended` | 5 | 30 s | stream-orchestrator |
+| SESSIONS | `live-session-session-live` | `session.live` | 5 | 30 s | live-session (status→live, stores hlsUrl) |
+| SESSIONS | `live-session-broadcast-stopped` | `session.broadcast.stopped` | 5 | 30 s | live-session (status→ended) |
 | SESSIONS | `analytics-sessions` | `session.ended` | 5 | 60 s | analytics |
 | SESSIONS | `notifications-session-started` | `session.started` | 3 | 10 s | notifications |
 | BILLING | `users-entitlement` | `billing.entitlement.updated` | 10 | 60 s | users |
@@ -135,9 +139,19 @@ Consumers: `notifications`, `analytics`, `stream-orchestrator` (begins broadcast
 
 ---
 
-**`session.started`** / **`session.live`** (v1)
-Same schema as `session.starting` with `status: 'started'` / `'live'`.
-Consumers: `notifications` (push: "You are live!"), `analytics`
+**`session.live`** (v1)
+```typescript
+{
+  sessionId: LiveSessionId;
+  userId: UserId;
+  previousStatus: 'starting';
+  status: 'live';
+  occurredAt: string;
+  hlsUrl: string;   // HLS playlist URL served by MediaMTX, e.g. "http://host:8888/live/{ingestKey}/index.m3u8"
+}
+```
+Publisher: `stream-orchestrator` (fires when first ffmpeg stats are received — stream is confirmed live).
+Consumers: `live-session` (status → live, stores `platformHlsUrl`), `notifications` (push: "You are live!"), `analytics`
 
 ---
 
@@ -158,13 +172,14 @@ Consumers: `stream-orchestrator` (stop broadcast), `comments` (stop pollers), `a
 ```typescript
 {
   sessionId: LiveSessionId;
-  socialAccountId: SocialAccountId;
-  platform: 'tiktok' | 'facebook';
+  socialAccountId: SocialAccountId;  // '__platform__' for the MediaMTX platform destination
+  platform: 'tiktok' | 'facebook' | 'platform';
   previousStatus: DestinationStatus;
   status: DestinationStatus;
   errorMessage?: string;
 }
 ```
+`platform: 'platform'` indicates the MediaMTX platform-native destination (always present). Social platforms are present only when accounts are connected.
 Consumers: `live-session` (update destination record), Frontend via WebSocket push
 
 ---

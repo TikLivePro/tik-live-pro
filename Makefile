@@ -58,7 +58,7 @@ PACKAGES := \
   format \
   clean clean-dist clean-deps \
   db-create db-create-prod db-generate db-migrate db-migrate-prod db-studio db-seed db-seed-billing db-seed-prod \
-  db-logs nats-logs nats-streams nats-streams-prod \
+  db-logs nats-logs nats-streams nats-streams-prod mediamtx-logs mediamtx-ps \
   logs-gateway logs-auth logs-users logs-integrations logs-live-session \
   logs-orchestrator logs-comments logs-billing logs-notifications logs-analytics \
   docker-image docker-images prod-up prod-down prod-logs prod-ps \
@@ -135,6 +135,7 @@ infra-up:
 	@echo "  Jaeger      → http://localhost:16686"
 	@echo "  Prometheus  → http://localhost:9090"
 	@echo "  Grafana     → http://localhost:3099  (admin / admin)"
+	@echo "  MediaMTX    → RTMP: localhost:1936  |  HLS: http://localhost:8888  |  WebRTC: http://localhost:8889  |  API: http://localhost:9997"
 	@echo ""
 
 ## infra-down: Stop all infrastructure containers (keep volumes)
@@ -175,6 +176,14 @@ ifndef NATS_URL
 	$(error NATS_URL is required. Usage: NATS_URL=nats://... make nats-streams-prod)
 endif
 	bash infra/nats/setup-streams.sh
+
+## mediamtx-logs: Stream MediaMTX logs (platform-native HLS/RTMP relay)
+mediamtx-logs:
+	$(DOCKER) logs -f mediamtx
+
+## mediamtx-ps: Show MediaMTX container status and exposed ports
+mediamtx-ps:
+	$(DOCKER) ps --filter name=mediamtx
 
 # ==============================================================================
 # BUILD
@@ -534,7 +543,13 @@ help:
 	@echo "  notifications     → http://localhost:3007  (docs: /docs)"
 	@echo "  analytics         → http://localhost:3008  (docs: /docs)"
 	@echo "  stream-orchestr.  → http://localhost:3009  (docs: /docs)"
-	@echo "  web app           → http://localhost:3000"
+	@echo "  web app           → http://localhost:3010"
+	@echo ""
+	@echo "MediaMTX (platform-native streaming relay — Docker):"
+	@echo "  RTMP ingest       → rtmp://localhost:1936/live/<ingestKey>"
+	@echo "  HLS viewer        → http://localhost:8888/live/<ingestKey>/index.m3u8"
+	@echo "  WebRTC viewer     → http://localhost:8889/live/<ingestKey>"
+	@echo "  REST API          → http://localhost:9997"
 	@echo ""
 
 .DEFAULT_GOAL := help

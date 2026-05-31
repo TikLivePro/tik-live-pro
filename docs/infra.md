@@ -1,6 +1,6 @@
 # TikLivePro — Infrastructure Guide
 
-> **Last updated:** 2026-05-29 (web frontend env vars, web K8s deployment)
+> **Last updated:** 2026-05-31 (added MediaMTX platform-native streaming relay)
 > Update whenever a Dockerfile, compose file, Kubernetes manifest, or build script changes.
 
 ## Table of Contents
@@ -24,6 +24,8 @@ infra/
 │   ├── build.sh                        # Build helper — maps service → Docker ARGs
 │   └── postgres/
 │       └── init.sql                    # Creates all 9 service databases on first boot
+├── mediamtx/
+│   └── mediamtx.yml                    # MediaMTX config — RTMP :1936, HLS :8888, WebRTC :8889
 ├── kubernetes/
 │   ├── namespace.yaml
 │   ├── secrets.yaml                    # Template — fill & apply as secrets.local.yaml
@@ -165,14 +167,37 @@ File: `docker-compose.dev.yml`
 Runs infrastructure services only — microservices run directly on the host via Turborepo.
 
 ```bash
-make infra-up       # start (detached)
-make infra-down     # stop (keep volumes)
-make infra-reset    # stop + delete all volumes (full wipe)
-make infra-ps       # status
-make infra-logs     # stream all logs
-make db-logs        # Postgres only
-make nats-logs      # NATS only
+make infra-up         # start (detached)
+make infra-down       # stop (keep volumes)
+make infra-reset      # stop + delete all volumes (full wipe)
+make infra-ps         # status
+make infra-logs       # stream all logs
+make db-logs          # Postgres only
+make nats-logs        # NATS only
+make mediamtx-logs    # MediaMTX relay only
+make mediamtx-ps      # MediaMTX container status
 ```
+
+### MediaMTX — platform-native streaming relay
+
+`docker-compose.dev.yml` includes MediaMTX (`bluenviron/mediamtx:latest`), a Go binary relay that requires ~5 MB RAM at idle and near-zero CPU (pure stream relay, no transcoding).
+
+| Port | Role |
+|------|------|
+| **1936** (RTMP in) | ffmpeg workers inside stream-orchestrator push here |
+| **8888** (HLS out) | Browser viewers watch `http://localhost:8888/live/{ingestKey}/index.m3u8` |
+| **8889** (WebRTC out) | Sub-second latency preview at `http://localhost:8889/live/{ingestKey}` |
+| **9997** (REST API) | `GET /v3/paths/list` to inspect active streams |
+
+Config file: `infra/mediamtx/mediamtx.yml` — mounted read-only into the container.
+
+Environment variables wired in stream-orchestrator (`.env`):
+```
+MEDIAMTX_RTMP_URL=rtmp://localhost:1936   # internal, used by ffmpeg workers
+MEDIAMTX_HLS_URL=http://localhost:8888    # public, returned to the browser
+```
+
+In production set `MEDIAMTX_HLS_URL` to the public hostname (e.g. `https://hls.tiklivepro.me`).
 
 **Linux `host.docker.internal` fix:**
 Prometheus needs to scrape microservices running on the host. On Docker Desktop this resolves automatically; on Linux we add:
@@ -192,13 +217,20 @@ This aliases `host.docker.internal` to the Docker bridge gateway IP.
 
 File: `docker-compose.prod.yml`
 
-Uses pre-built images from `ghcr.io/tik-live-pro/`. All 10 services plus full observability stack.
+Uses pre-built images from `ghcr.io/tik-live-pro/`. All 10 services plus MediaMTX and the full observability stack.
 
 Features:
 - YAML anchors (`x-service-defaults`, `x-backend-env`) for DRY configuration
 - `:?` required variable guards — compose will refuse to start if a secret is missing
 - `condition: service_healthy` on all `depends_on` blocks — services wait for infra to be ready
 - `restart: unless-stopped` on all containers
+- MediaMTX allocated 64 MB RAM limit (typical runtime: ~10 MB)
+
+**Required env var for MediaMTX in production:**
+```
+MEDIAMTX_HLS_URL=https://hls.tiklivepro.me   # public hostname browsers use for HLS
+```
+Set this in your `.env.prod` or shell before running `make prod-up`. The `MEDIAMTX_RTMP_URL` defaults to `rtmp://mediamtx:1936` (container-to-container) and does not need to be set.
 
 ```bash
 # Start (requires env vars or .env.prod file)
@@ -247,9 +279,9 @@ NATS_URL used by all services: `nats://nats-service.tik-live-pro.svc.cluster.loc
 - 20 Gi PVC — adjust `storage` in the manifest for your cluster
 - Connection strings follow pattern: `postgresql://postgres:<pass>@postgres:5432/tiklivepro_<service>`
 
-### Stream Orchestrator — RTMP
+### Stream Orchestrator — RTMP ingest
 
-The stream-orchestrator deployment has a secondary `NodePort` service exposing port **31935** for RTMP ingest. In cloud environments, create a TCP LoadBalancer service instead:
+The stream-orchestrator deployment has a secondary `NodePort` service exposing port **31935** for RTMP ingest (broadcaster → cluster). In cloud environments, replace with a TCP LoadBalancer:
 
 ```yaml
 # Replace NodePort with:
@@ -260,6 +292,19 @@ ports:
     protocol: TCP
     name: rtmp
 ```
+
+### MediaMTX — HLS/WebRTC relay
+
+MediaMTX runs as a Deployment (single replica) and needs two services:
+
+| Service | Type | Purpose |
+|---------|------|---------|
+| `mediamtx-internal` | ClusterIP | stream-orchestrator ffmpeg workers push RTMP here on port 1936 |
+| `mediamtx-public` | LoadBalancer | Browser viewers fetch HLS (:8888) and WebRTC (:8889) here |
+
+Set `MEDIAMTX_HLS_URL` in the stream-orchestrator secret/ConfigMap to the public LoadBalancer address of `mediamtx-public` so it is returned to browsers in `session.live` events and `GET /sessions/:id` responses.
+
+> **Kubernetes manifest** for MediaMTX is not yet included in `infra/kubernetes/` — add `mediamtx-deployment.yaml` following the same pattern as other services. Expose port 8888 via an Ingress rule at `hls.tiklivepro.pro` for public HLS access.
 
 ### HPA Summary
 

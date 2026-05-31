@@ -12,12 +12,14 @@ export class LiveSession {
     private _description: string | null,
     private _status: LiveSessionStatus,
     private _destinations: PlatformStreamDestination[],
+    private _shouldRecord: boolean,
+    private _platformHlsUrl: string | null,
     private _startedAt: Date | null,
     private _endedAt: Date | null,
     private readonly _createdAt: Date,
   ) {}
 
-  static create(userId: UserId, title: string, description: string | null): LiveSession {
+  static create(userId: UserId, title: string, description: string | null, shouldRecord: boolean): LiveSession {
     return new LiveSession(
       randomUUID() as LiveSessionId,
       userId,
@@ -25,6 +27,8 @@ export class LiveSession {
       description,
       LSS.CREATED,
       [],
+      shouldRecord,
+      null,
       null,
       null,
       new Date(),
@@ -38,6 +42,8 @@ export class LiveSession {
     description: string | null;
     status: LiveSessionStatus;
     destinations: PlatformStreamDestination[];
+    shouldRecord: boolean;
+    platformHlsUrl: string | null;
     startedAt: Date | null;
     endedAt: Date | null;
     createdAt: Date;
@@ -49,6 +55,8 @@ export class LiveSession {
       props.description,
       props.status,
       props.destinations,
+      props.shouldRecord,
+      props.platformHlsUrl,
       props.startedAt,
       props.endedAt,
       props.createdAt,
@@ -58,9 +66,6 @@ export class LiveSession {
   start(): void {
     if (this._status !== LSS.CREATED) {
       throw new DomainError(`Cannot start session in status '${this._status}'`, 'INVALID_STATUS');
-    }
-    if (this._destinations.length === 0) {
-      throw new DomainError('Cannot start session without destinations', 'NO_DESTINATIONS');
     }
     this._status = LSS.STARTING;
     this._startedAt = new Date();
@@ -73,12 +78,40 @@ export class LiveSession {
     this._status = LSS.LIVE;
   }
 
-  end(): void {
-    if (this._status !== LSS.LIVE && this._status !== LSS.STARTING) {
+  setPlatformHlsUrl(url: string | null): void {
+    this._platformHlsUrl = url;
+  }
+
+  /**
+   * Returns true if the state changed (caller should persist + publish event).
+   * Returns false if the session was already ending/ended (idempotent no-op).
+   * Throws DomainError for statuses where ending makes no sense (error).
+   */
+  end(): boolean {
+    if (this._status === LSS.ENDING || this._status === LSS.ENDED) {
+      return false;
+    }
+    if (this._status === LSS.ERROR) {
       throw new DomainError(`Cannot end session in status '${this._status}'`, 'INVALID_STATUS');
     }
+    // CREATED | STARTING | LIVE → ENDING
     this._status = LSS.ENDING;
     this._endedAt = new Date();
+    return true;
+  }
+
+  pause(): void {
+    if (this._status !== LSS.LIVE) {
+      throw new DomainError(`Cannot pause session in status '${this._status}'`, 'INVALID_STATUS');
+    }
+    this._status = LSS.PAUSED;
+  }
+
+  resume(): void {
+    if (this._status !== LSS.PAUSED) {
+      throw new DomainError(`Cannot resume session in status '${this._status}'`, 'INVALID_STATUS');
+    }
+    this._status = LSS.LIVE;
   }
 
   markEnded(): void {
@@ -107,6 +140,8 @@ export class LiveSession {
   get description(): string | null { return this._description; }
   get status(): LiveSessionStatus { return this._status; }
   get destinations(): PlatformStreamDestination[] { return [...this._destinations]; }
+  get shouldRecord(): boolean { return this._shouldRecord; }
+  get platformHlsUrl(): string | null { return this._platformHlsUrl; }
   get startedAt(): Date | null { return this._startedAt; }
   get endedAt(): Date | null { return this._endedAt; }
   get createdAt(): Date { return this._createdAt; }

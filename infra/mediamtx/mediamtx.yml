@@ -1,0 +1,36 @@
+# MediaMTX configuration — platform-native streaming relay
+# Go binary, ~5 MB RAM idle, near-zero CPU (pure relay, no transcoding)
+#
+# Roles in TikLivePro:
+#   - Receives RTMP relay from the stream-orchestrator ffmpeg worker
+#   - Serves HLS to browser viewers at /live/{ingestKey}/index.m3u8
+#   - Serves WebRTC to browser viewers (bonus, zero-latency preview)
+#
+# Ports:
+#   1936  RTMP input  (stream-orchestrator pushes here)
+#   8888  HLS output  (browser viewers read from here)
+#   8889  WebRTC      (optional low-latency viewer)
+#   9997  REST API    (management / health)
+
+logLevel: info
+logDestinations: [stdout]
+
+# ── RTMP ─────────────────────────────────────────────────────────────────────
+rtmpAddress: :1936
+rtmpEncryption: no
+
+# ── HLS ──────────────────────────────────────────────────────────────────────
+hlsAddress: :8888
+hlsEncryption: no
+hlsAlwaysRemux: yes
+hlsVariant: lowLatency
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+
+# ── WebRTC ────────────────────────────────────────────────────────────────────
+webrtcAddress: :8889
+
+# ── REST API ──────────────────────────────────────────────────────────────────
+api: yes
+apiAddress: :9997

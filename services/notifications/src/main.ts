@@ -9,8 +9,16 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { z } from 'zod';
 import { parseEnv, baseEnvSchema } from '@tik-live-pro/config';
 import { createLogger } from '@tik-live-pro/logger';
-import { NatsJetStreamClient, ensureStreams } from '@tik-live-pro/events';
+import { NatsJetStreamClient, ensureStreams, Subjects } from '@tik-live-pro/events';
+import { StringCodec, consumerOpts, createInbox } from 'nats';
+import { randomUUID } from 'node:crypto';
 import { registerNotificationsRoutes } from './interfaces/http/notifications.routes.js';
+import { notifications } from './infrastructure/db/schema.js';
+import type {
+  SessionStatusChangedPayload,
+  PaymentFailedPayload,
+} from '@tik-live-pro/events';
+import type { BaseEvent } from '@tik-live-pro/shared-types';
 
 const envSchema = baseEnvSchema.extend({
   DATABASE_URL: z.string().url(),
@@ -143,6 +151,109 @@ All endpoints require a JWT Bearer token.
 
   await fastify.listen({ port: env.PORT, host: '0.0.0.0' });
   logger.info({ port: env.PORT }, 'Notifications service listening — docs at /docs');
+
+  // ---------------------------------------------------------------------------
+  // NATS event consumers — create in-app notifications from platform events
+  // ---------------------------------------------------------------------------
+  const sc = StringCodec();
+
+  async function insertNotification(userId: string, type: string, title: string, body: string, metadata?: Record<string, unknown>): Promise<void> {
+    await db.insert(notifications).values({ id: randomUUID(), userId, type, title, body, metadata, isRead: false, createdAt: new Date() })
+      .onConflictDoNothing();
+  }
+
+  async function consumeSessionLive(): Promise<void> {
+    const js = nats.getJetStream();
+    const opts = consumerOpts();
+    opts.durable('notifications-session-live');
+    opts.ackExplicit();
+    opts.deliverNew();
+    opts.deliverTo(createInbox());
+    try {
+      const sub = await js.subscribe(Subjects.SESSION_LIVE, opts);
+      for await (const msg of sub) {
+        try {
+          const event = JSON.parse(sc.decode(msg.data)) as BaseEvent<SessionStatusChangedPayload>;
+          await insertNotification(
+            event.payload.userId,
+            'session_started',
+            'Your stream is live!',
+            'Your live session has started successfully.',
+            { sessionId: event.payload.sessionId },
+          );
+          msg.ack();
+        } catch (err) {
+          logger.error({ err }, 'Failed to handle SESSION_LIVE for notification');
+          msg.nak();
+        }
+      }
+    } catch (err) {
+      logger.error({ err }, 'Failed to subscribe to SESSION_LIVE');
+    }
+  }
+
+  async function consumeSessionEnded(): Promise<void> {
+    const js = nats.getJetStream();
+    const opts = consumerOpts();
+    opts.durable('notifications-session-ended');
+    opts.ackExplicit();
+    opts.deliverNew();
+    opts.deliverTo(createInbox());
+    try {
+      const sub = await js.subscribe(Subjects.SESSION_ENDED, opts);
+      for await (const msg of sub) {
+        try {
+          const event = JSON.parse(sc.decode(msg.data)) as BaseEvent<SessionStatusChangedPayload>;
+          await insertNotification(
+            event.payload.userId,
+            'session_ended',
+            'Stream ended',
+            'Your live session has ended.',
+            { sessionId: event.payload.sessionId },
+          );
+          msg.ack();
+        } catch (err) {
+          logger.error({ err }, 'Failed to handle SESSION_ENDED for notification');
+          msg.nak();
+        }
+      }
+    } catch (err) {
+      logger.error({ err }, 'Failed to subscribe to SESSION_ENDED');
+    }
+  }
+
+  async function consumePaymentFailed(): Promise<void> {
+    const js = nats.getJetStream();
+    const opts = consumerOpts();
+    opts.durable('notifications-payment-failed');
+    opts.ackExplicit();
+    opts.deliverNew();
+    opts.deliverTo(createInbox());
+    try {
+      const sub = await js.subscribe(Subjects.BILLING_PAYMENT_FAILED, opts);
+      for await (const msg of sub) {
+        try {
+          const event = JSON.parse(sc.decode(msg.data)) as BaseEvent<PaymentFailedPayload>;
+          await insertNotification(
+            event.payload.userId,
+            'billing_event',
+            'Payment failed',
+            'Your payment could not be processed. Please update your payment method.',
+          );
+          msg.ack();
+        } catch (err) {
+          logger.error({ err }, 'Failed to handle BILLING_PAYMENT_FAILED for notification');
+          msg.nak();
+        }
+      }
+    } catch (err) {
+      logger.error({ err }, 'Failed to subscribe to BILLING_PAYMENT_FAILED');
+    }
+  }
+
+  void consumeSessionLive();
+  void consumeSessionEnded();
+  void consumePaymentFailed();
 
   const shutdown = async (): Promise<void> => {
     await fastify.close();

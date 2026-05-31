@@ -67,8 +67,14 @@
 #   # SMTP_PORT=587
 #   # SMTP_SECURE=false
 #
+#   # MediaMTX — platform-native HLS/WebRTC streaming relay (Go binary, ~10–30 MB RAM)
+#   # MEDIAMTX_RTMP_URL is container-internal; default is fine and needs no secret.
+#   # MEDIAMTX_HLS_URL is the public URL browsers use to watch HLS streams.
+#   # Point it at the Caddy-fronted subdomain so viewers get HTTPS.
+#   MEDIAMTX_HLS_URL=https://hls.tiklivepro.me
+#
 # RAM budget on 4 GB Droplet (no observability):
-#   NATS 128m + 10 services ~1780m + web 512m ≈ 2420m  ← comfortable
+#   NATS 128m + MediaMTX 64m + 10 services ~1780m + web 512m ≈ 2484m  ← comfortable
 # ==============================================================================
 
 x-service-defaults: &service-defaults
@@ -183,6 +189,29 @@ services:
       resources:
         limits:
           memory: 256m
+
+  # ── MediaMTX — platform-native streaming relay ───────────────────────────────
+  # Go binary (~10–30 MB RAM). Receives RTMP relay from ffmpeg workers on port 1936;
+  # serves HLS to browser viewers on port 8888 (proxied by Caddy → hls.tiklivepro.me).
+  # Port 1936 is exposed only inside the Docker network — no public access needed.
+
+  mediamtx:
+    <<: *service-defaults
+    image: bluenviron/mediamtx:latest
+    volumes:
+      - ./infra/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "8888:8888"   # HLS — Caddy reverse-proxies this as https://hls.tiklivepro.me
+      - "8889:8889"   # WebRTC
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9997/v3/paths/list"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   # ── Microservices ─────────────────────────────────────────────────────────────
 
@@ -441,12 +470,16 @@ services:
       TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:?TIKTOK_CLIENT_SECRET is required}
       FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:?FACEBOOK_APP_ID is required}
       FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:?FACEBOOK_APP_SECRET is required}
+      MEDIAMTX_RTMP_URL: rtmp://mediamtx:1936
+      MEDIAMTX_HLS_URL: ${MEDIAMTX_HLS_URL:-https://hls.tiklivepro.me}
       NODE_OPTIONS: "--max-old-space-size=192"
     ports:
       - "3009:3009"
       - "1935:1935"
     depends_on:
       nats:
+        condition: service_healthy
+      mediamtx:
         condition: service_healthy
     deploy:
       resources:

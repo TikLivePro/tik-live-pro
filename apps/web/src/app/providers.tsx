@@ -8,6 +8,7 @@ import type { AbstractIntlMessages } from 'next-intl';
 import { Toaster } from 'sonner';
 import { AuthSync } from '@/features/auth/components/AuthSync';
 import { useTheme } from '@/features/auth/hooks/useTheme';
+import { PersistentMinimizedPlayer } from '@/features/stream/components/PersistentMinimizedPlayer';
 
 function ThemedToaster() {
   const { theme } = useTheme();
@@ -37,10 +38,11 @@ export function Providers({
 
   return (
     <SessionProvider>
-      <AuthSync />
-      <ThemedToaster />
       <QueryClientProvider client={queryClient}>
         <NextIntlClientProvider locale={locale} messages={messages} timeZone="UTC" now={new Date()}>
+          <AuthSync />
+          <ThemedToaster />
+          <PersistentMinimizedPlayer />
           {children}
         </NextIntlClientProvider>
       </QueryClientProvider>

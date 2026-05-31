@@ -7,6 +7,7 @@ import type { RegisterSessionUseCase } from '../../application/use-cases/registe
 import type { StartBroadcastUseCase } from '../../application/use-cases/start-broadcast.use-case.js';
 import type { StopBroadcastUseCase } from '../../application/use-cases/stop-broadcast.use-case.js';
 import type { Logger } from '@tik-live-pro/logger';
+import { DomainError } from '@tik-live-pro/domain';
 
 const sc = StringCodec();
 
@@ -76,7 +77,13 @@ export class SessionEventConsumer {
           msg.ack();
         } catch (err) {
           this.logger.error({ err }, 'Failed to handle SESSION_STARTING');
-          msg.nak();
+          // DomainErrors represent business failures already persisted to the DB.
+          // Retrying would cause an infinite loop (e.g. session stuck in ERROR state).
+          if (err instanceof DomainError) {
+            msg.ack();
+          } else {
+            msg.nak();
+          }
         }
       }
     } catch (err) {
@@ -104,7 +111,11 @@ export class SessionEventConsumer {
           msg.ack();
         } catch (err) {
           this.logger.error({ err }, 'Failed to handle SESSION_ENDED');
-          msg.nak();
+          if (err instanceof DomainError) {
+            msg.ack();
+          } else {
+            msg.nak();
+          }
         }
       }
     } catch (err) {

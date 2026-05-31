@@ -183,6 +183,21 @@ services:
         limits:
           memory: 256m
 
+  mediamtx:
+    <<: *service-defaults
+    image: bluenviron/mediamtx:latest
+    volumes:
+      - ./infra/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "1936:1936"   # RTMP input
+      - "8888:8888"   # HLS output
+      - "8889:8889"   # WebRTC
+      - "9997:9997"   # REST API
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+
   # ── Microservices ───────────────────────────────────────────────────────────
 
   api-gateway:
@@ -455,6 +470,8 @@ services:
       TIKTOK_CLIENT_SECRET: ${TIKTOK_CLIENT_SECRET:?TIKTOK_CLIENT_SECRET is required}
       FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:?FACEBOOK_APP_ID is required}
       FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:?FACEBOOK_APP_SECRET is required}
+      MEDIAMTX_RTMP_URL: rtmp://mediamtx:1936
+      MEDIAMTX_HLS_URL: ${MEDIAMTX_HLS_URL:-http://localhost:8888}
       # Higher cap — ffmpeg subprocesses share the cgroup limit
       NODE_OPTIONS: "--max-old-space-size=192"
     ports:
