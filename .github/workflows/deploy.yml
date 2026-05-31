@@ -236,6 +236,10 @@ jobs:
 
             echo "==> Deploying $IMAGE_TAG"
 
+            echo "==> Updating Caddy config"
+            cp /opt/tiklivepro/infra/caddy/Caddyfile /etc/caddy/Caddyfile
+            systemctl reload caddy
+
             # Write .env from CI secrets on every deploy — server needs no manual .env maintenance
             printf '%s\n' \
               "REGISTRY=$REGISTRY" \

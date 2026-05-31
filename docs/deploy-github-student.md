@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-05-31 (ajout MediaMTX — relay HLS/WebRTC natif)
+> Dernière mise à jour : 2026-05-31 (Caddy system service, auto-deploy Caddyfile, CORS Range header)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -196,6 +196,8 @@ apt update
 apt install -y caddy
 ```
 
+Le Caddyfile canonique est versionné dans `infra/caddy/Caddyfile` et **déployé automatiquement** par le workflow CI à chaque tag (`systemctl reload caddy` est appelé après le `scp`). Vous n'avez à le créer manuellement qu'une seule fois pour le premier déploiement.
+
 `/etc/caddy/Caddyfile` :
 ```
 tiklivepro.me, www.tiklivepro.me {
@@ -206,22 +208,20 @@ api.tiklivepro.me {
     reverse_proxy localhost:3000
 }
 
-# MediaMTX — HLS and WebRTC viewer endpoint
-# Caddy obtient automatiquement un certificat TLS pour ce sous-domaine.
-# Les spectateurs regardent le stream en clair à https://hls.tiklivepro.me/live/<ingestKey>/index.m3u8
 hls.tiklivepro.me {
     reverse_proxy localhost:8888
-
-    # Autorise les navigateurs à charger le flux depuis le frontend (CORS)
-    header Access-Control-Allow-Origin "*"
-    header Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+    header {
+        Access-Control-Allow-Origin  "*"
+        Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+        Access-Control-Allow-Headers "Range"
+    }
 }
 ```
 ```bash
 systemctl reload caddy
 ```
 
-> **Pourquoi CORS sur `/hls` ?** Le player HLS dans le navigateur fait des requêtes XHR vers `hls.tiklivepro.me` depuis l'origine `tiklivepro.me`. Sans le header `Access-Control-Allow-Origin`, le navigateur bloque les segments `.m3u8` et `.ts`.
+> **Pourquoi CORS sur `hls` ?** Le player HLS dans le navigateur fait des requêtes XHR vers `hls.tiklivepro.me` depuis l'origine `tiklivepro.me`. Sans `Access-Control-Allow-Origin`, le navigateur bloque les segments `.m3u8` et `.ts`. Le header `Range` est requis pour les requêtes de segments partiels (HLS byte-range).
 
 ### 6d — Dossier du projet
 
@@ -472,7 +472,9 @@ docker stats --format "table {{.Name}}\t{{.MemUsage}}\t{{.MemPerc}}"
 
 ## Étape 9 — Caddy + SSL
 
-Caddy obtient et renouvelle automatiquement les certificats SSL via Let's Encrypt dès que le DNS pointe vers le Droplet. Aucune configuration supplémentaire.
+Caddy obtient et renouvelle automatiquement les certificats SSL via Let's Encrypt dès que les enregistrements DNS pointent vers le Droplet. Aucune configuration supplémentaire.
+
+À partir du **deuxième déploiement**, le workflow CI met à jour `/etc/caddy/Caddyfile` automatiquement (copie depuis `infra/caddy/Caddyfile` dans le dépôt, puis `systemctl reload caddy`). Toute modification du Caddyfile dans le dépôt est donc propagée en production à chaque tag.
 
 ---
 

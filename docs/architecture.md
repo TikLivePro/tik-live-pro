@@ -119,13 +119,13 @@ User (OBS / ffmpeg / mobile) → RTMP :1935/live/{ingestKey}
       ├─ TikTok RTMP endpoint             ← if account connected
       └─ Facebook RTMP endpoint           ← if account connected
   → first stats received → all destinations marked LIVE
-  → NATS: publish session.live  { hlsUrl: "http://<host>:8888/live/{ingestKey}/index.m3u8" }
+  → NATS: publish session.live  { hlsUrl: "https://hls.tiklivepro.me/live/{ingestKey}/index.m3u8" }
   → Live Session Service: status → live, platformHlsUrl stored
   → Notifications Service: "You are live!" push notification
   → Analytics Service: record session start event
 
-Viewers → http://<host>:8888/live/{ingestKey}/index.m3u8  (HLS, ~1 s latency)
-         → http://<host>:8889/live/{ingestKey}             (WebRTC, sub-second)
+Viewers → https://hls.tiklivepro.me/live/{ingestKey}/index.m3u8  (HLS via Caddy, ~1 s latency)
+         → https://hls.tiklivepro.me/live/{ingestKey}             (WebRTC, sub-second)
 ```
 
 ### Comment Aggregation

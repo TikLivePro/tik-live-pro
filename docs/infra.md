@@ -1,6 +1,6 @@
 # TikLivePro — Infrastructure Guide
 
-> **Last updated:** 2026-05-31 (added MediaMTX platform-native streaming relay)
+> **Last updated:** 2026-05-31 (Caddy reverse proxy — system service, auto-deployed; CORS Range header for HLS)
 > Update whenever a Dockerfile, compose file, Kubernetes manifest, or build script changes.
 
 ## Table of Contents
@@ -24,6 +24,8 @@ infra/
 │   ├── build.sh                        # Build helper — maps service → Docker ARGs
 │   └── postgres/
 │       └── init.sql                    # Creates all 9 service databases on first boot
+├── caddy/
+│   └── Caddyfile                       # Caddy reverse proxy — tiklivepro.me, api., hls. subdomains
 ├── mediamtx/
 │   └── mediamtx.yml                    # MediaMTX config — RTMP :1936, HLS :8888, WebRTC :8889
 ├── kubernetes/
@@ -210,6 +212,34 @@ This aliases `host.docker.internal` to the Docker bridge gateway IP.
 **Prometheus alert rules** are mounted from `infra/observability/alerts/` into the container so rules are loaded without rebuilding the image.
 
 **Grafana datasources** are auto-provisioned from `infra/observability/grafana/provisioning/` — Prometheus and Jaeger are configured on first boot.
+
+---
+
+## Caddy — Reverse Proxy (system service)
+
+Caddy runs as a **systemd service on the host** (not in Docker) and terminates TLS for all public subdomains, forwarding to Docker containers via `localhost:<port>`.
+
+Config file: `infra/caddy/Caddyfile` — versioned in the repo, auto-deployed by the CI workflow on every tag release (`cp` + `systemctl reload caddy`).
+
+| Subdomain | Forwards to | Notes |
+|-----------|-------------|-------|
+| `tiklivepro.me`, `www.tiklivepro.me` | `localhost:3010` | Next.js frontend |
+| `api.tiklivepro.me` | `localhost:3000` | API Gateway (REST + WebSocket) |
+| `hls.tiklivepro.me` | `localhost:8888` | MediaMTX HLS relay. CORS headers added: `Allow-Origin *`, `Allow-Methods GET/HEAD/OPTIONS`, `Allow-Headers Range` |
+
+TLS certificates are provisioned and renewed automatically via Let's Encrypt — no manual configuration needed once DNS A records point to the droplet.
+
+**Install (first time only):**
+```bash
+apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+apt update && apt install -y caddy
+cp /opt/tiklivepro/infra/caddy/Caddyfile /etc/caddy/Caddyfile
+systemctl reload caddy
+```
+
+**Subsequent deploys:** handled automatically by the CI workflow.
 
 ---
 
