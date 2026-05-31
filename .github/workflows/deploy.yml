@@ -182,7 +182,7 @@ jobs:
           target: /opt/tiklivepro
 
       - name: Pull images & restart stack
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         env:
           IMAGE_TAG: ${{ steps.tag.outputs.value }}
           REGISTRY: ${{ steps.tag.outputs.registry }}
