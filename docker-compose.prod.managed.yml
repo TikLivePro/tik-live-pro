@@ -208,7 +208,7 @@ services:
         limits:
           memory: 64m
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:9997/v3/paths/list"]
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 9997 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
