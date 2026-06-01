@@ -62,11 +62,17 @@ export class HandleStreamArrivedUseCase {
       return;
     }
 
+    // Persist platform-dest LIVE + social-dests CONNECTING before starting the worker
+    // so a worker.start() failure doesn't leave the session with unsaved in-memory state.
+    await this.sessionRepo.update(session);
+
     const worker = this.workerFactory();
     let firstStats = true;
     let lastHealthPublish = 0;
+    let cancelled = false;
 
     worker.onStats((stats: StreamWorkerStats) => {
+      if (cancelled) return;
       void (async () => {
         if (firstStats) {
           firstStats = false;
@@ -113,6 +119,7 @@ export class HandleStreamArrivedUseCase {
     });
 
     worker.onError((err: Error) => {
+      if (cancelled) return;
       this.logger.error({ err, sessionId: session.sessionId }, 'Stream worker error');
       void (async () => {
         for (const dest of session.destinations) {
@@ -143,14 +150,41 @@ export class HandleStreamArrivedUseCase {
       })();
     });
 
-    this.workers.set(ingestKey, worker);
-
     const destConfigs = socialDests
       .filter((d): d is (typeof d) & { rtmpDestination: string } => d.rtmpDestination !== null)
       .map((d) => ({ rtmpDestination: d.rtmpDestination }));
 
     // ffmpeg reads from MediaMTX RTMP (the browser WHIP stream is already there).
-    await worker.start(`${this.mediaMtxRtmpBase}/live/${ingestKey}`, destConfigs);
+    // Only register the worker after a successful start so a failed start doesn't
+    // block future retries via the workers.has() guard.
+    try {
+      await worker.start(`${this.mediaMtxRtmpBase}/live/${ingestKey}`, destConfigs);
+    } catch (err) {
+      cancelled = true;
+      this.logger.error({ err, sessionId: session.sessionId }, 'Stream worker failed to start');
+      for (const dest of session.destinations) {
+        if (dest.status === DestinationStatus.LIVE || dest.status === DestinationStatus.CONNECTING) {
+          session.markDestinationError(dest.socialAccountId, String(err));
+          await this.eventPublisher.destinationStatusChanged(
+            session.sessionId,
+            dest.socialAccountId,
+            dest.platform,
+            dest.status,
+            DestinationStatus.ERROR,
+            String(err),
+            randomUUID(),
+          );
+        }
+      }
+      if (!session.hasAnyLiveDestination()) {
+        session.markError();
+        await this.eventPublisher.sessionError(session.sessionId, session.userId, randomUUID());
+      }
+      await this.sessionRepo.update(session);
+      return;
+    }
+
+    this.workers.set(ingestKey, worker);
 
     this.logger.info(
       { sessionId: session.sessionId, destinationCount: destConfigs.length },

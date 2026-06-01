@@ -16,7 +16,7 @@ export class MediaMtxStreamWatcher {
 
   constructor(
     private readonly apiUrl: string,
-    private readonly onStreamArrived: (ingestKey: string) => void,
+    private readonly onStreamArrived: (ingestKey: string) => Promise<void>,
     private readonly onStreamEnded: (ingestKey: string) => void,
     private readonly logger: Logger,
     apiUser: string,
@@ -55,8 +55,15 @@ export class MediaMtxStreamWatcher {
         if (!this.knownPaths.has(name)) {
           const ingestKey = name.slice('live/'.length);
           this.logger.info({ ingestKey }, 'MediaMTX stream arrived');
+          // Add before calling handler to prevent concurrent duplicate calls.
+          // Removed on error so the next poll retries.
           this.knownPaths.add(name);
-          this.onStreamArrived(ingestKey);
+          try {
+            await this.onStreamArrived(ingestKey);
+          } catch (err) {
+            this.logger.warn({ ingestKey, err }, 'Stream arrival handler failed, will retry next poll');
+            this.knownPaths.delete(name);
+          }
         }
       }
 

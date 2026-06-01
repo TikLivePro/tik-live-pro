@@ -20,7 +20,7 @@ hlsPartDuration: 200ms
 webrtcAddress: :8889
 # Fix WebRTC to a single mappable UDP port (exposed in docker-compose).
 # Without this, MediaMTX uses random ephemeral UDP ports that are unreachable.
-webrtcICEUDPMuxAddress: :8189
+webrtcLocalUDPAddress: :8189
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 # MediaMTX does not interpolate $VAR in user/pass fields — using a named user

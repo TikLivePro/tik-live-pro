@@ -34,7 +34,7 @@ webrtcAddress: :8889
 # through the mapped UDP port. Required when MediaMTX runs inside Docker.
 webrtcAdditionalHosts: [127.0.0.1]
 # Fix WebRTC to a single mappable UDP port instead of random ephemeral ports.
-webrtcICEUDPMuxAddress: :8189
+webrtcLocalUDPAddress: :8189
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 # Accept any username/password — dev only

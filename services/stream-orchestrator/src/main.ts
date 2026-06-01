@@ -125,7 +125,7 @@ async function main(): Promise<void> {
   // MediaMTX watcher — detects WebRTC/WHIP browser streams arriving on MediaMTX.
   const mediaMtxWatcher = new MediaMtxStreamWatcher(
     env.MEDIAMTX_API_URL,
-    (ingestKey) => void streamArrivalHandler.execute(ingestKey),
+    (ingestKey) => streamArrivalHandler.execute(ingestKey),
     (ingestKey) => void streamArrivalHandler.stopWorker(ingestKey),
     logger,
     env.MEDIAMTX_API_USER,
