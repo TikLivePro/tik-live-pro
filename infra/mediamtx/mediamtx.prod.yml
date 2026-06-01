@@ -1,7 +1,4 @@
 # MediaMTX configuration — production
-# Identical to mediamtx.yml except auth requires credentials from env vars:
-#   MEDIAMTX_API_USER  — API/management username
-#   MEDIAMTX_API_PASS  — API/management password (min 32 chars recommended)
 
 logLevel: info
 logDestinations: [stdout]
@@ -21,11 +18,20 @@ hlsPartDuration: 200ms
 
 # ── WebRTC ────────────────────────────────────────────────────────────────────
 webrtcAddress: :8889
+# Fix WebRTC to a single mappable UDP port (exposed in docker-compose).
+# Without this, MediaMTX uses random ephemeral UDP ports that are unreachable.
+webrtcICEUDPMuxAddress: :8189
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
+# MediaMTX does not interpolate $VAR in user/pass fields — using a named user
+# with env-var credentials would store the literal string "$VAR" as the
+# credential, making every authentication attempt fail.
+# Session security is enforced at the app layer: only the authenticated owner
+# of a session knows the ingestKey UUID. Ports 9997 and 1936 are not exposed
+# outside the Docker network, so open auth on those ports is safe.
 authInternalUsers:
-  - user: $MEDIAMTX_API_USER
-    pass: $MEDIAMTX_API_PASS
+  - user: any
+    pass:
     ips: []
     permissions:
       - action: api
@@ -37,3 +43,10 @@ authInternalUsers:
 # ── REST API ──────────────────────────────────────────────────────────────────
 api: true
 apiAddress: :9997
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+# Allow any dynamically-created path (browser WHIP publisher, RTMP relay, etc.)
+# Without this block every WHIP/RTMP/HLS request returns "path not configured".
+paths:
+  all_others:
+    source: publisher

@@ -72,13 +72,12 @@
 #   # MEDIAMTX_HLS_URL is the public URL browsers use to watch HLS streams.
 #   # Point it at the Caddy-fronted subdomain so viewers get HTTPS.
 #   MEDIAMTX_HLS_URL=https://hls.tiklivepro.me
-#   # MEDIAMTX_WEBRTC_URL is the public URL the broadcaster's browser POSTs to (WHIP).
-#   # Must be HTTPS; add a Caddy entry: webrtc.tiklivepro.me → localhost:8889.
+#   # MEDIAMTX_WEBRTC_URL is the public WHIP URL — returned to the broadcaster's browser
+#   # by the ingest API (GET /sessions/:id/ingest → whipUrl). Must be HTTPS.
 #   MEDIAMTX_WEBRTC_URL=https://webrtc.tiklivepro.me
-#   # MEDIAMTX_API_USER / MEDIAMTX_API_PASS — credentials for the MediaMTX REST API
-#   # (port 9997). Required in production; use a strong password (≥ 32 chars).
-#   MEDIAMTX_API_USER=admin
-#   MEDIAMTX_API_PASS=<strong-random-password>
+#   # No credentials needed for MediaMTX — both dev and prod use open auth (user: any).
+#   # MediaMTX does not interpolate $VAR in user/pass config fields; session security is
+#   # enforced at the app layer via UUID ingestKeys. Ports 9997 and 1936 are internal-only.
 #
 # RAM budget on 4 GB Droplet (no observability):
 #   NATS 128m + MediaMTX 64m + 10 services ~1780m + web 512m ≈ 2484m  ← comfortable
@@ -207,12 +206,10 @@ services:
     image: bluenviron/mediamtx:latest
     volumes:
       - ./infra/mediamtx/mediamtx.prod.yml:/mediamtx.yml:ro
-    environment:
-      - MEDIAMTX_API_USER=${MEDIAMTX_API_USER:?MEDIAMTX_API_USER is required}
-      - MEDIAMTX_API_PASS=${MEDIAMTX_API_PASS:?MEDIAMTX_API_PASS is required}
     ports:
-      - "8888:8888"   # HLS — Caddy reverse-proxies this as https://hls.tiklivepro.me
-      - "8889:8889"   # WebRTC
+      - "8888:8888"     # HLS — Caddy reverse-proxies this as https://hls.tiklivepro.me
+      - "8889:8889"     # WebRTC HTTP signalling
+      - "8189:8189/udp" # WebRTC ICE UDP — required for browser WHIP media transport
     deploy:
       resources:
         limits:
@@ -483,8 +480,8 @@ services:
       MEDIAMTX_HLS_URL: ${MEDIAMTX_HLS_URL:-https://hls.tiklivepro.me}
       MEDIAMTX_WEBRTC_URL: ${MEDIAMTX_WEBRTC_URL:-https://webrtc.tiklivepro.me}
       MEDIAMTX_API_URL: http://mediamtx:9997
-      MEDIAMTX_API_USER: ${MEDIAMTX_API_USER:?MEDIAMTX_API_USER is required}
-      MEDIAMTX_API_PASS: ${MEDIAMTX_API_PASS:?MEDIAMTX_API_PASS is required}
+      MEDIAMTX_API_USER: ${MEDIAMTX_API_USER:-}
+      MEDIAMTX_API_PASS: ${MEDIAMTX_API_PASS:-}
       NODE_OPTIONS: "--max-old-space-size=192"
     ports:
       - "3009:3009"

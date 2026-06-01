@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-06-01 (MediaMTX REST API auth — MEDIAMTX_API_USER / MEDIAMTX_API_PASS requis en production)
+> Dernière mise à jour : 2026-06-01 (MediaMTX auth ouverte en prod ; port WebRTC ICE UDP 8189 ; port comments 3006 exposé ; WHIP URL via réponse API)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -381,8 +381,9 @@ Ces secrets servent à NextAuth (gestion des sessions côté serveur du frontend
 | Secret | Valeur pour la prod |
 |--------|-------------------|
 | `MEDIAMTX_HLS_URL` | `https://hls.tiklivepro.me` — URL publique Caddy-frontée que les navigateurs utilisent pour charger les segments HLS. Doit correspondre exactement au sous-domaine configuré dans le Caddyfile. |
-| `MEDIAMTX_API_USER` | Identifiant pour l'API REST MediaMTX (port 9997). Exemple : `admin`. Utilisé par stream-orchestrator pour appeler l'API et par MediaMTX pour valider les connexions. |
-| `MEDIAMTX_API_PASS` | Mot de passe pour l'API REST MediaMTX. Utiliser une valeur forte (≥ 32 caractères). Générer : `openssl rand -base64 32`. |
+| `MEDIAMTX_WEBRTC_URL` | `https://webrtc.tiklivepro.me` — URL publique WHIP. Renvoyée au navigateur du broadcaster via l'API (`GET /sessions/:id/ingest` → champ `whipUrl`). Doit être HTTPS pour que le navigateur autorise l'accès caméra/micro. |
+
+> **Pas de credentials MediaMTX.** MediaMTX n'interpole pas `$VAR` dans les champs `user:` / `pass:` du fichier de config YAML. Les deux configs (dev et prod) utilisent l'auth ouverte (`user: any`). La sécurité est assurée au niveau applicatif : seul le propriétaire authentifié d'une session connaît l'`ingestKey` UUID. Les ports 9997 (API REST) et 1936 (RTMP) ne sont pas exposés en dehors du réseau Docker.
 
 **Stripe**
 
@@ -627,8 +628,8 @@ Vérifiez l'ordre de cause le plus probable :
 # 1. MediaMTX est-il en cours d'exécution ?
 docker compose -f /opt/tiklivepro/docker-compose.prod.managed.yml ps mediamtx
 
-# 2. Y a-t-il un stream actif ? (l'API nécessite un Basic Auth en prod)
-curl -u "$MEDIAMTX_API_USER:$MEDIAMTX_API_PASS" http://localhost:9997/v3/paths/list
+# 2. Y a-t-il un stream actif ? (pas d'auth requise — auth ouverte en prod et en dev)
+curl http://localhost:9997/v3/paths/list
 
 # 3. Caddy forward-il bien le port 8888 ?
 curl http://localhost:8888/index.m3u8

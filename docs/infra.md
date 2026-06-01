@@ -1,6 +1,6 @@
 # TikLivePro — Infrastructure Guide
 
-> **Last updated:** 2026-06-01 (webrtc.tiklivepro.me Caddy entry; MEDIAMTX_WEBRTC_URL + MEDIAMTX_API_URL wired into stream-orchestrator; MediaMtxStreamWatcher Basic-auth fix; api.tiklivepro.me path routing for socket.io and stream-orchestrator)
+> **Last updated:** 2026-06-01 (fix comments service port exposure; WebRTC ICE UDP port 8189 added; MediaMTX prod auth switched to open auth; WHIP URL sourced from API response)
 > Update whenever a Dockerfile, compose file, Kubernetes manifest, or build script changes.
 
 ## Table of Contents
@@ -188,24 +188,25 @@ make mediamtx-ps      # MediaMTX container status
 |------|------|
 | **1936** (RTMP in) | ffmpeg workers inside stream-orchestrator push here |
 | **8888** (HLS out) | Browser viewers watch `http://localhost:8888/live/{ingestKey}/index.m3u8` |
-| **8889** (WebRTC out) | Sub-second latency preview at `http://localhost:8889/live/{ingestKey}` |
+| **8889** (WebRTC HTTP) | WHIP signalling — browser POSTs SDP offer here to start streaming |
+| **8189/udp** (WebRTC ICE) | ICE media transport — fixed UDP mux port so Docker port mapping works |
 | **9997** (REST API) | `GET /v3/paths/list` to inspect active streams |
 
 Config files:
 - **Dev:** `infra/mediamtx/mediamtx.yml` — open auth (`user: any`, no password). Any credentials accepted.
-- **Prod:** `infra/mediamtx/mediamtx.prod.yml` — reads `$MEDIAMTX_API_USER` / `$MEDIAMTX_API_PASS` from the environment for HTTP Basic Auth on the REST API and all other actions.
+- **Prod:** `infra/mediamtx/mediamtx.prod.yml` — also open auth (`user: any`). MediaMTX does not interpolate `$VAR` references in `user:` / `pass:` config fields, so named credentials cannot be passed via environment variables. Session security is enforced at the application layer: only the authenticated session owner knows their UUID `ingestKey`. Ports 9997 and 1936 are not externally exposed.
 
 Environment variables wired in stream-orchestrator (`.env`):
 ```
-MEDIAMTX_RTMP_URL=rtmp://localhost:1936   # internal, ffmpeg workers push here (container: rtmp://mediamtx:1936)
-MEDIAMTX_HLS_URL=http://localhost:8888    # public, HLS URL returned to viewers
-MEDIAMTX_WEBRTC_URL=http://localhost:8889 # public, WHIP URL returned to the broadcaster's browser
+MEDIAMTX_RTMP_URL=rtmp://localhost:1936   # internal — ffmpeg workers push here (container: rtmp://mediamtx:1936)
+MEDIAMTX_HLS_URL=http://localhost:8888    # public — HLS URL returned to viewers
+MEDIAMTX_WEBRTC_URL=http://localhost:8889 # public — WHIP base URL; returned by the ingest API to the browser
 MEDIAMTX_API_URL=http://localhost:9997    # internal REST API (container: http://mediamtx:9997)
-MEDIAMTX_API_USER=                        # leave blank in dev (open auth)
-MEDIAMTX_API_PASS=                        # leave blank in dev (open auth)
 ```
 
-In production `MEDIAMTX_API_URL` must point at the mediamtx container (`http://mediamtx:9997`), not localhost. `MEDIAMTX_WEBRTC_URL` must be the **public HTTPS** URL browsers POST WHIP offers to (e.g. `https://webrtc.tiklivepro.me`). Provide non-empty `MEDIAMTX_API_USER` / `MEDIAMTX_API_PASS` (≥ 32-char password recommended) — the prod mediamtx config requires HTTP Basic Auth on the REST API and stream-orchestrator's `MediaMtxStreamWatcher` sends these credentials on every poll.
+In production `MEDIAMTX_API_URL` must point at the mediamtx container (`http://mediamtx:9997`), not localhost. `MEDIAMTX_WEBRTC_URL` must be the **public HTTPS** URL (`https://webrtc.tiklivepro.me`) so the ingest endpoint returns it correctly to the broadcaster's browser.
+
+> **WHIP URL flow:** The frontend never reads `MEDIAMTX_WEBRTC_URL` directly. It calls `GET /stream-orchestrator/sessions/:id/ingest` which returns a `whipUrl` field built server-side from `MEDIAMTX_WEBRTC_URL`. This ensures the correct public URL reaches the browser regardless of how the frontend image was built.
 
 **Linux `host.docker.internal` fix:**
 Prometheus needs to scrape microservices running on the host. On Docker Desktop this resolves automatically; on Linux we add:
@@ -230,7 +231,7 @@ Config file: `infra/caddy/Caddyfile` — versioned in the repo, auto-deployed by
 | Subdomain / Path | Forwards to | Notes |
 |------------------|-------------|-------|
 | `tiklivepro.me`, `www.tiklivepro.me` | `localhost:3010` | Next.js frontend |
-| `api.tiklivepro.me/socket.io/*` | `localhost:3006` | Comments socket.io WebSocket — routed directly to the comments service because the API gateway's `fetch()` proxy does not handle WebSocket upgrades |
+| `api.tiklivepro.me/socket.io/*` | `localhost:3006` | Comments socket.io WebSocket — routed directly to the comments service because the API gateway's `fetch()` proxy does not handle WebSocket upgrades. **The comments container must expose `3006:3006`** in `docker-compose.prod.managed.yml` so Caddy (a host-level service) can reach it. |
 | `api.tiklivepro.me/stream-orchestrator/*` | `localhost:3009` (prefix stripped) | Stream orchestrator REST API — exposes the internal service under a path prefix so browsers can reach `GET /sessions/:id/ingest` without a separate subdomain |
 | `api.tiklivepro.me` (all other paths) | `localhost:3000` | API Gateway (REST) |
 | `hls.tiklivepro.me` | `localhost:8888` | MediaMTX HLS relay. CORS headers added: `Allow-Origin *`, `Allow-Methods GET/HEAD/OPTIONS`, `Allow-Headers Range` |
@@ -269,10 +270,13 @@ Features:
 ```
 MEDIAMTX_HLS_URL=https://hls.tiklivepro.me       # public HLS URL browsers use to watch streams
 MEDIAMTX_WEBRTC_URL=https://webrtc.tiklivepro.me # public WHIP URL broadcaster's browser POSTs to
-MEDIAMTX_API_USER=admin                           # REST API username
-MEDIAMTX_API_PASS=<strong-random-password>        # REST API password (≥ 32 chars)
 ```
-Set these in your `.env.prod` or shell before running `make prod-up`. The `MEDIAMTX_RTMP_URL` defaults to `rtmp://mediamtx:1936` (container-to-container) and does not need to be set. `MEDIAMTX_API_URL` is hardcoded to `http://mediamtx:9997` in the compose file and does not need to be set. The prod compose uses `mediamtx.prod.yml` (not the dev config) and will refuse to start if either `MEDIAMTX_API_USER` or `MEDIAMTX_API_PASS` is unset.
+Set these in your `.env.prod` or shell before running `make prod-up`. The `MEDIAMTX_RTMP_URL` defaults to `rtmp://mediamtx:1936` (container-to-container) and does not need to be set. `MEDIAMTX_API_URL` is hardcoded to `http://mediamtx:9997` in the compose file and does not need to be set.
+
+The mediamtx container itself requires no credential env vars — the prod config uses open auth (`user: any`). The mediamtx service in the prod compose exposes three ports to the host:
+- `8888:8888` — HLS (Caddy proxies as `https://hls.tiklivepro.me`)
+- `8889:8889` — WebRTC HTTP signalling (Caddy proxies as `https://webrtc.tiklivepro.me`)
+- `8189:8189/udp` — WebRTC ICE UDP mux (must be a fixed port so Docker forwards it; unreachable browser WebRTC if missing)
 
 `MEDIAMTX_WEBRTC_URL` must be HTTPS so that browsers grant camera/microphone access for WebRTC. Requires a DNS A record for `webrtc.tiklivepro.me` → droplet IP and the Caddy entry above.
 
@@ -348,9 +352,9 @@ MediaMTX runs as a Deployment (single replica) and needs two services:
 
 Set `MEDIAMTX_HLS_URL` in the stream-orchestrator secret/ConfigMap to the public LoadBalancer address of `mediamtx-public` so it is returned to browsers in `session.live` events and `GET /sessions/:id` responses.
 
-Manifest: `infra/kubernetes/mediamtx-deployment.yaml` — includes a ConfigMap (prod config with env-var auth), a single-replica Deployment, `mediamtx-internal` ClusterIP (RTMP :1936, REST API :9997), and `mediamtx-public` LoadBalancer (HLS :8888, WebRTC :8889).
+Manifest: `infra/kubernetes/mediamtx-deployment.yaml` — includes a ConfigMap (prod config), a single-replica Deployment, `mediamtx-internal` ClusterIP (RTMP :1936, REST API :9997), and `mediamtx-public` LoadBalancer (HLS :8888, WebRTC :8889, ICE UDP :8189).
 
-API credentials are stored in the `mediamtx-secrets` Secret (`api-user`, `api-password`) and injected into both the mediamtx pod (config substitution) and stream-orchestrator (HTTP Basic Auth when calling the REST API).
+MediaMTX uses open auth (`user: any`) — no API credentials are required. Session security is enforced at the application layer via UUID ingest keys. `MEDIAMTX_HLS_URL` and `MEDIAMTX_WEBRTC_URL` must be set in the stream-orchestrator ConfigMap to the public LoadBalancer addresses so the ingest API returns the correct URLs to browsers.
 
 ### HPA Summary
 

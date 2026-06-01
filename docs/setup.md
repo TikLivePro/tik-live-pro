@@ -1,6 +1,6 @@
 # TikLivePro — Setup Guide
 
-> **Last updated:** 2026-06-01 (MEDIAMTX_WEBRTC_URL + MEDIAMTX_API_URL added; MediaMtxStreamWatcher Basic-auth fix; webrtc.tiklivepro.me Caddy entry; remove NEXT_PUBLIC_STREAM_ORCHESTRATOR_URL — stream-orchestrator now proxied via Caddy at /stream-orchestrator/* on api.tiklivepro.me)
+> **Last updated:** 2026-06-01 (fix comments port 3006 exposure; WebRTC ICE UDP port 8189; MediaMTX open auth; WHIP URL sourced from ingest API response)
 > Update this file whenever prerequisites, ports, environment variables, or workflow steps change.
 
 ## Prerequisites
@@ -101,10 +101,8 @@ Update values as needed — critical variables:
 | `NEXTAUTH_URL` | apps/web | Public URL of the web app, e.g. `https://tiklivepro.me` |
 | `MEDIAMTX_RTMP_URL` | stream-orchestrator | Internal RTMP push URL for ffmpeg workers. Default: `rtmp://localhost:1936` (dev) · `rtmp://mediamtx:1936` (Docker/prod) |
 | `MEDIAMTX_HLS_URL` | stream-orchestrator | **Public** HLS base URL returned to viewers. Default: `http://localhost:8888` (dev) · `https://hls.tiklivepro.me` (prod) |
-| `MEDIAMTX_WEBRTC_URL` | stream-orchestrator | **Public** WebRTC/WHIP base URL the broadcaster's browser POSTs to. Default: `http://localhost:8889` (dev) · `https://webrtc.tiklivepro.me` (prod). Must be HTTPS in production for browser camera access. |
+| `MEDIAMTX_WEBRTC_URL` | stream-orchestrator | **Public** WebRTC/WHIP base URL. Returned to the broadcaster's browser via the ingest API (`GET /sessions/:id/ingest` → `whipUrl`). Default: `http://localhost:8889` (dev) · `https://webrtc.tiklivepro.me` (prod). Must be HTTPS in production for browser camera access. |
 | `MEDIAMTX_API_URL` | stream-orchestrator | Internal MediaMTX REST API URL used by stream-orchestrator to detect live streams. Default: `http://localhost:9997` (dev) · **hardcoded** to `http://mediamtx:9997` in prod compose (do not override). |
-| `MEDIAMTX_API_USER` | stream-orchestrator, mediamtx | Username for the MediaMTX REST API. **Leave blank in dev** (open auth). Required in prod. |
-| `MEDIAMTX_API_PASS` | stream-orchestrator, mediamtx | Password for the MediaMTX REST API (≥ 32 chars recommended). **Leave blank in dev**. Required in prod. |
 | `NEXTAUTH_SECRET` | apps/web | Generate: `openssl rand -base64 32` |
 | `GOOGLE_CLIENT_ID` / `SECRET` | apps/web | From Google Cloud Console → Credentials |
 | `AUTH_SERVICE_INTERNAL_URL` | apps/web | Internal URL NextAuth uses to call the auth service |
@@ -260,11 +258,10 @@ export GOOGLE_CLIENT_SECRET=...
 export TOKEN_ENCRYPTION_KEY=$(openssl rand -base64 32)
 export INTERNAL_API_KEY=$(openssl rand -hex 32)
 
-# MediaMTX — public URLs returned to browsers
-# HLS: viewers watch streams at this URL
-# WebRTC: broadcaster's browser POSTs WHIP offers here — must be HTTPS in prod
+# MediaMTX — public URLs returned to browsers by the stream-orchestrator ingest API
 export MEDIAMTX_HLS_URL=http://localhost:8888       # dev default; use https://hls.tiklivepro.me in prod
 export MEDIAMTX_WEBRTC_URL=http://localhost:8889    # dev default; use https://webrtc.tiklivepro.me in prod
+# No credentials needed — both dev and prod MediaMTX configs use open auth (user: any)
 
 # SMTP (optional — skip to disable welcome emails)
 export SMTP_PROVIDER=gmail
@@ -352,16 +349,16 @@ extra_hosts:
 ```bash
 make mediamtx-logs           # check for RTMP push from ffmpeg
 make mediamtx-ps             # confirm container is up
-curl http://localhost:9997/v3/paths/list  # list active stream paths (dev — no auth needed)
-# In prod, include credentials:
-# curl -u "$MEDIAMTX_API_USER:$MEDIAMTX_API_PASS" http://<server>:9997/v3/paths/list
+curl http://localhost:9997/v3/paths/list  # list active stream paths (no auth needed — open auth)
+# In prod (from the server, reaching the container directly):
+# curl http://localhost:9997/v3/paths/list
 ```
 If no paths appear, the stream hasn't arrived at MediaMTX yet. Common causes:
-- **Browser streaming (WHIP):** check that `MEDIAMTX_WEBRTC_URL` is set to the public HTTPS URL in production and that `webrtc.tiklivepro.me` has a DNS A record. Open the browser console to check for WHIP POST errors.
+- **Browser streaming (WHIP):** check that `MEDIAMTX_WEBRTC_URL` is set to the public HTTPS URL in production and that `webrtc.tiklivepro.me` has a DNS A record. The browser gets the WHIP URL from `GET /sessions/:id/ingest` (`whipUrl` field) — open the browser console to check for WHIP POST errors.
+- **WebRTC ICE UDP:** confirm port `8189/udp` is exposed in docker-compose and not blocked by the host firewall — without it, browser WHIP media transport silently fails after a successful signalling handshake.
 - **OBS streaming:** confirm the OBS stream target is `rtmp://localhost:1935/live/<ingestKey>` and the stream-orchestrator RTMP server is up.
-- **API auth:** in production, `MEDIAMTX_API_URL` must be `http://mediamtx:9997` (not localhost) and `MEDIAMTX_API_USER`/`MEDIAMTX_API_PASS` must be set — the watcher sends these as HTTP Basic Auth to authenticate with the MediaMTX REST API.
 
 **Session stays in `starting` status** — the session transitions to `live` only after the `MediaMtxStreamWatcher` detects a live path on MediaMTX. Check:
 1. A streaming client (browser WHIP or OBS) is actively pushing to the ingest endpoint.
-2. In production: `MEDIAMTX_API_URL=http://mediamtx:9997` (the watcher must reach the mediamtx container, not its own localhost), and `MEDIAMTX_API_USER`/`MEDIAMTX_API_PASS` are set (the prod config requires Basic Auth on the REST API).
-3. Retrieve the ingest URLs from `GET /stream/sessions/<id>/ingest` — the response includes `ingestUrl` (RTMP/OBS), `whipUrl` (browser), `hlsUrl` (viewer), and `status`.
+2. In production: `MEDIAMTX_API_URL=http://mediamtx:9997` (the watcher must reach the mediamtx container, not its own localhost).
+3. Retrieve the ingest URLs from `GET /stream-orchestrator/sessions/<id>/ingest` — the response includes `ingestUrl` (RTMP/OBS), `whipUrl` (browser WHIP endpoint), `hlsUrl` (viewer), and `status`.

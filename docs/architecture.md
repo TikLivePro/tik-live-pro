@@ -85,7 +85,7 @@
 | NATS JetStream | 4222 (client), 6222 (cluster), 8222 (monitoring) | Event bus — 3-node StatefulSet with `replicas: 3` on all streams |
 | PostgreSQL 16 | 5432 | Primary datastore — one database per service |
 | Redis 7 | 6379 | Session cache, rate-limiting counters, idempotency keys |
-| MediaMTX | 1936 (RTMP in), 8888 (HLS out), 8889 (WebRTC out), 9997 (REST API) | Platform-native streaming relay — Go binary, ~5 MB RAM. Receives RTMP relay from ffmpeg workers; serves HLS and WebRTC to browser viewers. Config: `infra/mediamtx/mediamtx.yml` |
+| MediaMTX | 1936 (RTMP in), 8888 (HLS out), 8889 (WebRTC HTTP), 8189/udp (WebRTC ICE), 9997 (REST API) | Platform-native streaming relay — Go binary, ~5 MB RAM. Receives RTMP relay from ffmpeg workers; serves HLS and WebRTC to browser viewers. Open auth (`user: any`) in both dev and prod. Config: `infra/mediamtx/mediamtx.yml` (dev) / `mediamtx.prod.yml` (prod) |
 | OTel Collector | 4317 (gRPC), 4318 (HTTP), 8888 (self-metrics), 8889 (prom export) | Receives OTLP traces/metrics/logs from all services; exports to Jaeger + Prometheus |
 | Jaeger | 16686 (UI), 14268 (HTTP), 4317 (OTLP) | Distributed trace visualization |
 | Prometheus | 9090 | Metrics scraping and alerting |
@@ -237,7 +237,7 @@ Host machine (Node.js processes via Turborepo)
 
 Docker Compose (docker-compose.dev.yml)
   └── NATS, PostgreSQL, Redis, OTel Collector, Jaeger, Prometheus, Grafana
-  └── MediaMTX (Go)  — RTMP :1936  HLS :8888  WebRTC :8889  API :9997
+  └── MediaMTX (Go)  — RTMP :1936  HLS :8888  WebRTC HTTP :8889  ICE UDP :8189  API :9997
 ```
 
 ### Production (Kubernetes)
@@ -260,7 +260,7 @@ Namespace: tik-live-pro
 │   ├── nats (3 replicas, 10 Gi each)
 │   └── postgres (1 replica, 20 Gi)
 ├── Deployments (single replica)
-│   ├── mediamtx  — RTMP :1936 (internal)  HLS :8888 (public)  WebRTC :8889
+│   ├── mediamtx  — RTMP :1936 (internal)  HLS :8888 (public)  WebRTC HTTP :8889  ICE UDP :8189
 │   ├── redis, otel-collector, jaeger, prometheus, grafana  (observability)
 └── Secrets (one per service — never committed to git)
 ```
