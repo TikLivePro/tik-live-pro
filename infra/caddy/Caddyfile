@@ -1,13 +1,3 @@
-# The Caddyfile is an easy way to configure your Caddy web server.
-#
-# Unless the file starts with a global options block, the first
-# uncommented line is always the address of your site.
-#
-# To use your own domain name (with automatic HTTPS), first make
-# sure your domain's A/AAAA DNS records are properly pointed to
-# this machine's public IP, then replace ":80" below with your
-# domain name.
-
 tiklivepro.me, www.tiklivepro.me {
     reverse_proxy localhost:3010
 }
@@ -35,7 +25,11 @@ api.tiklivepro.me {
 
 hls.tiklivepro.me {
     reverse_proxy localhost:8888
+    # MediaMTX sets its own Access-Control-Allow-Origin (echoes the Origin
+    # header). Delete it and replace with * so any origin can fetch HLS
+    # segments — the delete must come first to avoid duplicate values.
     header {
+        -Access-Control-Allow-Origin
         Access-Control-Allow-Origin  "*"
         Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
         Access-Control-Allow-Headers "Range"
@@ -43,10 +37,27 @@ hls.tiklivepro.me {
 }
 
 webrtc.tiklivepro.me {
-    reverse_proxy localhost:8889
-    header {
-        Access-Control-Allow-Origin  "*"
-        Access-Control-Allow-Methods "GET, HEAD, POST, OPTIONS"
-        Access-Control-Allow-Headers "Content-Type, Authorization"
+    # CORS preflight (OPTIONS) — respond directly without forwarding to
+    # MediaMTX. The WHIP POST uses Content-Type: application/sdp, which is
+    # not CORS-safelisted, so the browser always sends a preflight first.
+    # MediaMTX does not reliably respond 2xx to OPTIONS, so we handle it here.
+    @cors_preflight method OPTIONS
+
+    handle @cors_preflight {
+        header Access-Control-Allow-Origin  "*"
+        header Access-Control-Allow-Methods "GET, HEAD, POST, OPTIONS"
+        header Access-Control-Allow-Headers "Content-Type, Authorization"
+        header Access-Control-Max-Age       "86400"
+        respond "" 204
+    }
+
+    # Actual WHIP / WebRTC requests — proxy to MediaMTX but replace its
+    # CORS header (which echoes the request Origin) with a single * value.
+    handle {
+        reverse_proxy localhost:8889
+        header {
+            -Access-Control-Allow-Origin
+            Access-Control-Allow-Origin  "*"
+        }
     }
 }

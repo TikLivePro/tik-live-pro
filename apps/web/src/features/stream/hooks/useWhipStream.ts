@@ -81,9 +81,10 @@ export function useWhipStream(): WhipStreamResult {
 
       const answerSdp = await res.text();
       await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-    } catch {
+    } catch (err) {
       disconnect();
       setState('failed');
+      throw err;
     }
   }, [disconnect]);
 

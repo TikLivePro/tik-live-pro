@@ -111,8 +111,14 @@ export function FullscreenLiveView(): React.ReactElement {
       }
       if (cancelled || !stream) return;
 
+      // Mark started before connecting so concurrent effect runs don't double-connect.
+      // Reset to false on failure so the next effect cycle retries automatically.
       whipStartedRef.current = true;
-      await connectWhip(whipUrl, stream);
+      try {
+        await connectWhip(whipUrl, stream);
+      } catch {
+        whipStartedRef.current = false;
+      }
     }
 
     void tryStartWhip();
