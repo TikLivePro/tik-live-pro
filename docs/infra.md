@@ -208,6 +208,16 @@ In production `MEDIAMTX_API_URL` must point at the mediamtx container (`http://m
 
 > **WHIP URL flow:** The frontend never reads `MEDIAMTX_WEBRTC_URL` directly. It calls `GET /stream-orchestrator/sessions/:id/ingest` which returns a `whipUrl` field built server-side from `MEDIAMTX_WEBRTC_URL`. This ensures the correct public URL reaches the browser regardless of how the frontend image was built.
 
+**WebRTC ICE candidates (`SERVER_PUBLIC_IP`):**
+MediaMTX runs inside Docker and only knows its container-internal IP. Without additional configuration it would advertise an unreachable `172.x.x.x` address in SDP answers, causing the browser's UDP media to never arrive. The `MTX_WEBRTCADDITIONALHOSTS` env var tells MediaMTX to include the server's public IP in ICE candidates so the browser can reach UDP port 8189.
+
+In `docker-compose.prod.managed.yml` this is wired as:
+```yaml
+environment:
+  MTX_WEBRTCADDITIONALHOSTS: ${SERVER_PUBLIC_IP:?SERVER_PUBLIC_IP is required}
+```
+The deploy workflow sets `SERVER_PUBLIC_IP` from `secrets.DROPLET_IP` — no separate secret is needed. For manual deploys, add `SERVER_PUBLIC_IP=<your-server-ip>` to `.env` (run `curl -s ifconfig.me` on the server to find it).
+
 **Linux `host.docker.internal` fix:**
 Prometheus needs to scrape microservices running on the host. On Docker Desktop this resolves automatically; on Linux we add:
 ```yaml

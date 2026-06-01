@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-06-01 (MediaMTX auth ouverte en prod ; port WebRTC ICE UDP 8189 ; port comments 3006 exposé ; WHIP URL via réponse API)
+> Dernière mise à jour : 2026-06-01 (MediaMTX auth ouverte en prod ; port WebRTC ICE UDP 8189 ; port comments 3006 exposé ; WHIP URL via réponse API ; SERVER_PUBLIC_IP pour les candidats ICE WebRTC)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -101,6 +101,7 @@ Services externes gratuits
 | A Record | `www` | `188.166.197.25` | Automatic |
 | CNAME Record | `api` | `tiklivepro.me.` | Automatic |
 | CNAME Record | `hls` | `tiklivepro.me.` | Automatic |
+| CNAME Record | `webrtc` | `tiklivepro.me.` | Automatic |
 
 Vérifier la propagation (5–30 min) — **tous les enregistrements** doivent retourner `188.166.197.25` :
 ```bash
@@ -108,9 +109,10 @@ dig tiklivepro.me +short
 dig www.tiklivepro.me +short
 dig api.tiklivepro.me +short
 dig hls.tiklivepro.me +short
+dig webrtc.tiklivepro.me +short
 ```
 
-> **Erreur fréquente :** si l'un des sous-domaines retourne vide ou une erreur `NXDOMAIN`, l'enregistrement correspondant est absent dans Namecheap. Retournez dans **Advanced DNS** et ajoutez l'enregistrement manquant — les CNAME `api` et `hls` sont souvent oubliés.
+> **Erreur fréquente :** si l'un des sous-domaines retourne vide ou une erreur `NXDOMAIN`, l'enregistrement correspondant est absent dans Namecheap. Retournez dans **Advanced DNS** et ajoutez l'enregistrement manquant — les CNAME `api`, `hls` et `webrtc` sont souvent oubliés.
 
 ---
 
@@ -210,7 +212,16 @@ tiklivepro.me, www.tiklivepro.me {
 }
 
 api.tiklivepro.me {
-    reverse_proxy localhost:3000
+    handle /socket.io/* {
+        reverse_proxy localhost:3006
+    }
+    handle /stream-orchestrator/* {
+        uri strip_prefix /stream-orchestrator
+        reverse_proxy localhost:3009
+    }
+    handle {
+        reverse_proxy localhost:3000
+    }
 }
 
 hls.tiklivepro.me {
@@ -219,6 +230,15 @@ hls.tiklivepro.me {
         Access-Control-Allow-Origin  "*"
         Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
         Access-Control-Allow-Headers "Range"
+    }
+}
+
+webrtc.tiklivepro.me {
+    reverse_proxy localhost:8889
+    header {
+        Access-Control-Allow-Origin  "*"
+        Access-Control-Allow-Methods "GET, HEAD, POST, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type, Authorization"
     }
 }
 ```
@@ -385,6 +405,8 @@ Ces secrets servent à NextAuth (gestion des sessions côté serveur du frontend
 
 > **Pas de credentials MediaMTX.** MediaMTX n'interpole pas `$VAR` dans les champs `user:` / `pass:` du fichier de config YAML. Les deux configs (dev et prod) utilisent l'auth ouverte (`user: any`). La sécurité est assurée au niveau applicatif : seul le propriétaire authentifié d'une session connaît l'`ingestKey` UUID. Les ports 9997 (API REST) et 1936 (RTMP) ne sont pas exposés en dehors du réseau Docker.
 
+> **`SERVER_PUBLIC_IP` — pas de secret supplémentaire.** Le workflow utilise automatiquement `secrets.DROPLET_IP` comme valeur de `SERVER_PUBLIC_IP`. Cela permet à MediaMTX d'annoncer l'IP publique du serveur dans ses candidats ICE WebRTC, sans quoi le navigateur ne peut pas atteindre le port UDP 8189 et le flux WHIP échoue silencieusement après la négociation SDP. Aucune action requise si `DROPLET_IP` est déjà configuré.
+
 **Stripe**
 
 | Secret | Comment l'obtenir |
@@ -540,7 +562,7 @@ Le fichier `.env` est **recréé à chaque déploiement** depuis les secrets Git
 | Site web | `https://tiklivepro.me` |
 | API Gateway | `https://api.tiklivepro.me` |
 | HLS viewer (stream natif) | `https://hls.tiklivepro.me/live/<ingestKey>/index.m3u8` |
-| WebRTC viewer (stream natif) | `https://hls.tiklivepro.me/live/<ingestKey>` (port 8888) |
+| WHIP ingest (broadcaster) | `https://webrtc.tiklivepro.me/live/<ingestKey>/whip` |
 | Terms of Service | `https://tiklivepro.me/legal/terms` |
 | Privacy Policy | `https://tiklivepro.me/legal/privacy` |
 | OAuth Redirect (TikTok) | `https://api.tiklivepro.me/integrations/oauth/tiktok/callback` |
@@ -607,8 +629,9 @@ Cause : l'enregistrement DNS correspondant est absent dans Namecheap.
 
 ```bash
 # Vérifier quel enregistrement est manquant
-dig hls.tiklivepro.me +short   # doit retourner 188.166.197.25
+dig hls.tiklivepro.me +short      # doit retourner 188.166.197.25
 dig api.tiklivepro.me +short
+dig webrtc.tiklivepro.me +short
 ```
 
 Fix : **Namecheap > Domain List > Manage > Advanced DNS** — ajoutez l'enregistrement manquant :
@@ -617,6 +640,7 @@ Fix : **Namecheap > Domain List > Manage > Advanced DNS** — ajoutez l'enregist
 |------|------|-------|
 | CNAME Record | `hls` | `tiklivepro.me.` |
 | CNAME Record | `api` | `tiklivepro.me.` |
+| CNAME Record | `webrtc` | `tiklivepro.me.` |
 
 Attendez 5–30 min puis relancez le `dig`. Une fois le DNS propagé, Caddy émet automatiquement le certificat SSL Let's Encrypt pour le sous-domaine.
 
@@ -642,7 +666,15 @@ Si `/v3/paths/list` retourne `{"items":[]}` alors que la session est `live`, cel
 
 ### La session reste en statut `starting`
 
-Le passage à `live` ne se produit que quand le worker ffmpeg reçoit ses premières stats du flux RTMP. Un client externe (OBS, ffmpeg CLI) doit pousser sur `rtmp://<DROPLET_IP>:1935/live/<ingestKey>`. Récupérez la clé via `GET /stream/sessions/<id>/ingest`.
+Le passage à `live` ne se produit que quand le `MediaMtxStreamWatcher` du stream-orchestrator détecte un path actif sur MediaMTX (`GET /v3/paths/list` retourne un élément). Causes les plus fréquentes :
+
+**Streaming navigateur (WHIP) :**
+1. **Candidats ICE manquants** — cause la plus courante en production. MediaMTX tourne dans Docker et n'annonce que son IP interne (`172.x.x.x`) si `SERVER_PUBLIC_IP` n'est pas défini. Le navigateur ne peut alors pas atteindre le port UDP 8189 et la connexion WebRTC échoue silencieusement après une négociation SDP réussie. Vérifiez que `DROPLET_IP` est bien défini dans les secrets GitHub — le workflow en dérive automatiquement `SERVER_PUBLIC_IP`.
+2. **Port UDP 8189 bloqué** — vérifiez que le pare-feu du Droplet autorise le port `8189/udp` en entrée (DigitalOcean > Networking > Firewalls, ou `ufw allow 8189/udp`).
+3. **`MEDIAMTX_WEBRTC_URL` incorrect** — doit être `https://webrtc.tiklivepro.me`. Vérifiez dans la console du navigateur que le POST WHIP vers cette URL retourne bien un `201`.
+4. **Enregistrement DNS `webrtc` manquant** — `webrtc.tiklivepro.me` doit avoir un CNAME vers `tiklivepro.me.` dans Namecheap (voir Étape 3).
+
+**Streaming OBS/RTMP :** un client externe doit pousser sur `rtmp://<DROPLET_IP>:1935/live/<ingestKey>`. Récupérez la clé via `GET /stream-orchestrator/sessions/<id>/ingest`.
 
 ### Swap saturé
 ```bash

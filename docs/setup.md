@@ -103,6 +103,7 @@ Update values as needed — critical variables:
 | `MEDIAMTX_HLS_URL` | stream-orchestrator | **Public** HLS base URL returned to viewers. Default: `http://localhost:8888` (dev) · `https://hls.tiklivepro.me` (prod) |
 | `MEDIAMTX_WEBRTC_URL` | stream-orchestrator | **Public** WebRTC/WHIP base URL. Returned to the broadcaster's browser via the ingest API (`GET /sessions/:id/ingest` → `whipUrl`). Default: `http://localhost:8889` (dev) · `https://webrtc.tiklivepro.me` (prod). Must be HTTPS in production for browser camera access. |
 | `MEDIAMTX_API_URL` | stream-orchestrator | Internal MediaMTX REST API URL used by stream-orchestrator to detect live streams. Default: `http://localhost:9997` (dev) · **hardcoded** to `http://mediamtx:9997` in prod compose (do not override). |
+| `SERVER_PUBLIC_IP` | mediamtx (prod only) | The server's public IPv4 address (`curl -s ifconfig.me`). Passed to MediaMTX as `MTX_WEBRTCADDITIONALHOSTS` so ICE candidates advertise the public IP and browsers can reach UDP port 8189. In the deploy workflow this is set to `DROPLET_IP` — no separate secret needed if deploying via GitHub Actions. |
 | `NEXTAUTH_SECRET` | apps/web | Generate: `openssl rand -base64 32` |
 | `GOOGLE_CLIENT_ID` / `SECRET` | apps/web | From Google Cloud Console → Credentials |
 | `AUTH_SERVICE_INTERNAL_URL` | apps/web | Internal URL NextAuth uses to call the auth service |
@@ -355,10 +356,12 @@ curl http://localhost:9997/v3/paths/list  # list active stream paths (no auth ne
 ```
 If no paths appear, the stream hasn't arrived at MediaMTX yet. Common causes:
 - **Browser streaming (WHIP):** check that `MEDIAMTX_WEBRTC_URL` is set to the public HTTPS URL in production and that `webrtc.tiklivepro.me` has a DNS A record. The browser gets the WHIP URL from `GET /sessions/:id/ingest` (`whipUrl` field) — open the browser console to check for WHIP POST errors.
+- **ICE candidate misconfiguration:** MediaMTX runs in Docker and must be told the server's public IP via `SERVER_PUBLIC_IP` (passed as `MTX_WEBRTCADDITIONALHOSTS`). Without it, MediaMTX advertises its unreachable Docker-internal IP in ICE candidates and UDP media never arrives even when WHIP signalling succeeds. In production this is derived from `DROPLET_IP`; for manual deploys add `SERVER_PUBLIC_IP=$(curl -s ifconfig.me)` to `.env`.
 - **WebRTC ICE UDP:** confirm port `8189/udp` is exposed in docker-compose and not blocked by the host firewall — without it, browser WHIP media transport silently fails after a successful signalling handshake.
 - **OBS streaming:** confirm the OBS stream target is `rtmp://localhost:1935/live/<ingestKey>` and the stream-orchestrator RTMP server is up.
 
 **Session stays in `starting` status** — the session transitions to `live` only after the `MediaMtxStreamWatcher` detects a live path on MediaMTX. Check:
 1. A streaming client (browser WHIP or OBS) is actively pushing to the ingest endpoint.
 2. In production: `MEDIAMTX_API_URL=http://mediamtx:9997` (the watcher must reach the mediamtx container, not its own localhost).
-3. Retrieve the ingest URLs from `GET /stream-orchestrator/sessions/<id>/ingest` — the response includes `ingestUrl` (RTMP/OBS), `whipUrl` (browser WHIP endpoint), `hlsUrl` (viewer), and `status`.
+3. `SERVER_PUBLIC_IP` is set and MediaMTX is advertising the correct public IP in ICE candidates (see above).
+4. Retrieve the ingest URLs from `GET /stream-orchestrator/sessions/<id>/ingest` — the response includes `ingestUrl` (RTMP/OBS), `whipUrl` (browser WHIP endpoint), `hlsUrl` (viewer), and `status`.
