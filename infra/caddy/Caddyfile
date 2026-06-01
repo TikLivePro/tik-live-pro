@@ -13,7 +13,24 @@ tiklivepro.me, www.tiklivepro.me {
 }
 
 api.tiklivepro.me {
-    reverse_proxy localhost:3000
+    # WebSocket connections from the comments socket.io client go directly
+    # to the comments service — the API gateway's fetch() proxy does not
+    # handle WebSocket upgrades.
+    handle /socket.io/* {
+        reverse_proxy localhost:3006
+    }
+
+    # Stream orchestrator is an internal service; expose it under a
+    # /stream-orchestrator prefix so the browser can reach it without a
+    # separate subdomain. The prefix is stripped before forwarding.
+    handle /stream-orchestrator/* {
+        uri strip_prefix /stream-orchestrator
+        reverse_proxy localhost:3009
+    }
+
+    handle {
+        reverse_proxy localhost:3000
+    }
 }
 
 hls.tiklivepro.me {
@@ -22,5 +39,14 @@ hls.tiklivepro.me {
         Access-Control-Allow-Origin  "*"
         Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
         Access-Control-Allow-Headers "Range"
+    }
+}
+
+webrtc.tiklivepro.me {
+    reverse_proxy localhost:8889
+    header {
+        Access-Control-Allow-Origin  "*"
+        Access-Control-Allow-Methods "GET, HEAD, POST, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type, Authorization"
     }
 }

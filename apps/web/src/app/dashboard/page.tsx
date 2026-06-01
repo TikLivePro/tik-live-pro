@@ -33,22 +33,7 @@ export default function DashboardPage(): React.ReactElement {
       <header className="border-b border-border">
         <div className="container mx-auto flex h-14 items-center justify-between px-4">
           <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand">
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="9.5" />
-                <circle cx="12" cy="12" r="3.5" />
-              </svg>
-            </span>
+            <img src="/logo.png" alt="TikLive Pro" className="h-7 w-7 object-contain" />
             <span className="text-base font-bold tracking-tight sm:text-lg">TikLive Pro</span>
           </div>
           <div className="flex items-center gap-2">

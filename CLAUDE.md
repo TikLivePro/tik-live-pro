@@ -305,6 +305,7 @@ Never check subscription status directly in other services — call the billing 
 - Platform OAuth tokens are encrypted at rest using AES-256-GCM before storage
 - All user input is validated with Zod schemas before reaching use cases
 - Rate limiting is applied at the API Gateway level
+- **Downstream JWT verification**: the API Gateway verifies the JWT for admission but forwards the raw `Authorization: Bearer` header unchanged — it does **not** inject a decoded user header. Any downstream service handler that needs the caller's identity (`request.user.sub`) must call `await request.jwtVerify()` at the top of the handler before accessing `request.user`.
 
 ## Documentation Maintenance — MANDATORY RULE
 
@@ -316,6 +317,7 @@ Never check subscription status directly in other services — call the billing 
 |-------------|------------------|
 | New service or port change | `docs/architecture.md` (Service Catalogue, Deployment Architecture) · `docs/setup.md` (ports table) |
 | New or changed NATS stream / event | `docs/events.md` (Stream Catalogue, Consumer Catalogue, Event Reference) · `infra/nats/jetstream-config.yaml` |
+| Caddyfile routing change | `docs/infra.md` (Caddy section) |
 | New Docker file, ARG, or compose change | `docs/infra.md` (Docker section) |
 | Kubernetes manifest added or changed | `docs/infra.md` (Kubernetes section) |
 | Prometheus scrape target added | `docs/observability.md` (Prometheus → Scrape jobs) · `infra/observability/prometheus.yml` |

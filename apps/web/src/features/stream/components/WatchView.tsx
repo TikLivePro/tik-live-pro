@@ -38,12 +38,7 @@ function FacebookIcon(): React.ReactElement {
 }
 
 function LogoMark(): React.ReactElement {
-  return (
-    <svg className="h-5 w-5" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <rect width="32" height="32" rx="8" fill="hsl(4 82% 55%)" />
-      <path d="M10 22V10l12 12V10" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  return <img src="/logo.png" alt="TikLive Pro" className="h-5 w-5 object-contain" />;
 }
 
 const POLL_INTERVAL = 5000;

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import { API_BASE, MEDIAMTX_WEBRTC_URL, STREAM_ORCHESTRATOR_URL, apiFetch } from '@/lib/api';
+import { API_BASE, MEDIAMTX_WEBRTC_URL, apiFetch } from '@/lib/api';
 import { useStream } from '../hooks/useStream';
 import { useElapsedTime } from '../hooks/useElapsedTime';
 import { useCameraStream } from '../hooks/useCameraStream';
@@ -91,7 +91,7 @@ export function FullscreenLiveView(): React.ReactElement {
       let ingestKey: string | null = null;
       while (!cancelled && !ingestKey) {
         try {
-          const res = await apiFetch(`${STREAM_ORCHESTRATOR_URL}/sessions/${sessionId}/ingest`);
+          const res = await apiFetch(`${API_BASE}/stream-orchestrator/sessions/${sessionId}/ingest`);
           if (res.ok) {
             const data = (await res.json()) as { ingestKey: string };
             ingestKey = data.ingestKey;

@@ -38,10 +38,13 @@ const envSchema = baseEnvSchema.extend({
   // MEDIAMTX_HLS_URL:    public HLS URL — browsers watch the stream here
   // MEDIAMTX_WEBRTC_URL: public WebRTC URL — browsers push WHIP here
   // MEDIAMTX_API_URL:    internal REST API — stream-orchestrator polls for new paths
+  // MEDIAMTX_API_USER / MEDIAMTX_API_PASS — credentials for the MediaMTX REST API
   MEDIAMTX_RTMP_URL: z.string().default('rtmp://localhost:1936'),
   MEDIAMTX_HLS_URL: z.string().default('http://localhost:8888'),
   MEDIAMTX_WEBRTC_URL: z.string().default('http://localhost:8889'),
   MEDIAMTX_API_URL: z.string().default('http://localhost:9997'),
+  MEDIAMTX_API_USER: z.string().default(''),
+  MEDIAMTX_API_PASS: z.string().default(''),
 });
 
 const env = parseEnv(envSchema);
@@ -125,6 +128,8 @@ async function main(): Promise<void> {
     (ingestKey) => void streamArrivalHandler.execute(ingestKey),
     (ingestKey) => void streamArrivalHandler.stopWorker(ingestKey),
     logger,
+    env.MEDIAMTX_API_USER,
+    env.MEDIAMTX_API_PASS,
   );
   mediaMtxWatcher.start();
 

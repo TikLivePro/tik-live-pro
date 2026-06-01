@@ -72,6 +72,9 @@
 #   # MEDIAMTX_HLS_URL is the public URL browsers use to watch HLS streams.
 #   # Point it at the Caddy-fronted subdomain so viewers get HTTPS.
 #   MEDIAMTX_HLS_URL=https://hls.tiklivepro.me
+#   # MEDIAMTX_WEBRTC_URL is the public URL the broadcaster's browser POSTs to (WHIP).
+#   # Must be HTTPS; add a Caddy entry: webrtc.tiklivepro.me → localhost:8889.
+#   MEDIAMTX_WEBRTC_URL=https://webrtc.tiklivepro.me
 #   # MEDIAMTX_API_USER / MEDIAMTX_API_PASS — credentials for the MediaMTX REST API
 #   # (port 9997). Required in production; use a strong password (≥ 32 chars).
 #   MEDIAMTX_API_USER=admin
@@ -476,6 +479,10 @@ services:
       FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:?FACEBOOK_APP_SECRET is required}
       MEDIAMTX_RTMP_URL: rtmp://mediamtx:1936
       MEDIAMTX_HLS_URL: ${MEDIAMTX_HLS_URL:-https://hls.tiklivepro.me}
+      MEDIAMTX_WEBRTC_URL: ${MEDIAMTX_WEBRTC_URL:-https://webrtc.tiklivepro.me}
+      MEDIAMTX_API_URL: http://mediamtx:9997
+      MEDIAMTX_API_USER: ${MEDIAMTX_API_USER:?MEDIAMTX_API_USER is required}
+      MEDIAMTX_API_PASS: ${MEDIAMTX_API_PASS:?MEDIAMTX_API_PASS is required}
       NODE_OPTIONS: "--max-old-space-size=192"
     ports:
       - "3009:3009"

@@ -1,6 +1,6 @@
 # TikLivePro — Infrastructure Guide
 
-> **Last updated:** 2026-06-01 (MediaMTX REST API auth — prod config + credentials; mediamtx-deployment.yaml added)
+> **Last updated:** 2026-06-01 (webrtc.tiklivepro.me Caddy entry; MEDIAMTX_WEBRTC_URL + MEDIAMTX_API_URL wired into stream-orchestrator; MediaMtxStreamWatcher Basic-auth fix; api.tiklivepro.me path routing for socket.io and stream-orchestrator)
 > Update whenever a Dockerfile, compose file, Kubernetes manifest, or build script changes.
 
 ## Table of Contents
@@ -25,7 +25,7 @@ infra/
 │   └── postgres/
 │       └── init.sql                    # Creates all 9 service databases on first boot
 ├── caddy/
-│   └── Caddyfile                       # Caddy reverse proxy — tiklivepro.me, api., hls. subdomains
+│   └── Caddyfile                       # Caddy reverse proxy — tiklivepro.me, api., hls., webrtc. subdomains
 ├── mediamtx/
 │   └── mediamtx.yml                    # MediaMTX config — RTMP :1936, HLS :8888, WebRTC :8889
 ├── kubernetes/
@@ -197,13 +197,15 @@ Config files:
 
 Environment variables wired in stream-orchestrator (`.env`):
 ```
-MEDIAMTX_RTMP_URL=rtmp://localhost:1936   # internal, used by ffmpeg workers
-MEDIAMTX_HLS_URL=http://localhost:8888    # public, returned to the browser
+MEDIAMTX_RTMP_URL=rtmp://localhost:1936   # internal, ffmpeg workers push here (container: rtmp://mediamtx:1936)
+MEDIAMTX_HLS_URL=http://localhost:8888    # public, HLS URL returned to viewers
+MEDIAMTX_WEBRTC_URL=http://localhost:8889 # public, WHIP URL returned to the broadcaster's browser
+MEDIAMTX_API_URL=http://localhost:9997    # internal REST API (container: http://mediamtx:9997)
 MEDIAMTX_API_USER=                        # leave blank in dev (open auth)
 MEDIAMTX_API_PASS=                        # leave blank in dev (open auth)
 ```
 
-In production set `MEDIAMTX_HLS_URL` to the public hostname (e.g. `https://hls.tiklivepro.me`) and provide non-empty `MEDIAMTX_API_USER` / `MEDIAMTX_API_PASS` (≥ 32-char password recommended).
+In production `MEDIAMTX_API_URL` must point at the mediamtx container (`http://mediamtx:9997`), not localhost. `MEDIAMTX_WEBRTC_URL` must be the **public HTTPS** URL browsers POST WHIP offers to (e.g. `https://webrtc.tiklivepro.me`). Provide non-empty `MEDIAMTX_API_USER` / `MEDIAMTX_API_PASS` (≥ 32-char password recommended) — the prod mediamtx config requires HTTP Basic Auth on the REST API and stream-orchestrator's `MediaMtxStreamWatcher` sends these credentials on every poll.
 
 **Linux `host.docker.internal` fix:**
 Prometheus needs to scrape microservices running on the host. On Docker Desktop this resolves automatically; on Linux we add:
@@ -225,11 +227,14 @@ Caddy runs as a **systemd service on the host** (not in Docker) and terminates T
 
 Config file: `infra/caddy/Caddyfile` — versioned in the repo, auto-deployed by the CI workflow on every tag release (`cp` + `systemctl reload caddy`).
 
-| Subdomain | Forwards to | Notes |
-|-----------|-------------|-------|
+| Subdomain / Path | Forwards to | Notes |
+|------------------|-------------|-------|
 | `tiklivepro.me`, `www.tiklivepro.me` | `localhost:3010` | Next.js frontend |
-| `api.tiklivepro.me` | `localhost:3000` | API Gateway (REST + WebSocket) |
+| `api.tiklivepro.me/socket.io/*` | `localhost:3006` | Comments socket.io WebSocket — routed directly to the comments service because the API gateway's `fetch()` proxy does not handle WebSocket upgrades |
+| `api.tiklivepro.me/stream-orchestrator/*` | `localhost:3009` (prefix stripped) | Stream orchestrator REST API — exposes the internal service under a path prefix so browsers can reach `GET /sessions/:id/ingest` without a separate subdomain |
+| `api.tiklivepro.me` (all other paths) | `localhost:3000` | API Gateway (REST) |
 | `hls.tiklivepro.me` | `localhost:8888` | MediaMTX HLS relay. CORS headers added: `Allow-Origin *`, `Allow-Methods GET/HEAD/OPTIONS`, `Allow-Headers Range` |
+| `webrtc.tiklivepro.me` | `localhost:8889` | MediaMTX WebRTC/WHIP endpoint. Broadcasters' browsers POST SDP offers here to start a WHIP stream. CORS headers added: `Allow-Origin *`, `Allow-Methods GET/HEAD/POST/OPTIONS`, `Allow-Headers Content-Type/Authorization`. **DNS A record required**: point `webrtc.tiklivepro.me` at the same droplet IP as the other subdomains. |
 
 TLS certificates are provisioned and renewed automatically via Let's Encrypt — no manual configuration needed once DNS A records point to the droplet.
 
@@ -262,11 +267,14 @@ Features:
 
 **Required env vars for MediaMTX in production:**
 ```
-MEDIAMTX_HLS_URL=https://hls.tiklivepro.me   # public hostname browsers use for HLS
-MEDIAMTX_API_USER=admin                       # REST API username
-MEDIAMTX_API_PASS=<strong-random-password>    # REST API password (≥ 32 chars)
+MEDIAMTX_HLS_URL=https://hls.tiklivepro.me       # public HLS URL browsers use to watch streams
+MEDIAMTX_WEBRTC_URL=https://webrtc.tiklivepro.me # public WHIP URL broadcaster's browser POSTs to
+MEDIAMTX_API_USER=admin                           # REST API username
+MEDIAMTX_API_PASS=<strong-random-password>        # REST API password (≥ 32 chars)
 ```
-Set these in your `.env.prod` or shell before running `make prod-up`. The `MEDIAMTX_RTMP_URL` defaults to `rtmp://mediamtx:1936` (container-to-container) and does not need to be set. The prod compose uses `mediamtx.prod.yml` (not the dev config) and will refuse to start if either `MEDIAMTX_API_USER` or `MEDIAMTX_API_PASS` is unset.
+Set these in your `.env.prod` or shell before running `make prod-up`. The `MEDIAMTX_RTMP_URL` defaults to `rtmp://mediamtx:1936` (container-to-container) and does not need to be set. `MEDIAMTX_API_URL` is hardcoded to `http://mediamtx:9997` in the compose file and does not need to be set. The prod compose uses `mediamtx.prod.yml` (not the dev config) and will refuse to start if either `MEDIAMTX_API_USER` or `MEDIAMTX_API_PASS` is unset.
+
+`MEDIAMTX_WEBRTC_URL` must be HTTPS so that browsers grant camera/microphone access for WebRTC. Requires a DNS A record for `webrtc.tiklivepro.me` → droplet IP and the Caddy entry above.
 
 ```bash
 # Start (requires env vars or .env.prod file)

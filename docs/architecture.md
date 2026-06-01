@@ -1,6 +1,6 @@
 # TikLivePro — Architecture Overview
 
-> **Last updated:** 2026-05-31 (added MediaMTX platform-native streaming relay)
+> **Last updated:** 2026-06-01 (added MediaMTX platform-native streaming relay; document downstream JWT verification pattern)
 > Keep this file up-to-date whenever services, ports, infrastructure, or data flows change.
 
 ## Table of Contents
@@ -186,7 +186,7 @@ src/
 | Authentication | JWT access tokens (15 min TTL) + single-use refresh tokens (30 days, hashed in DB) |
 | Platform token storage | AES-256-GCM encrypted before PostgreSQL insertion; `TOKEN_ENCRYPTION_KEY` ≥ 32 chars |
 | Rate limiting | API Gateway: 500 req/min global, 100 req/min on `/auth/*` endpoints |
-| Authorization | RBAC roles embedded in JWT; checked at Gateway and service level |
+| Authorization | RBAC roles embedded in JWT; the Gateway verifies the JWT for admission (all protected prefixes). Downstream services that need the caller's identity (e.g. to scope a DB query to `userId`) must also call `await request.jwtVerify()` at the top of the route handler — the Gateway does not forward a decoded user header, it forwards the raw `Authorization: Bearer` header unchanged. |
 | Input validation | Zod schemas at the HTTP interface layer, before use-case invocation |
 | Secret management | Kubernetes Secrets in production; never commit `.env` with real values |
 | TLS | Ingress terminates TLS; all in-cluster traffic is plain HTTP |

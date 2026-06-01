@@ -12,13 +12,18 @@ interface MediaMtxPathsResponse {
 export class MediaMtxStreamWatcher {
   private readonly knownPaths = new Set<string>();
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
+  private readonly authHeader: string;
 
   constructor(
     private readonly apiUrl: string,
     private readonly onStreamArrived: (ingestKey: string) => void,
     private readonly onStreamEnded: (ingestKey: string) => void,
     private readonly logger: Logger,
-  ) {}
+    apiUser: string,
+    apiPass: string,
+  ) {
+    this.authHeader = `Basic ${Buffer.from(`${apiUser}:${apiPass}`).toString('base64')}`;
+  }
 
   start(): void {
     this.intervalHandle = setInterval(() => void this.poll(), 1000);
@@ -33,7 +38,9 @@ export class MediaMtxStreamWatcher {
 
   private async poll(): Promise<void> {
     try {
-      const res = await fetch(`${this.apiUrl}/v3/paths/list`);
+      const res = await fetch(`${this.apiUrl}/v3/paths/list`, {
+        headers: { Authorization: this.authHeader },
+      });
       if (!res.ok) return;
       const data = (await res.json()) as MediaMtxPathsResponse;
 

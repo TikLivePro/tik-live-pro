@@ -9,7 +9,6 @@ import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import { cn } from '@/lib/utils';
 import {
-  BroadcastIcon,
   LogInIcon,
   EyeIcon,
   EyeOffIcon,
@@ -68,8 +67,8 @@ export function LoginView() {
       <div className="w-full max-w-sm">
         <div className="bg-card rounded-2xl p-8 shadow-2xl border border-border/50">
           <div className="flex flex-col items-center mb-8">
-            <div className="w-16 h-16 bg-brand rounded-2xl flex items-center justify-center mb-5 shadow-lg shadow-brand/25">
-              <BroadcastIcon className="w-8 h-8 text-white" />
+            <div className="w-16 h-16 rounded-2xl overflow-hidden mb-5 shadow-lg shadow-brand/25">
+              <img src="/logo.png" alt="TikLive Pro" className="w-full h-full object-contain" />
             </div>
             <h1 className="text-2xl font-bold text-foreground tracking-tight">TikLive Pro</h1>
             <p className="text-muted-foreground text-sm mt-1.5">

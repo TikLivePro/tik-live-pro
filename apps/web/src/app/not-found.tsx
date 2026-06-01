@@ -17,16 +17,7 @@ export default async function NotFound(): Promise<React.ReactElement> {
 
       {/* Brand mark */}
       <div className="relative z-10 mb-8 flex items-center gap-2">
-        <svg className="h-6 w-6" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-          <rect width="32" height="32" rx="8" fill="hsl(4 82% 55%)" />
-          <path
-            d="M10 22V10l12 12V10"
-            stroke="white"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <img src="/logo.png" alt="TikLive Pro" className="h-6 w-6 object-contain" />
         <span className="text-base font-bold tracking-tight text-foreground">TikLivePro</span>
       </div>
 

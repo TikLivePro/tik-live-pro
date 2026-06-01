@@ -11,6 +11,7 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 export const metadata: Metadata = {
   title: 'TikLivePro — Multi-Platform Live Streaming',
   description: 'Stream simultaneously to TikTok, Facebook and more from one dashboard.',
+  icons: { icon: '/logo.png', apple: '/logo.png' },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
