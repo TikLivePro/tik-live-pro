@@ -403,6 +403,8 @@ services:
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?INTERNAL_API_KEY is required}
       COMMENT_POLL_INTERVAL_MS: "2000"
       NODE_OPTIONS: "--max-old-space-size=128"
+    ports:
+      - "3006:3006"   # Socket.IO WebSocket — Caddy reverse-proxies this as wss://api.tiklivepro.me/socket.io
     depends_on:
       nats:
         condition: service_healthy

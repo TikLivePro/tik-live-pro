@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import { API_BASE, MEDIAMTX_WEBRTC_URL, apiFetch } from '@/lib/api';
+import { API_BASE, apiFetch } from '@/lib/api';
 import { useStream } from '../hooks/useStream';
 import { useElapsedTime } from '../hooks/useElapsedTime';
 import { useCameraStream } from '../hooks/useCameraStream';
@@ -88,20 +88,20 @@ export function FullscreenLiveView(): React.ReactElement {
       const sessionId = currentSession?.id as LiveSessionId;
 
       // 1. Poll stream-orchestrator directly until the ingest slot is ready (status = waiting_for_stream).
-      let ingestKey: string | null = null;
-      while (!cancelled && !ingestKey) {
+      let whipUrl: string | null = null;
+      while (!cancelled && !whipUrl) {
         try {
           const res = await apiFetch(`${API_BASE}/stream-orchestrator/sessions/${sessionId}/ingest`);
           if (res.ok) {
-            const data = (await res.json()) as { ingestKey: string };
-            ingestKey = data.ingestKey;
+            const data = (await res.json()) as { ingestKey: string; whipUrl: string };
+            whipUrl = data.whipUrl;
           }
         } catch {
           // stream-orchestrator not yet ready — keep polling
         }
-        if (!ingestKey) await new Promise<void>((r) => setTimeout(r, 1500));
+        if (!whipUrl) await new Promise<void>((r) => setTimeout(r, 1500));
       }
-      if (cancelled || !ingestKey) return;
+      if (cancelled || !whipUrl) return;
 
       // 2. Wait for camera stream to be ready (getUserMedia is async).
       let stream: MediaStream | null = null;
@@ -112,7 +112,7 @@ export function FullscreenLiveView(): React.ReactElement {
       if (cancelled || !stream) return;
 
       whipStartedRef.current = true;
-      await connectWhip(`${MEDIAMTX_WEBRTC_URL}/live/${ingestKey}/whip`, stream);
+      await connectWhip(whipUrl, stream);
     }
 
     void tryStartWhip();

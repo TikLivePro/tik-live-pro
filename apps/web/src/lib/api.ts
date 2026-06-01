@@ -2,7 +2,6 @@ import { useAuthStore } from '@/features/auth/store/auth.store';
 
 export const API_BASE = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3000';
 export const COMMENTS_WS_URL = process.env['NEXT_PUBLIC_COMMENTS_WS_URL'] ?? 'http://localhost:3006';
-export const MEDIAMTX_WEBRTC_URL = process.env['NEXT_PUBLIC_MEDIAMTX_WEBRTC_URL'] ?? 'http://localhost:8889';
 
 // Deduplicates concurrent refresh calls so only one refresh request is in-flight at a time.
 // Token rotation means replaying an old refresh token returns 401, so serializing is required.
