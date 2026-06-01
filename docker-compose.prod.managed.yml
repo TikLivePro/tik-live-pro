@@ -206,6 +206,11 @@ services:
     image: bluenviron/mediamtx:latest
     volumes:
       - ./infra/mediamtx/mediamtx.prod.yml:/mediamtx.yml:ro
+    environment:
+      # Tell MediaMTX to advertise the server's public IP in ICE candidates so
+      # browsers can reach the UDP port from the internet. Without this, MediaMTX
+      # only advertises its Docker-internal IP (172.x.x.x), which is unreachable.
+      MTX_WEBRTCADDITIONALHOSTS: ${SERVER_PUBLIC_IP:?SERVER_PUBLIC_IP is required}
     ports:
       - "8888:8888"     # HLS — Caddy reverse-proxies this as https://hls.tiklivepro.me
       - "8889:8889"     # WebRTC HTTP signalling
