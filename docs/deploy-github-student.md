@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-05-31 (Caddy system service, auto-deploy Caddyfile, CORS Range header, DNS NXDOMAIN troubleshooting)
+> Dernière mise à jour : 2026-06-01 (MediaMTX REST API auth — MEDIAMTX_API_USER / MEDIAMTX_API_PASS requis en production)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -381,6 +381,8 @@ Ces secrets servent à NextAuth (gestion des sessions côté serveur du frontend
 | Secret | Valeur pour la prod |
 |--------|-------------------|
 | `MEDIAMTX_HLS_URL` | `https://hls.tiklivepro.me` — URL publique Caddy-frontée que les navigateurs utilisent pour charger les segments HLS. Doit correspondre exactement au sous-domaine configuré dans le Caddyfile. |
+| `MEDIAMTX_API_USER` | Identifiant pour l'API REST MediaMTX (port 9997). Exemple : `admin`. Utilisé par stream-orchestrator pour appeler l'API et par MediaMTX pour valider les connexions. |
+| `MEDIAMTX_API_PASS` | Mot de passe pour l'API REST MediaMTX. Utiliser une valeur forte (≥ 32 caractères). Générer : `openssl rand -base64 32`. |
 
 **Stripe**
 
@@ -625,11 +627,11 @@ Vérifiez l'ordre de cause le plus probable :
 # 1. MediaMTX est-il en cours d'exécution ?
 docker compose -f /opt/tiklivepro/docker-compose.prod.managed.yml ps mediamtx
 
-# 2. Y a-t-il un stream actif ?
-curl https://hls.tiklivepro.me/v3/paths/list
+# 2. Y a-t-il un stream actif ? (l'API nécessite un Basic Auth en prod)
+curl -u "$MEDIAMTX_API_USER:$MEDIAMTX_API_PASS" http://localhost:9997/v3/paths/list
 
 # 3. Caddy forward-il bien le port 8888 ?
-curl http://localhost:8888/v3/paths/list
+curl http://localhost:8888/index.m3u8
 
 # 4. Les logs MediaMTX montrent-ils une connexion RTMP entrant ?
 docker compose -f /opt/tiklivepro/docker-compose.prod.managed.yml logs mediamtx --tail=50

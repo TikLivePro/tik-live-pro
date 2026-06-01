@@ -108,8 +108,11 @@ services:
     ports:
       - "4317:4317"   # OTLP gRPC — services push traces here
       - "4318:4318"   # OTLP HTTP — alternative transport
-      - "8888:8888"   # Collector self-metrics (scraped by Prometheus)
-      - "8889:8889"   # Prometheus exporter endpoint
+      # NOTE: host ports 8888/8889 are owned by mediamtx (HLS + WebRTC).
+      # Prometheus scrapes these over the internal Docker network (otel-collector:8889)
+      # so the host-side port number doesn't matter for observability to work.
+      - "18888:8888"  # Collector self-metrics
+      - "18889:8889"  # Prometheus exporter endpoint
     depends_on:
       - jaeger
     restart: unless-stopped
@@ -159,10 +162,11 @@ services:
     volumes:
       - ./infra/mediamtx/mediamtx.yml:/mediamtx.yml:ro
     ports:
-      - "1936:1936"   # RTMP input — ffmpeg workers push here
-      - "8888:8888"   # HLS output — browser viewers read from here
-      - "8889:8889"   # WebRTC output
-      - "9997:9997"   # REST API
+      - "1936:1936"       # RTMP input — ffmpeg workers push here
+      - "8888:8888"       # HLS output — browser viewers read from here
+      - "8889:8889"       # WebRTC HTTP (WHIP/WHEP signalling)
+      - "8189:8189/udp"   # WebRTC ICE UDP — must be mapped for browser streams to flow
+      - "9997:9997"       # REST API
     restart: unless-stopped
 
 volumes:

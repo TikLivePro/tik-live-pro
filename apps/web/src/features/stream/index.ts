@@ -21,6 +21,8 @@ export { SessionHistory } from './components/SessionHistory';
 export { useStream } from './hooks/useStream';
 export { useElapsedTime } from './hooks/useElapsedTime';
 export { useCameraStream } from './hooks/useCameraStream';
+export { useWhipStream } from './hooks/useWhipStream';
+export type { WhipState } from './hooks/useWhipStream';
 export { useSessionHistory } from './hooks/useSessionHistory';
 export { useActiveSession } from './hooks/useActiveSession';
 export { useStreamStore } from './store/stream.store';

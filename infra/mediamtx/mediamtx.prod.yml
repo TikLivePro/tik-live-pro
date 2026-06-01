@@ -1,16 +1,7 @@
-# MediaMTX configuration — platform-native streaming relay
-# Go binary, ~5 MB RAM idle, near-zero CPU (pure relay, no transcoding)
-#
-# Roles in TikLivePro:
-#   - Receives RTMP relay from the stream-orchestrator ffmpeg worker
-#   - Serves HLS to browser viewers at /live/{ingestKey}/index.m3u8
-#   - Serves WebRTC to browser viewers (bonus, zero-latency preview)
-#
-# Ports:
-#   1936  RTMP input  (stream-orchestrator pushes here)
-#   8888  HLS output  (browser viewers read from here)
-#   8889  WebRTC      (optional low-latency viewer)
-#   9997  REST API    (management / health)
+# MediaMTX configuration — production
+# Identical to mediamtx.yml except auth requires credentials from env vars:
+#   MEDIAMTX_API_USER  — API/management username
+#   MEDIAMTX_API_PASS  — API/management password (min 32 chars recommended)
 
 logLevel: info
 logDestinations: [stdout]
@@ -30,17 +21,11 @@ hlsPartDuration: 200ms
 
 # ── WebRTC ────────────────────────────────────────────────────────────────────
 webrtcAddress: :8889
-# Advertise 127.0.0.1 so the browser (on the Docker host) can reach MediaMTX
-# through the mapped UDP port. Required when MediaMTX runs inside Docker.
-webrtcAdditionalHosts: [127.0.0.1]
-# Fix WebRTC to a single mappable UDP port instead of random ephemeral ports.
-webrtcICEUDPMuxAddress: :8189
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
-# Accept any username/password — dev only
 authInternalUsers:
-  - user: any
-    pass:
+  - user: $MEDIAMTX_API_USER
+    pass: $MEDIAMTX_API_PASS
     ips: []
     permissions:
       - action: api
@@ -52,12 +37,3 @@ authInternalUsers:
 # ── REST API ──────────────────────────────────────────────────────────────────
 api: true
 apiAddress: :9997
-
-# ── Paths ─────────────────────────────────────────────────────────────────────
-# Allow any dynamically-created path (browser WHIP publisher, RTMP relay, etc.)
-# NOTE: `all_others:` with no value parses as null in Go, causing path lookups
-# to return nil and every WHIP/RTMP connection to fail with "not configured".
-# The explicit `source: publisher` forces a non-nil PathConf struct.
-paths:
-  all_others:
-    source: publisher

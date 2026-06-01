@@ -4,7 +4,7 @@ import fastifyCors from '@fastify/cors';
 import fastifyHelmet from '@fastify/helmet';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
-import fastifyWebsocket from '@fastify/websocket';
+import { Server as SocketIOServer } from 'socket.io';
 import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { z } from 'zod';
@@ -14,7 +14,7 @@ import { NatsJetStreamClient, ensureStreams, Subjects } from '@tik-live-pro/even
 import type { SessionCreatedPayload, CommentReceivedPayload } from '@tik-live-pro/events';
 import { StringCodec, consumerOpts, createInbox } from 'nats';
 import { AdapterRegistry, TikTokAdapter, FacebookAdapter } from '@tik-live-pro/platform-adapters';
-import { registerCommentsRoutes, broadcastComment } from './interfaces/http/comments.routes.js';
+import { registerCommentsRoutes, broadcastComment, setIo } from './interfaces/http/comments.routes.js';
 import { CommentPoller } from './application/comment-poller.js';
 import { CommentPoster } from './application/comment-poster.js';
 import { SessionRegistry } from './application/session-registry.js';
@@ -170,7 +170,6 @@ async function bootstrap(): Promise<void> {
   await fastify.register(fastifyHelmet);
   await fastify.register(fastifyCors, { origin: true });
   await fastify.register(fastifyJwt, { secret: env.JWT_SECRET });
-  await fastify.register(fastifyWebsocket);
 
   await fastify.register(fastifySwagger, {
     openapi: {
@@ -237,6 +236,22 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
 
   registerCommentsRoutes(fastify, { db, poster: commentPoster });
 
+  // Socket.io must be attached before fastify.listen() so its upgrade listener
+  // is registered on the Node.js HTTP server before any connections arrive.
+  const io = new SocketIOServer(fastify.server as import('node:http').Server, {
+    cors: { origin: true },
+    transports: ['websocket'],
+  });
+
+  io.on('connection', (socket) => {
+    const { sessionId } = socket.handshake.query as { sessionId?: string };
+    if (!sessionId) { socket.disconnect(); return; }
+    void socket.join(sessionId);
+    logger.info({ sessionId }, 'Comment client connected via Socket.io');
+  });
+
+  setIo(io);
+
   fastify.get(
     '/health',
     {
@@ -277,6 +292,7 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
   logger.info({ port: env.PORT }, 'Comments service listening — docs at /docs');
 
   const shutdown = async (): Promise<void> => {
+    io.close();
     commentPoller.stopAll('' as LiveSessionId);
     await fastify.close();
     await nats.drain();

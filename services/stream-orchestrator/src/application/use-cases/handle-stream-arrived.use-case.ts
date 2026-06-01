@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { IStreamSessionRepository } from '../../domain/repositories/stream-session.repository.js';
 import type { StreamWorkerFactory, IStreamWorker, StreamWorkerStats } from '../ports/stream-worker.port.js';
 import type { StreamEventPublisher } from '../../infrastructure/nats/stream-event-publisher.js';
-import { DestinationStatus } from '@tik-live-pro/shared-types';
+import { DestinationStatus, SocialPlatform as SP } from '@tik-live-pro/shared-types';
 import type { Logger } from '@tik-live-pro/logger';
 
 export class HandleStreamArrivedUseCase {
@@ -12,7 +12,7 @@ export class HandleStreamArrivedUseCase {
     private readonly sessionRepo: IStreamSessionRepository,
     private readonly eventPublisher: StreamEventPublisher,
     private readonly workerFactory: StreamWorkerFactory,
-    private readonly localRtmpBase: string,
+    private readonly mediaMtxRtmpBase: string,
     private readonly mediaMtxHlsUrl: string,
     private readonly logger: Logger,
   ) {}
@@ -29,12 +29,36 @@ export class HandleStreamArrivedUseCase {
       return;
     }
 
-    const connectingDests = session.destinations.filter(
-      (d) => d.status === DestinationStatus.CONNECTING && d.rtmpDestination !== null,
+    // The stream is already in MediaMTX (browser pushed via WHIP or OBS via RTMP).
+    // Mark the PLATFORM destination LIVE immediately — no ffmpeg relay needed for it.
+    const platformDest = session.destinations.find(
+      (d) => d.platform === SP.PLATFORM && d.status === DestinationStatus.CONNECTING,
+    );
+    if (platformDest) {
+      session.markDestinationLive(platformDest.socialAccountId);
+      await this.eventPublisher.destinationStatusChanged(
+        session.sessionId,
+        platformDest.socialAccountId,
+        platformDest.platform,
+        DestinationStatus.CONNECTING,
+        DestinationStatus.LIVE,
+        null,
+        randomUUID(),
+      );
+    }
+
+    // Social destinations that need ffmpeg to relay from MediaMTX → platform RTMP.
+    const socialDests = session.destinations.filter(
+      (d) => d.platform !== SP.PLATFORM && d.status === DestinationStatus.CONNECTING && d.rtmpDestination !== null,
     );
 
-    if (connectingDests.length === 0) {
-      this.logger.warn({ sessionId: session.sessionId }, 'No connecting destinations when stream arrived');
+    if (socialDests.length === 0) {
+      // No social accounts — go live immediately (HLS is already available from MediaMTX).
+      session.markLive();
+      const hlsUrl = `${this.mediaMtxHlsUrl}/live/${ingestKey}/index.m3u8`;
+      await this.eventPublisher.sessionLive(session.sessionId, session.userId, hlsUrl, randomUUID());
+      await this.sessionRepo.update(session);
+      this.logger.info({ sessionId: session.sessionId }, 'Session live (platform-only, no social destinations)');
       return;
     }
 
@@ -46,7 +70,7 @@ export class HandleStreamArrivedUseCase {
       void (async () => {
         if (firstStats) {
           firstStats = false;
-          for (const dest of connectingDests) {
+          for (const dest of socialDests) {
             try {
               session.markDestinationLive(dest.socialAccountId);
               await this.eventPublisher.destinationStatusChanged(
@@ -121,11 +145,12 @@ export class HandleStreamArrivedUseCase {
 
     this.workers.set(ingestKey, worker);
 
-    const destConfigs = connectingDests
+    const destConfigs = socialDests
       .filter((d): d is (typeof d) & { rtmpDestination: string } => d.rtmpDestination !== null)
       .map((d) => ({ rtmpDestination: d.rtmpDestination }));
 
-    await worker.start(`${this.localRtmpBase}/live/${ingestKey}`, destConfigs);
+    // ffmpeg reads from MediaMTX RTMP (the browser WHIP stream is already there).
+    await worker.start(`${this.mediaMtxRtmpBase}/live/${ingestKey}`, destConfigs);
 
     this.logger.info(
       { sessionId: session.sessionId, destinationCount: destConfigs.length },

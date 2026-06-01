@@ -4,12 +4,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import { API_BASE, apiFetch } from '@/lib/api';
+import { API_BASE, MEDIAMTX_WEBRTC_URL, STREAM_ORCHESTRATOR_URL, apiFetch } from '@/lib/api';
 import { useStream } from '../hooks/useStream';
 import { useElapsedTime } from '../hooks/useElapsedTime';
 import { useCameraStream } from '../hooks/useCameraStream';
+import { useWhipStream } from '../hooks/useWhipStream';
 import { useStreamStore } from '../store/stream.store';
 import { useComments } from '@/features/comments/hooks/useComments';
+import type { LiveSessionId } from '@tik-live-pro/shared-types';
 import { LiveCommentFloat } from './LiveCommentFloat';
 import { LiveReactionFloat } from './LiveReactionFloat';
 import { MinimizedPlayer } from './MinimizedPlayer';
@@ -42,6 +44,7 @@ export function FullscreenLiveView(): React.ReactElement {
   } = useCameraStream(true);
 
   const { sendComment, replyToComment, isSending } = useComments(currentSession?.id ?? null);
+  const { state: whipState, connect: connectWhip, disconnect: disconnectWhip } = useWhipStream();
 
   const isLive = currentSession?.status === 'live';
   const isStarting = currentSession?.status === 'starting';
@@ -72,6 +75,58 @@ export function FullscreenLiveView(): React.ReactElement {
 
     return () => clearInterval(interval);
   }, [currentSession?.id, currentSession?.status, setSessionInStore]);
+
+  // When session enters "starting" state, poll for the ingest slot, then begin WHIP streaming.
+  const whipStartedRef = useRef(false);
+  useEffect(() => {
+    if (!currentSession?.id || currentSession.status !== 'starting') return;
+    if (whipStartedRef.current) return;
+
+    let cancelled = false;
+
+    async function tryStartWhip(): Promise<void> {
+      const sessionId = currentSession?.id as LiveSessionId;
+
+      // 1. Poll stream-orchestrator directly until the ingest slot is ready (status = waiting_for_stream).
+      let ingestKey: string | null = null;
+      while (!cancelled && !ingestKey) {
+        try {
+          const res = await apiFetch(`${STREAM_ORCHESTRATOR_URL}/sessions/${sessionId}/ingest`);
+          if (res.ok) {
+            const data = (await res.json()) as { ingestKey: string };
+            ingestKey = data.ingestKey;
+          }
+        } catch {
+          // stream-orchestrator not yet ready — keep polling
+        }
+        if (!ingestKey) await new Promise<void>((r) => setTimeout(r, 1500));
+      }
+      if (cancelled || !ingestKey) return;
+
+      // 2. Wait for camera stream to be ready (getUserMedia is async).
+      let stream: MediaStream | null = null;
+      while (!cancelled && !stream) {
+        stream = getStream();
+        if (!stream) await new Promise<void>((r) => setTimeout(r, 200));
+      }
+      if (cancelled || !stream) return;
+
+      whipStartedRef.current = true;
+      await connectWhip(`${MEDIAMTX_WEBRTC_URL}/live/${ingestKey}/whip`, stream);
+    }
+
+    void tryStartWhip();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSession?.id, currentSession?.status]);
+
+  // Reset WHIP tracking when session ends so it can restart on re-use.
+  useEffect(() => {
+    if (currentSession?.status === 'ended' || currentSession?.status === 'error') {
+      whipStartedRef.current = false;
+      disconnectWhip();
+    }
+  }, [currentSession?.status, disconnectWhip]);
 
   const setMinimizedInStore = useStreamStore((s) => s.setMinimized);
 

@@ -6,7 +6,11 @@ import type { AdapterRegistry } from '@tik-live-pro/platform-adapters';
 import type { StreamEventPublisher } from '../../infrastructure/nats/stream-event-publisher.js';
 import { NotFoundError } from '@tik-live-pro/domain';
 import type { LiveSessionId, SocialAccountId, SocialPlatform } from '@tik-live-pro/shared-types';
-import { DestinationStatus, SocialPlatform as SP, PLATFORM_DESTINATION_ID } from '@tik-live-pro/shared-types';
+import {
+  DestinationStatus,
+  SocialPlatform as SP,
+  PLATFORM_DESTINATION_ID,
+} from '@tik-live-pro/shared-types';
 import type { Logger } from '@tik-live-pro/logger';
 
 export interface StartBroadcastInput {
@@ -31,6 +35,8 @@ export class StartBroadcastUseCase {
   async execute(input: StartBroadcastInput): Promise<StartBroadcastOutput> {
     const session = await this.sessionRepo.findBySessionId(input.sessionId);
     if (!session) throw new NotFoundError('StreamSession', input.sessionId);
+
+    console.log('session :>> ', JSON.stringify(session, null, 2));
 
     session.beginStartup();
 
@@ -79,7 +85,11 @@ export class StartBroadcastUseCase {
           continue;
         }
         session.addDestination(accountId, result.value.platform);
-        resolvedAccounts.push({ accountId, accessToken: result.value.accessToken, platform: result.value.platform });
+        resolvedAccounts.push({
+          accountId,
+          accessToken: result.value.accessToken,
+          platform: result.value.platform,
+        });
       }
 
       // 3. Create live streams on social platforms in parallel
@@ -98,10 +108,18 @@ export class StartBroadcastUseCase {
         if (result.status === 'rejected') {
           session.markDestinationError(account.accountId, String(result.reason));
           await this.eventPublisher.destinationStatusChanged(
-            session.sessionId, account.accountId, account.platform,
-            DestinationStatus.PENDING, DestinationStatus.ERROR, String(result.reason), input.correlationId,
+            session.sessionId,
+            account.accountId,
+            account.platform,
+            DestinationStatus.PENDING,
+            DestinationStatus.ERROR,
+            String(result.reason),
+            input.correlationId,
           );
-          this.logger.error({ accountId: account.accountId, err: result.reason }, 'createLiveStream failed');
+          this.logger.error(
+            { accountId: account.accountId, err: result.reason },
+            'createLiveStream failed',
+          );
         } else {
           const targetInfo: StreamTargetInfo = {
             rtmpUrl: result.value.rtmpUrl,
@@ -111,8 +129,13 @@ export class StartBroadcastUseCase {
           };
           session.assignDestinationTarget(account.accountId, targetInfo);
           await this.eventPublisher.destinationStatusChanged(
-            session.sessionId, account.accountId, account.platform,
-            DestinationStatus.PENDING, DestinationStatus.CONNECTING, null, input.correlationId,
+            session.sessionId,
+            account.accountId,
+            account.platform,
+            DestinationStatus.PENDING,
+            DestinationStatus.CONNECTING,
+            null,
+            input.correlationId,
           );
           connectingCount++;
         }
@@ -122,7 +145,10 @@ export class StartBroadcastUseCase {
     session.readyForStream(ingestKey);
     await this.sessionRepo.update(session);
 
-    this.logger.info({ sessionId: input.sessionId, ingestKey, connectingCount }, 'Broadcast ready, awaiting stream connection');
+    this.logger.info(
+      { sessionId: input.sessionId, ingestKey, connectingCount },
+      'Broadcast ready, awaiting stream connection',
+    );
     return { ingestKey };
   }
 }

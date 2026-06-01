@@ -1,6 +1,6 @@
 # TikLivePro — Infrastructure Guide
 
-> **Last updated:** 2026-05-31 (Caddy reverse proxy — system service, auto-deployed; CORS Range header for HLS)
+> **Last updated:** 2026-06-01 (MediaMTX REST API auth — prod config + credentials; mediamtx-deployment.yaml added)
 > Update whenever a Dockerfile, compose file, Kubernetes manifest, or build script changes.
 
 ## Table of Contents
@@ -191,15 +191,19 @@ make mediamtx-ps      # MediaMTX container status
 | **8889** (WebRTC out) | Sub-second latency preview at `http://localhost:8889/live/{ingestKey}` |
 | **9997** (REST API) | `GET /v3/paths/list` to inspect active streams |
 
-Config file: `infra/mediamtx/mediamtx.yml` — mounted read-only into the container.
+Config files:
+- **Dev:** `infra/mediamtx/mediamtx.yml` — open auth (`user: any`, no password). Any credentials accepted.
+- **Prod:** `infra/mediamtx/mediamtx.prod.yml` — reads `$MEDIAMTX_API_USER` / `$MEDIAMTX_API_PASS` from the environment for HTTP Basic Auth on the REST API and all other actions.
 
 Environment variables wired in stream-orchestrator (`.env`):
 ```
 MEDIAMTX_RTMP_URL=rtmp://localhost:1936   # internal, used by ffmpeg workers
 MEDIAMTX_HLS_URL=http://localhost:8888    # public, returned to the browser
+MEDIAMTX_API_USER=                        # leave blank in dev (open auth)
+MEDIAMTX_API_PASS=                        # leave blank in dev (open auth)
 ```
 
-In production set `MEDIAMTX_HLS_URL` to the public hostname (e.g. `https://hls.tiklivepro.me`).
+In production set `MEDIAMTX_HLS_URL` to the public hostname (e.g. `https://hls.tiklivepro.me`) and provide non-empty `MEDIAMTX_API_USER` / `MEDIAMTX_API_PASS` (≥ 32-char password recommended).
 
 **Linux `host.docker.internal` fix:**
 Prometheus needs to scrape microservices running on the host. On Docker Desktop this resolves automatically; on Linux we add:
@@ -256,11 +260,13 @@ Features:
 - `restart: unless-stopped` on all containers
 - MediaMTX allocated 64 MB RAM limit (typical runtime: ~10 MB)
 
-**Required env var for MediaMTX in production:**
+**Required env vars for MediaMTX in production:**
 ```
 MEDIAMTX_HLS_URL=https://hls.tiklivepro.me   # public hostname browsers use for HLS
+MEDIAMTX_API_USER=admin                       # REST API username
+MEDIAMTX_API_PASS=<strong-random-password>    # REST API password (≥ 32 chars)
 ```
-Set this in your `.env.prod` or shell before running `make prod-up`. The `MEDIAMTX_RTMP_URL` defaults to `rtmp://mediamtx:1936` (container-to-container) and does not need to be set.
+Set these in your `.env.prod` or shell before running `make prod-up`. The `MEDIAMTX_RTMP_URL` defaults to `rtmp://mediamtx:1936` (container-to-container) and does not need to be set. The prod compose uses `mediamtx.prod.yml` (not the dev config) and will refuse to start if either `MEDIAMTX_API_USER` or `MEDIAMTX_API_PASS` is unset.
 
 ```bash
 # Start (requires env vars or .env.prod file)
@@ -334,7 +340,9 @@ MediaMTX runs as a Deployment (single replica) and needs two services:
 
 Set `MEDIAMTX_HLS_URL` in the stream-orchestrator secret/ConfigMap to the public LoadBalancer address of `mediamtx-public` so it is returned to browsers in `session.live` events and `GET /sessions/:id` responses.
 
-> **Kubernetes manifest** for MediaMTX is not yet included in `infra/kubernetes/` — add `mediamtx-deployment.yaml` following the same pattern as other services. Expose port 8888 via an Ingress rule at `hls.tiklivepro.pro` for public HLS access.
+Manifest: `infra/kubernetes/mediamtx-deployment.yaml` — includes a ConfigMap (prod config with env-var auth), a single-replica Deployment, `mediamtx-internal` ClusterIP (RTMP :1936, REST API :9997), and `mediamtx-public` LoadBalancer (HLS :8888, WebRTC :8889).
+
+API credentials are stored in the `mediamtx-secrets` Secret (`api-user`, `api-password`) and injected into both the mediamtx pod (config substitution) and stream-orchestrator (HTTP Basic Auth when calling the REST API).
 
 ### HPA Summary
 

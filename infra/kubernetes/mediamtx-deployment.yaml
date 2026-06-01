@@ -1,0 +1,158 @@
+# ==============================================================================
+# MediaMTX — HLS/WebRTC streaming relay
+#
+# Ports:
+#   1936  RTMP input   (stream-orchestrator ffmpeg workers push here)
+#   8888  HLS output   (browser viewers; exposed via Ingress at hls.tiklivepro.me)
+#   8889  WebRTC       (sub-second latency preview)
+#   9997  REST API     (stream-orchestrator polls for active paths)
+#
+# Services:
+#   mediamtx-internal  ClusterIP     — internal RTMP (1936) + REST API (9997)
+#   mediamtx-public    LoadBalancer  — public HLS (8888) + WebRTC (8889)
+#
+# Auth:
+#   API credentials are injected from the mediamtx-secrets Secret.
+#   The mediamtx.prod.yml config uses $MEDIAMTX_API_USER / $MEDIAMTX_API_PASS.
+# ==============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mediamtx-config
+  namespace: tik-live-pro
+data:
+  mediamtx.yml: |
+    logLevel: info
+    logDestinations: [stdout]
+
+    rtmpAddress: :1936
+    rtmpEncryption: "no"
+
+    hlsAddress: :8888
+    hlsEncryption: false
+    hlsAlwaysRemux: true
+    hlsVariant: lowLatency
+    hlsSegmentCount: 7
+    hlsSegmentDuration: 1s
+    hlsPartDuration: 200ms
+
+    webrtcAddress: :8889
+
+    authInternalUsers:
+      - user: $MEDIAMTX_API_USER
+        pass: $MEDIAMTX_API_PASS
+        ips: []
+        permissions:
+          - action: api
+          - action: publish
+          - action: read
+          - action: playback
+          - action: metrics
+
+    api: true
+    apiAddress: :9997
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mediamtx
+  namespace: tik-live-pro
+  labels:
+    app: mediamtx
+    tier: infrastructure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mediamtx
+  template:
+    metadata:
+      labels:
+        app: mediamtx
+    spec:
+      containers:
+        - name: mediamtx
+          image: bluenviron/mediamtx:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 1936
+              name: rtmp
+              protocol: TCP
+            - containerPort: 8888
+              name: hls
+            - containerPort: 8889
+              name: webrtc
+            - containerPort: 9997
+              name: api
+          env:
+            - name: MEDIAMTX_API_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mediamtx-secrets
+                  key: api-user
+            - name: MEDIAMTX_API_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: mediamtx-secrets
+                  key: api-password
+          volumeMounts:
+            - name: config
+              mountPath: /mediamtx.yml
+              subPath: mediamtx.yml
+              readOnly: true
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "500m"
+      volumes:
+        - name: config
+          configMap:
+            name: mediamtx-config
+
+---
+# Internal service — RTMP ingest + REST API (cluster-only, no public exposure)
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediamtx-internal
+  namespace: tik-live-pro
+  labels:
+    app: mediamtx
+spec:
+  type: ClusterIP
+  selector:
+    app: mediamtx
+  ports:
+    - port: 1936
+      targetPort: 1936
+      protocol: TCP
+      name: rtmp
+    - port: 9997
+      targetPort: 9997
+      name: api
+
+---
+# Public service — HLS + WebRTC (browser-facing, via LoadBalancer or Ingress)
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediamtx-public
+  namespace: tik-live-pro
+  labels:
+    app: mediamtx
+spec:
+  type: LoadBalancer
+  selector:
+    app: mediamtx
+  ports:
+    - port: 8888
+      targetPort: 8888
+      name: hls
+    - port: 8889
+      targetPort: 8889
+      name: webrtc

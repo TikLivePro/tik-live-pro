@@ -72,6 +72,10 @@
 #   # MEDIAMTX_HLS_URL is the public URL browsers use to watch HLS streams.
 #   # Point it at the Caddy-fronted subdomain so viewers get HTTPS.
 #   MEDIAMTX_HLS_URL=https://hls.tiklivepro.me
+#   # MEDIAMTX_API_USER / MEDIAMTX_API_PASS — credentials for the MediaMTX REST API
+#   # (port 9997). Required in production; use a strong password (≥ 32 chars).
+#   MEDIAMTX_API_USER=admin
+#   MEDIAMTX_API_PASS=<strong-random-password>
 #
 # RAM budget on 4 GB Droplet (no observability):
 #   NATS 128m + MediaMTX 64m + 10 services ~1780m + web 512m ≈ 2484m  ← comfortable
@@ -199,7 +203,10 @@ services:
     <<: *service-defaults
     image: bluenviron/mediamtx:latest
     volumes:
-      - ./infra/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+      - ./infra/mediamtx/mediamtx.prod.yml:/mediamtx.yml:ro
+    environment:
+      - MEDIAMTX_API_USER=${MEDIAMTX_API_USER:?MEDIAMTX_API_USER is required}
+      - MEDIAMTX_API_PASS=${MEDIAMTX_API_PASS:?MEDIAMTX_API_PASS is required}
     ports:
       - "8888:8888"   # HLS — Caddy reverse-proxies this as https://hls.tiklivepro.me
       - "8889:8889"   # WebRTC

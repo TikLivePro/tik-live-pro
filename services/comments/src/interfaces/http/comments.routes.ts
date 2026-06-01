@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import type { WebSocket } from '@fastify/websocket';
+import type { Server as SocketIOServer } from 'socket.io';
 import { eq, desc, count, and } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { comments } from '../../infrastructure/db/schema.js';
@@ -83,21 +83,16 @@ const commentSchema = {
 };
 
 // ---------------------------------------------------------------------------
-// Active WebSocket connections per session
+// Socket.io instance — set once at startup
 // ---------------------------------------------------------------------------
-const sessionSockets = new Map<string, Set<WebSocket>>();
+let io: SocketIOServer | null = null;
+
+export function setIo(socketIo: SocketIOServer): void {
+  io = socketIo;
+}
 
 export function broadcastComment(sessionId: string, comment: Comment): void {
-  const sockets = sessionSockets.get(sessionId);
-  if (!sockets) return;
-  const message = JSON.stringify({ type: 'comment', data: comment });
-  for (const socket of sockets) {
-    try {
-      socket.send(message);
-    } catch {
-      // Ignore send errors on disconnected sockets
-    }
-  }
+  io?.to(sessionId).emit('comment', comment);
 }
 
 // ---------------------------------------------------------------------------
@@ -344,68 +339,4 @@ Replies to a specific comment. The reply is sent to the platform where the origi
     },
   );
 
-  // GET /comments/ws (WebSocket) ---------------------------------------------
-  fastify.get(
-    '/comments/ws',
-    {
-      websocket: true,
-      schema: {
-        tags: ['Comments'],
-        summary: 'Real-time comment stream (WebSocket)',
-        description: `
-Opens a WebSocket connection that pushes comments in real time.
-
-**Connection:** \`ws://<host>/comments/ws?sessionId=<sessionId>&token=<jwt>\`
-
-**Server messages:**
-- \`{ "type": "comment", "data": { ...comment } }\` — new comment received
-- \`{ "type": "ping" }\` — keepalive (every 30 s)
-- \`{ "type": "session_ended" }\` — session ended, connection will close
-
-**Client messages:**
-No client-to-server messages are expected on this connection. Use \`POST /comments\` and \`POST /comments/:id/reply\` for sending.
-        `.trim(),
-        security: bearerAuth,
-        querystring: {
-          type: 'object',
-          required: ['sessionId'],
-          properties: {
-            sessionId: { type: 'string', format: 'uuid' },
-            token: { type: 'string', description: 'JWT (alternative to Authorization header for browser WebSocket clients).' },
-          },
-        },
-        response: {
-          101: { description: 'Switching Protocols — WebSocket connection established.' },
-          401: { description: 'Unauthorized.' },
-        },
-      },
-    },
-    async (socket, request) => {
-      const query = request.query as { sessionId?: string; token?: string };
-      const sessionId = query.sessionId;
-
-      if (!sessionId) {
-        socket.close(1008, 'sessionId required');
-        return;
-      }
-
-      if (!sessionSockets.has(sessionId)) {
-        sessionSockets.set(sessionId, new Set());
-      }
-      sessionSockets.get(sessionId)!.add(socket);
-
-      const ping = setInterval(() => {
-        try { socket.send(JSON.stringify({ type: 'ping' })); } catch { /* ignore */ }
-      }, 30_000);
-
-      socket.on('close', () => {
-        clearInterval(ping);
-        const set = sessionSockets.get(sessionId);
-        if (set) {
-          set.delete(socket);
-          if (set.size === 0) sessionSockets.delete(sessionId);
-        }
-      });
-    },
-  );
 }

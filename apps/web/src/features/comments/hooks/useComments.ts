@@ -1,19 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { io as socketIo, type Socket } from 'socket.io-client';
 import { useStreamStore } from '@/features/stream/store/stream.store';
 import { useAuthStore } from '@/features/auth/store/auth.store';
 import { COMMENTS_WS_URL, apiFetch } from '@/lib/api';
 import type { Comment, LiveSessionId } from '@tik-live-pro/shared-types';
 
-type WsMessage =
-  | { type: 'comment'; data: Comment }
-  | { type: 'reaction'; data: { emoji: string } }
-  | { type: 'ping' }
-  | { type: 'session_ended' };
-
 export function useComments(sessionId: LiveSessionId | null) {
-  const wsRef = useRef<WebSocket | null>(null);
+  const socketRef = useRef<Socket | null>(null);
   const { accessToken } = useAuthStore();
   const { comments, addComment, addReaction, replyingTo, setReplyingTo } = useStreamStore();
   const [isSending, setIsSending] = useState(false);
@@ -22,36 +17,35 @@ export function useComments(sessionId: LiveSessionId | null) {
   useEffect(() => {
     if (!sessionId || !accessToken) return;
 
-    const wsBase = COMMENTS_WS_URL.replace(/^http/, 'ws');
-    const url = `${wsBase}/comments/ws?sessionId=${sessionId}&token=${encodeURIComponent(accessToken)}`;
-    const ws = new WebSocket(url);
+    const socket = socketIo(COMMENTS_WS_URL, {
+      auth: { token: accessToken },
+      query: { sessionId },
+      transports: ['websocket'],
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
+    });
 
-    ws.onmessage = (event: MessageEvent<string>) => {
-      try {
-        const msg = JSON.parse(event.data) as WsMessage;
-        if (msg.type === 'comment') {
-          addComment(msg.data);
-        } else if (msg.type === 'reaction') {
-          addReaction({
-            id: crypto.randomUUID(),
-            emoji: msg.data.emoji,
-            left: Math.floor(Math.random() * 36),
-          });
-        }
-      } catch {
-        // ignore malformed messages
-      }
-    };
+    socket.on('comment', (comment: Comment) => {
+      addComment(comment);
+    });
 
-    ws.onerror = () => {
-      console.warn('Comments WebSocket error');
-    };
+    socket.on('reaction', (data: { emoji: string }) => {
+      addReaction({
+        id: crypto.randomUUID(),
+        emoji: data.emoji,
+        left: Math.floor(Math.random() * 36),
+      });
+    });
 
-    wsRef.current = ws;
+    socket.on('connect_error', () => {
+      console.warn('Comments socket connection error');
+    });
+
+    socketRef.current = socket;
 
     return () => {
-      ws.close();
-      wsRef.current = null;
+      socket.disconnect();
+      socketRef.current = null;
     };
   }, [sessionId, accessToken, addComment, addReaction]);
 

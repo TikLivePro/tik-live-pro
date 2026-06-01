@@ -19,7 +19,7 @@
     "@fastify/jwt": "^10.0.0",
     "@fastify/swagger": "^9.0.0",
     "@fastify/swagger-ui": "^5.0.0",
-    "@fastify/websocket": "^11.2.0",
+    "socket.io": "^4.8.1",
     "@tik-live-pro/config": "workspace:*",
     "@tik-live-pro/domain": "workspace:*",
     "@tik-live-pro/events": "workspace:*",

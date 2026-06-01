@@ -30,6 +30,7 @@ export function registerRoutes(
     rtmpIngestHost: string;
     rtmpIngestPort: number;
     mediaMtxHlsUrl: string;
+    mediaMtxWebrtcUrl: string;
   },
 ): void {
   // GET /health ---------------------------------------------------------------
@@ -150,12 +151,12 @@ rtmp://<host>:<port>/live/<ingestKey>
           200: {
             description: 'Ingest endpoint is ready.',
             type: 'object',
-            required: ['ingestUrl', 'ingestKey', 'hlsUrl', 'status'],
+            required: ['ingestUrl', 'ingestKey', 'hlsUrl', 'whipUrl', 'status'],
             properties: {
               ingestUrl: {
                 type: 'string',
                 description:
-                  'Full RTMP URL to push the video stream to. Example: `rtmp://rtmp.tiklivepro.pro:1935/live/abc123`.',
+                  'Full RTMP URL to push the video stream to (for OBS / external tools). Example: `rtmp://rtmp.tiklivepro.pro:1935/live/abc123`.',
                 example: 'rtmp://localhost:1935/live/abc123def456',
               },
               ingestKey: {
@@ -169,11 +170,16 @@ rtmp://<host>:<port>/live/<ingestKey>
                 description: 'HLS playlist URL for platform-native playback (MediaMTX). Share with viewers or embed in a player.',
                 example: 'http://localhost:8888/live/abc123def456/index.m3u8',
               },
+              whipUrl: {
+                type: 'string',
+                description: 'WebRTC-HTTP Ingestion Protocol (WHIP) endpoint for browser-based streaming. POST an SDP offer here to start streaming from the browser.',
+                example: 'http://localhost:8889/live/abc123def456/whip',
+              },
               status: {
                 type: 'string',
-                enum: ['broadcasting', 'ending', 'ended'],
+                enum: ['waiting_for_stream', 'live', 'ending', 'ended', 'error'],
                 description: 'Current stream session status.',
-                example: 'broadcasting',
+                example: 'waiting_for_stream',
               },
             },
           },
@@ -208,6 +214,7 @@ rtmp://<host>:<port>/live/<ingestKey>
         ingestUrl: `rtmp://${deps.rtmpIngestHost}:${deps.rtmpIngestPort}/live/${session.ingestKey}`,
         ingestKey: session.ingestKey,
         hlsUrl: `${deps.mediaMtxHlsUrl}/live/${session.ingestKey}/index.m3u8`,
+        whipUrl: `${deps.mediaMtxWebrtcUrl}/live/${session.ingestKey}/whip`,
         status: session.status,
       });
     },

@@ -1,6 +1,6 @@
 # TikLivePro — Setup Guide
 
-> **Last updated:** 2026-05-31 (added MediaMTX platform-native streaming relay)
+> **Last updated:** 2026-06-01 (MediaMTX REST API auth — MEDIAMTX_API_USER / MEDIAMTX_API_PASS required in prod)
 > Update this file whenever prerequisites, ports, environment variables, or workflow steps change.
 
 ## Prerequisites
@@ -101,6 +101,8 @@ Update values as needed — critical variables:
 | `NEXTAUTH_URL` | apps/web | Public URL of the web app, e.g. `https://tiklivepro.me` |
 | `MEDIAMTX_RTMP_URL` | stream-orchestrator | Internal RTMP push URL for ffmpeg workers. Default: `rtmp://localhost:1936` (dev) · `rtmp://mediamtx:1936` (Docker/prod) |
 | `MEDIAMTX_HLS_URL` | stream-orchestrator | **Public** HLS base URL browsers use to watch the stream. Default: `http://localhost:8888` (dev) · set to public hostname in prod, e.g. `https://hls.tiklivepro.me` |
+| `MEDIAMTX_API_USER` | stream-orchestrator, mediamtx | Username for the MediaMTX REST API. **Leave blank in dev** (open auth). Required in prod. |
+| `MEDIAMTX_API_PASS` | stream-orchestrator, mediamtx | Password for the MediaMTX REST API (≥ 32 chars recommended). **Leave blank in dev**. Required in prod. |
 | `NEXTAUTH_SECRET` | apps/web | Generate: `openssl rand -base64 32` |
 | `GOOGLE_CLIENT_ID` / `SECRET` | apps/web | From Google Cloud Console → Credentials |
 | `AUTH_SERVICE_INTERNAL_URL` | apps/web | Internal URL NextAuth uses to call the auth service |

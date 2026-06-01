@@ -14,6 +14,7 @@ import { AdapterRegistry, TikTokAdapter, FacebookAdapter } from '@tik-live-pro/p
 import { DrizzleStreamSessionRepository } from './infrastructure/db/stream-session.repo.impl.js';
 import { FfmpegStreamWorker } from './infrastructure/ffmpeg/ffmpeg-stream-worker.js';
 import { RtmpIngestServer } from './infrastructure/rtmp/rtmp-ingest-server.js';
+import { MediaMtxStreamWatcher } from './infrastructure/mediamtx/mediamtx-stream-watcher.js';
 import { IntegrationsTokenProvider } from './infrastructure/http/integrations-token-provider.js';
 import { StreamEventPublisher } from './infrastructure/nats/stream-event-publisher.js';
 import { SessionEventConsumer } from './infrastructure/nats/session-event-consumer.js';
@@ -33,10 +34,14 @@ const envSchema = baseEnvSchema.extend({
   FACEBOOK_APP_ID: z.string(),
   FACEBOOK_APP_SECRET: z.string(),
   // MediaMTX — platform-native streaming relay (Go binary, ~5 MB RAM)
-  // MEDIAMTX_RTMP_URL: internal URL ffmpeg pushes to (container-to-container)
-  // MEDIAMTX_HLS_URL:  public URL browsers use to watch the HLS stream
+  // MEDIAMTX_RTMP_URL:   internal RTMP URL — ffmpeg reads from here (browser WHIP stream lands here)
+  // MEDIAMTX_HLS_URL:    public HLS URL — browsers watch the stream here
+  // MEDIAMTX_WEBRTC_URL: public WebRTC URL — browsers push WHIP here
+  // MEDIAMTX_API_URL:    internal REST API — stream-orchestrator polls for new paths
   MEDIAMTX_RTMP_URL: z.string().default('rtmp://localhost:1936'),
   MEDIAMTX_HLS_URL: z.string().default('http://localhost:8888'),
+  MEDIAMTX_WEBRTC_URL: z.string().default('http://localhost:8889'),
+  MEDIAMTX_API_URL: z.string().default('http://localhost:9997'),
 });
 
 const env = parseEnv(envSchema);
@@ -76,15 +81,13 @@ async function main(): Promise<void> {
   const tokenProvider = new IntegrationsTokenProvider(env.INTEGRATIONS_SERVICE_URL, logger);
   const eventPublisher = new StreamEventPublisher(nats);
 
-  const localRtmpBase = `rtmp://127.0.0.1:${env.RTMP_INGEST_PORT}`;
-
   // Use cases
   const registerSession = new RegisterSessionUseCase(sessionRepo, logger);
   const streamArrivalHandler = new HandleStreamArrivedUseCase(
     sessionRepo,
     eventPublisher,
     () => new FfmpegStreamWorker(logger),
-    localRtmpBase,
+    env.MEDIAMTX_RTMP_URL,  // ffmpeg reads from MediaMTX (browser WHIP stream lands here)
     env.MEDIAMTX_HLS_URL,
     logger,
   );
@@ -105,7 +108,8 @@ async function main(): Promise<void> {
     logger,
   );
 
-  // RTMP ingest server
+  // RTMP ingest server — kept for OBS / external tool compatibility.
+  // Browser streaming uses WebRTC/WHIP → MediaMTX directly.
   const rtmpServer = new RtmpIngestServer(env.RTMP_INGEST_PORT, logger);
   rtmpServer.onStreamArrived((ingestKey) => {
     void streamArrivalHandler.execute(ingestKey);
@@ -114,6 +118,15 @@ async function main(): Promise<void> {
     void streamArrivalHandler.stopWorker(ingestKey);
   });
   rtmpServer.start();
+
+  // MediaMTX watcher — detects WebRTC/WHIP browser streams arriving on MediaMTX.
+  const mediaMtxWatcher = new MediaMtxStreamWatcher(
+    env.MEDIAMTX_API_URL,
+    (ingestKey) => void streamArrivalHandler.execute(ingestKey),
+    (ingestKey) => void streamArrivalHandler.stopWorker(ingestKey),
+    logger,
+  );
+  mediaMtxWatcher.start();
 
   // NATS event consumer
   const consumer = new SessionEventConsumer(
@@ -210,6 +223,7 @@ This service is primarily driven by NATS JetStream events from the \`live-sessio
     rtmpIngestHost: env.RTMP_INGEST_HOST === '0.0.0.0' ? 'localhost' : env.RTMP_INGEST_HOST,
     rtmpIngestPort: env.RTMP_INGEST_PORT,
     mediaMtxHlsUrl: env.MEDIAMTX_HLS_URL,
+    mediaMtxWebrtcUrl: env.MEDIAMTX_WEBRTC_URL,
   });
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
@@ -220,6 +234,7 @@ This service is primarily driven by NATS JetStream events from the \`live-sessio
     logger.info('Shutting down...');
     await app.close();
     rtmpServer.stop();
+    mediaMtxWatcher.stop();
     await nats.drain();
     await pool.end();
     process.exit(0);

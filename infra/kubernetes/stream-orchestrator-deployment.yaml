@@ -51,6 +51,24 @@ spec:
               value: "0.0.0.0"
             - name: INTEGRATIONS_SERVICE_URL
               value: http://integrations-service:3005
+            - name: MEDIAMTX_RTMP_URL
+              value: rtmp://mediamtx-internal:1936
+            - name: MEDIAMTX_HLS_URL
+              value: https://hls.tiklivepro.me
+            - name: MEDIAMTX_WEBRTC_URL
+              value: https://webrtc.tiklivepro.me
+            - name: MEDIAMTX_API_URL
+              value: http://mediamtx-internal:9997
+            - name: MEDIAMTX_API_USER
+              valueFrom:
+                secretKeyRef:
+                  name: mediamtx-secrets
+                  key: api-user
+            - name: MEDIAMTX_API_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: mediamtx-secrets
+                  key: api-password
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

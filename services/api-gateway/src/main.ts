@@ -38,8 +38,10 @@ const SERVICE_ROUTES: Record<string, string> = {
 
 const PUBLIC_PREFIXES = new Set(['/auth']);
 
-// Specific paths that are publicly accessible without a JWT (within otherwise-protected prefixes).
+// Exact paths publicly accessible without a JWT (within otherwise-protected prefixes).
 const PUBLIC_PATHS = new Set(['/billing/plans']);
+// Pattern-matched public paths (e.g. /sessions/:id/public — shared watch pages).
+const PUBLIC_PATH_PATTERNS = [/^\/sessions\/[^/]+\/public$/];
 
 async function bootstrap(): Promise<void> {
   const fastify = Fastify({
@@ -1037,7 +1039,8 @@ All error responses follow a consistent envelope:
     const isPublic = PUBLIC_PREFIXES.has(prefix);
 
     const handler = async (request: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => {
-      if (!isPublic && !PUBLIC_PATHS.has(request.url.split('?')[0]!)) {
+      const requestPath = request.url.split('?')[0]!;
+      if (!isPublic && !PUBLIC_PATHS.has(requestPath) && !PUBLIC_PATH_PATTERNS.some((p) => p.test(requestPath))) {
         await request.jwtVerify();
       }
 

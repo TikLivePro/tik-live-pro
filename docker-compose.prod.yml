@@ -187,7 +187,10 @@ services:
     <<: *service-defaults
     image: bluenviron/mediamtx:latest
     volumes:
-      - ./infra/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+      - ./infra/mediamtx/mediamtx.prod.yml:/mediamtx.yml:ro
+    environment:
+      - MEDIAMTX_API_USER=${MEDIAMTX_API_USER}
+      - MEDIAMTX_API_PASS=${MEDIAMTX_API_PASS}
     ports:
       - "1936:1936"   # RTMP input
       - "8888:8888"   # HLS output

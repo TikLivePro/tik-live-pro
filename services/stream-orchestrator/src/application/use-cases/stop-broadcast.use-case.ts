@@ -4,7 +4,7 @@ import type { AdapterRegistry } from '@tik-live-pro/platform-adapters';
 import type { StreamEventPublisher } from '../../infrastructure/nats/stream-event-publisher.js';
 import type { HandleStreamArrivedUseCase } from './handle-stream-arrived.use-case.js';
 import type { LiveSessionId } from '@tik-live-pro/shared-types';
-import { DestinationStatus } from '@tik-live-pro/shared-types';
+import { DestinationStatus, SocialPlatform as SP } from '@tik-live-pro/shared-types';
 import { StreamSessionStatus } from '../../domain/entities/stream-session.entity.js';
 import type { Logger } from '@tik-live-pro/logger';
 
@@ -55,9 +55,9 @@ export class StopBroadcastUseCase {
     // Capture statuses before mutation
     const previousStatuses = activeDests.map((d) => d.status);
 
-    // End live streams on all active destinations in parallel, best-effort
+    // End live streams on social platform destinations only (skip internal MediaMTX dest), best-effort
     await Promise.allSettled(
-      activeDests.map(async (dest) => {
+      activeDests.filter((d) => d.platform !== SP.PLATFORM).map(async (dest) => {
         try {
           const { accessToken } = await this.tokenProvider.getToken(dest.socialAccountId);
           const adapter = this.adapterRegistry.get(dest.platform);
