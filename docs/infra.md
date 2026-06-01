@@ -1,6 +1,6 @@
 # TikLivePro — Infrastructure Guide
 
-> **Last updated:** 2026-06-01 (fix comments service port exposure; WebRTC ICE UDP port 8189 added; MediaMTX prod auth switched to open auth; WHIP URL sourced from API response)
+> **Last updated:** 2026-06-01 (fix comments service port exposure; WebRTC ICE UDP port 8189 added; MediaMTX prod auth switched to open auth; WHIP URL sourced from API response; fix Caddy CORS headers for proxied responses — use header_down inside reverse_proxy; add Access-Control-Expose-Headers: Location for WHIP 201)
 > Update whenever a Dockerfile, compose file, Kubernetes manifest, or build script changes.
 
 ## Table of Contents
@@ -245,7 +245,7 @@ Config file: `infra/caddy/Caddyfile` — versioned in the repo, auto-deployed by
 | `api.tiklivepro.me/stream-orchestrator/*` | `localhost:3009` (prefix stripped) | Stream orchestrator REST API — exposes the internal service under a path prefix so browsers can reach `GET /sessions/:id/ingest` without a separate subdomain |
 | `api.tiklivepro.me` (all other paths) | `localhost:3000` | API Gateway (REST) |
 | `hls.tiklivepro.me` | `localhost:8888` | MediaMTX HLS relay. CORS headers added: `Allow-Origin *`, `Allow-Methods GET/HEAD/OPTIONS`, `Allow-Headers Range` |
-| `webrtc.tiklivepro.me` | `localhost:8889` | MediaMTX WebRTC/WHIP endpoint. Broadcasters' browsers POST SDP offers here to start a WHIP stream. CORS headers added: `Allow-Origin *`, `Allow-Methods GET/HEAD/POST/OPTIONS`, `Allow-Headers Content-Type/Authorization`. **DNS A record required**: point `webrtc.tiklivepro.me` at the same droplet IP as the other subdomains. |
+| `webrtc.tiklivepro.me` | `localhost:8889` | MediaMTX WebRTC/WHIP endpoint. Broadcasters' browsers POST SDP offers here to start a WHIP stream. CORS headers added via `header_down` inside `reverse_proxy`: `Allow-Origin *`, `Allow-Methods GET/HEAD/POST/OPTIONS`, `Allow-Headers Content-Type/Authorization`, `Expose-Headers Location` (required so the browser WHIP client can read the `Location` header from the 201 response). **DNS A record required**: point `webrtc.tiklivepro.me` at the same droplet IP as the other subdomains. |
 
 TLS certificates are provisioned and renewed automatically via Let's Encrypt — no manual configuration needed once DNS A records point to the droplet.
 

@@ -24,15 +24,14 @@ api.tiklivepro.me {
 }
 
 hls.tiklivepro.me {
-    reverse_proxy localhost:8888
-    # MediaMTX sets its own Access-Control-Allow-Origin (echoes the Origin
-    # header). Delete it and replace with * so any origin can fetch HLS
-    # segments — the delete must come first to avoid duplicate values.
-    header {
-        -Access-Control-Allow-Origin
-        Access-Control-Allow-Origin  "*"
-        Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
-        Access-Control-Allow-Headers "Range"
+    # header_down runs after the upstream responds, so it correctly modifies
+    # the proxied response headers (unlike the top-level header directive which
+    # operates before reverse_proxy writes anything).
+    reverse_proxy localhost:8888 {
+        header_down -Access-Control-Allow-Origin
+        header_down Access-Control-Allow-Origin  "*"
+        header_down Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+        header_down Access-Control-Allow-Headers "Range"
     }
 }
 
@@ -51,13 +50,16 @@ webrtc.tiklivepro.me {
         respond "" 204
     }
 
-    # Actual WHIP / WebRTC requests — proxy to MediaMTX but replace its
-    # CORS header (which echoes the request Origin) with a single * value.
+    # Actual WHIP / WebRTC requests — proxy to MediaMTX.
+    # header_down runs after the upstream responds, so it correctly modifies
+    # the proxied response headers. Access-Control-Expose-Headers is required
+    # so the browser WHIP client can read the Location header from the 201
+    # response (Location is not a CORS-safelisted header).
     handle {
-        reverse_proxy localhost:8889
-        header {
-            -Access-Control-Allow-Origin
-            Access-Control-Allow-Origin  "*"
+        reverse_proxy localhost:8889 {
+            header_down -Access-Control-Allow-Origin
+            header_down Access-Control-Allow-Origin  "*"
+            header_down Access-Control-Expose-Headers "Location"
         }
     }
 }
