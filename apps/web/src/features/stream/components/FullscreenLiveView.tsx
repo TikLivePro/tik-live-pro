@@ -52,6 +52,16 @@ export function FullscreenLiveView(): React.ReactElement {
   const destinations = (currentSession?.destinations ?? []).filter((d) => d.platform !== 'platform');
   const liveCount = destinations.filter((d) => d.status === 'live').length;
   const platformHlsUrl = currentSession?.platformHlsUrl ?? null;
+  const platformWhepUrl = (() => {
+    if (!platformHlsUrl) return null;
+    try {
+      const { pathname } = new URL(platformHlsUrl);
+      const key = pathname.split('/live/')[1]?.split('/')[0];
+      if (!key) return null;
+      const base = process.env.NEXT_PUBLIC_MEDIAMTX_WEBRTC_URL ?? 'http://localhost:8889';
+      return `${base}/live/${key}/whep`;
+    } catch { return null; }
+  })();
 
   // Poll session status while starting — backend only transitions to 'live' after
   // the RTMP ingest receives a stream, which is asynchronous.
@@ -143,6 +153,7 @@ export function FullscreenLiveView(): React.ReactElement {
 
   const mountedAtRef = useRef(Date.now());
   const [shareCopied, setShareCopied] = useState(false);
+  const [whepCopied, setWhepCopied] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
 
@@ -545,6 +556,57 @@ export function FullscreenLiveView(): React.ReactElement {
                 <line x1="12" y1="2" x2="12" y2="15" />
               </svg>
               <span className="text-[9px] font-semibold leading-none">HLS</span>
+            </button>
+          )}
+
+          {/* WebRTC WHEP viewer link — sub-500 ms playback URL */}
+          {platformWhepUrl && (
+            <button
+              type="button"
+              aria-label="Copy WebRTC viewer URL"
+              onClick={() => {
+                void navigator.clipboard.writeText(platformWhepUrl);
+                setWhepCopied(true);
+                setTimeout(() => setWhepCopied(false), 2500);
+              }}
+              className={cn(
+                'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg shadow-black/20 transition-transform active:scale-90',
+                whepCopied
+                  ? 'border-green-400/40 bg-green-900/50 text-green-300'
+                  : 'border-white/20 bg-black/45 text-white',
+              )}
+            >
+              {whepCopied ? (
+                <svg
+                  className="h-5 w-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              ) : (
+                <svg
+                  className="h-5 w-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <polygon points="23 7 16 12 23 17 23 7" />
+                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                </svg>
+              )}
+              <span className={cn('text-[9px] font-semibold leading-none', whepCopied && 'text-green-300')}>
+                {whepCopied ? 'Copied' : 'RTC'}
+              </span>
             </button>
           )}
         </div>
