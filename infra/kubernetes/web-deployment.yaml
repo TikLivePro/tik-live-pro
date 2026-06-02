@@ -131,6 +131,7 @@ data:
   NEXTAUTH_URL: "https://tiklivepro.me"
   NEXT_PUBLIC_API_URL: "https://api.tiklivepro.me"
   NEXT_PUBLIC_COMMENTS_WS_URL: "https://api.tiklivepro.me"
+  NEXT_PUBLIC_MEDIAMTX_WEBRTC_URL: "https://webrtc.tiklivepro.me"
 
 ---
 apiVersion: v1

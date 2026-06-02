@@ -89,6 +89,7 @@ build_web() {
   local api_url="${NEXT_PUBLIC_API_URL:-https://api.tiklivepro.me}"
   local ws_url="${NEXT_PUBLIC_COMMENTS_WS_URL:-https://api.tiklivepro.me}"
   local giphy_key="${NEXT_PUBLIC_GIPHY_API_KEY:-}"
+  local webrtc_url="${NEXT_PUBLIC_MEDIAMTX_WEBRTC_URL:-https://webrtc.tiklivepro.me}"
 
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -96,6 +97,7 @@ build_web() {
   echo "  Dockerfile: ${dockerfile}"
   echo "  NEXT_PUBLIC_API_URL=${api_url}"
   echo "  NEXT_PUBLIC_COMMENTS_WS_URL=${ws_url}"
+  echo "  NEXT_PUBLIC_MEDIAMTX_WEBRTC_URL=${webrtc_url}"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
   local cache_args=()
@@ -108,6 +110,7 @@ build_web() {
     --build-arg "NEXT_PUBLIC_API_URL=${api_url}" \
     --build-arg "NEXT_PUBLIC_COMMENTS_WS_URL=${ws_url}" \
     --build-arg "NEXT_PUBLIC_GIPHY_API_KEY=${giphy_key}" \
+    --build-arg "NEXT_PUBLIC_MEDIAMTX_WEBRTC_URL=${webrtc_url}" \
     -t "${image_tag}" \
     "${cache_args[@]+"${cache_args[@]}"}" \
     "${REPO_ROOT}"

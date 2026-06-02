@@ -103,7 +103,15 @@ function HlsPlayer({ src, title }: { src: string; title: string }): React.ReactE
 }
 
 // WebRTC WHEP viewer — sub-500 ms latency, no HLS segment buffering
-function WhepPlayer({ src, title }: { src: string; title: string }): React.ReactElement {
+function WhepPlayer({
+  src,
+  title,
+  onError,
+}: {
+  src: string;
+  title: string;
+  onError: () => void;
+}): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -121,6 +129,10 @@ function WhepPlayer({ src, title }: { src: string; title: string }): React.React
       if (video.srcObject !== event.streams[0]) {
         video.srcObject = event.streams[0] ?? null;
       }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed') onError();
     };
 
     let closed = false;
@@ -154,13 +166,16 @@ function WhepPlayer({ src, title }: { src: string; title: string }): React.React
       await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
     }
 
-    connect().catch((err) => console.error('[whep]', err));
+    connect().catch((err) => {
+      console.error('[whep]', err);
+      onError();
+    });
 
     return () => {
       closed = true;
       pc.close();
     };
-  }, [src]);
+  }, [src, onError]);
 
   return (
     <video
@@ -179,6 +194,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const t = useTranslations('watch');
   const tStream = useTranslations('stream');
   const [session, setSession] = useState<PublicSession>(initialSession);
+  const [whepFailed, setWhepFailed] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isLive = session.status === 'live';
@@ -334,11 +350,11 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
         {/* Player — WebRTC WHEP preferred (sub-500ms), HLS fallback */}
         {isLive && session.platformHlsUrl && (() => {
           const whepUrl = toWhepUrl(session.platformHlsUrl!);
-          const useWhep = !!whepUrl && typeof RTCPeerConnection !== 'undefined';
+          const useWhep = !!whepUrl && !whepFailed && typeof RTCPeerConnection !== 'undefined';
           return (
             <div className="mt-2 w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
               {useWhep
-                ? <WhepPlayer src={whepUrl} title={session.title} />
+                ? <WhepPlayer src={whepUrl} title={session.title} onError={() => setWhepFailed(true)} />
                 : <HlsPlayer src={session.platformHlsUrl!} title={session.title} />}
             </div>
           );
