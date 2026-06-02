@@ -444,5 +444,71 @@
     "heading": "Page introuvable",
     "message": "La page que vous recherchez n'existe pas ou a été déplacée.",
     "goHome": "Retour à l'accueil"
+  },
+  "landing": {
+    "nav": {
+      "signIn": "Se connecter",
+      "getStarted": "Commencer gratuitement"
+    },
+    "hero": {
+      "badge": "Streaming multi-plateforme",
+      "headline": "Diffusez sur TikTok\net Facebook simultanément",
+      "subtext": "Diffusez sur toutes vos plateformes en même temps. Gérez les commentaires en direct, suivez vos statistiques et développez votre audience — depuis un seul tableau de bord.",
+      "cta": "Commencer gratuitement",
+      "ctaSecondary": "Se connecter"
+    },
+    "features": {
+      "sectionLabel": "FONCTIONNALITÉS",
+      "heading": "Tout ce qu'il vous faut pour streamer",
+      "multiPlatform": {
+        "title": "Diffusion multi-plateforme",
+        "description": "Diffusez simultanément sur TikTok, Facebook et plus encore. Un tableau de bord, chaque plateforme, zéro changement d'onglet."
+      },
+      "comments": {
+        "title": "Fil de commentaires unifié",
+        "description": "Tous les commentaires des plateformes en un seul fil en temps réel. Répondez à votre audience sans quitter la vue."
+      },
+      "analytics": {
+        "title": "Analytique en direct",
+        "description": "Suivez les spectateurs, le débit, le FPS et l'engagement en temps réel. Comprenez vos performances à chaque instant."
+      },
+      "latency": {
+        "title": "Latence ultra-faible",
+        "description": "Le streaming WebRTC délivre votre contenu aux spectateurs en moins de 500 millisecondes."
+      }
+    },
+    "pricing": {
+      "sectionLabel": "TARIFS",
+      "heading": "Une tarification simple et transparente",
+      "subtext": "Commencez gratuitement. Passez au niveau supérieur quand vous êtes prêt.",
+      "mostPopular": "Le plus populaire",
+      "perMonth": "/mois",
+      "free": {
+        "name": "Gratuit",
+        "price": "Gratuit",
+        "description": "Idéal pour débuter",
+        "f1": "Jusqu'à 2 comptes connectés",
+        "f2": "Diffusion TikTok & Facebook",
+        "f3": "Fil de commentaires unifié",
+        "cta": "Commencer gratuitement"
+      },
+      "premium": {
+        "name": "Premium",
+        "price": "19 $",
+        "description": "Pour les streamers sérieux",
+        "f1": "Comptes connectés illimités",
+        "f2": "Tableau de bord analytique",
+        "f3": "Outils de modération des commentaires",
+        "f4": "Enregistrement du stream",
+        "f5": "Support prioritaire",
+        "cta": "Passer au Premium"
+      }
+    },
+    "footer": {
+      "tagline": "La façon la plus simple de streamer partout.",
+      "rights": "© 2026 TikLivePro. Tous droits réservés.",
+      "terms": "Conditions",
+      "privacy": "Confidentialité"
+    }
   }
 }

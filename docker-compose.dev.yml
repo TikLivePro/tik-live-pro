@@ -167,6 +167,16 @@ services:
       - "8889:8889"       # WebRTC HTTP (WHIP/WHEP signalling)
       - "8189:8189/udp"   # WebRTC ICE UDP — must be mapped for browser streams to flow
       - "9997:9997"       # REST API
+    # Increase the kernel UDP receive buffer inside the container so the WebRTC
+    # ICE stack can absorb bursts without dropping RTP packets. The Linux default
+    # is ~212 KB; 7.5 MB is the recommended floor for WebRTC at HD bitrates.
+    # net.core.* sysctls are host-namespaced — Docker can only set them when the
+    # host kernel allows it (requires Linux ≥ 4.15 and no seccomp restriction).
+    # If this causes a "sysctl is not allowed" error, set it on the host instead:
+    #   sudo sysctl -w net.core.rmem_max=7500000 net.core.wmem_max=7500000
+    sysctls:
+      net.core.rmem_max: 7500000
+      net.core.wmem_max: 7500000
     restart: unless-stopped
 
 volumes:

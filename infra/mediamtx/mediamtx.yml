@@ -26,7 +26,14 @@ hlsAlwaysRemux: true
 hlsVariant: lowLatency
 hlsSegmentCount: 7
 hlsSegmentDuration: 1s
-hlsPartDuration: 200ms
+# LL-HLS parts are cut at keyframe boundaries, not on a timer. A 30fps stream
+# with a 10-frame GOP produces keyframes every ~333ms; setting the target below
+# that causes every part to overshoot, MediaMTX re-adapts its estimate each
+# time, and iOS clients see a mismatch between PART-TARGET and actual part
+# durations. 350ms matches observed part sizes (337-369ms) and silences the
+# iOS "part duration changed" error. If you change your encoder's keyframe
+# interval, update this value to match (keyframe_interval_frames / fps).
+hlsPartDuration: 350ms
 
 # ── WebRTC ────────────────────────────────────────────────────────────────────
 webrtcAddress: :8889
@@ -35,6 +42,10 @@ webrtcAddress: :8889
 webrtcAdditionalHosts: [127.0.0.1]
 # Fix WebRTC to a single mappable UDP port instead of random ephemeral ports.
 webrtcLocalUDPAddress: :8189
+# STUN lets the browser discover its public ICE candidate when streaming from
+# behind NAT. No effect in purely local dev but harmless and required in prod.
+webrtcICEServers2:
+  - url: stun:stun.l.google.com:19302
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 # Accept any username/password — dev only

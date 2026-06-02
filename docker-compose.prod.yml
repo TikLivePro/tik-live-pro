@@ -197,6 +197,9 @@ services:
       - "8889:8889"        # WebRTC HTTP (WHIP/WHEP signaling)
       - "8189:8189/udp"   # WebRTC media — ICE/DTLS/SRTP (MUST be UDP)
       - "9997:9997"        # REST API
+    sysctls:
+      net.core.rmem_max: 7500000
+      net.core.wmem_max: 7500000
     deploy:
       resources:
         limits:

@@ -444,5 +444,71 @@
     "heading": "Page Not Found",
     "message": "The page you're looking for doesn't exist or has been moved.",
     "goHome": "Back to home"
+  },
+  "landing": {
+    "nav": {
+      "signIn": "Sign In",
+      "getStarted": "Get Started Free"
+    },
+    "hero": {
+      "badge": "Multi-Platform Live Streaming",
+      "headline": "Go Live on TikTok\n& Facebook Simultaneously",
+      "subtext": "Stream to all your platforms at once. Manage comments in real time, track live stats, and grow your audience — all from one dashboard.",
+      "cta": "Start Streaming Free",
+      "ctaSecondary": "Sign In"
+    },
+    "features": {
+      "sectionLabel": "FEATURES",
+      "heading": "Everything you need to go live",
+      "multiPlatform": {
+        "title": "Multi-Platform Broadcasting",
+        "description": "Stream simultaneously to TikTok, Facebook, and more. One dashboard, every platform, zero tab switching."
+      },
+      "comments": {
+        "title": "Unified Comment Feed",
+        "description": "All platform comments in one real-time stream. Reply to your audience without ever leaving the view."
+      },
+      "analytics": {
+        "title": "Live Analytics",
+        "description": "Track viewers, bitrate, FPS, and engagement as they happen. Understand your performance at every moment."
+      },
+      "latency": {
+        "title": "Ultra-Low Latency",
+        "description": "WebRTC-powered streaming delivers your content to viewers in under 500 milliseconds."
+      }
+    },
+    "pricing": {
+      "sectionLabel": "PRICING",
+      "heading": "Simple, transparent pricing",
+      "subtext": "Start for free. Upgrade when you're ready to grow.",
+      "mostPopular": "Most popular",
+      "perMonth": "/mo",
+      "free": {
+        "name": "Free",
+        "price": "Free",
+        "description": "Perfect for getting started",
+        "f1": "Up to 2 connected accounts",
+        "f2": "TikTok & Facebook broadcasting",
+        "f3": "Unified comment feed",
+        "cta": "Get Started Free"
+      },
+      "premium": {
+        "name": "Premium",
+        "price": "$19",
+        "description": "For serious streamers",
+        "f1": "Unlimited connected accounts",
+        "f2": "Live analytics dashboard",
+        "f3": "Comment moderation tools",
+        "f4": "Stream recording",
+        "f5": "Priority support",
+        "cta": "Upgrade to Premium"
+      }
+    },
+    "footer": {
+      "tagline": "The simplest way to go live everywhere.",
+      "rights": "© 2026 TikLivePro. All rights reserved.",
+      "terms": "Terms",
+      "privacy": "Privacy"
+    }
   }
 }
