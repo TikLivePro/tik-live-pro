@@ -18,9 +18,14 @@ hlsPartDuration: 200ms
 
 # ── WebRTC ────────────────────────────────────────────────────────────────────
 webrtcAddress: :8889
-# Fix WebRTC to a single mappable UDP port (exposed in docker-compose).
+# Fix WebRTC to a single mappable UDP port (exposed in docker-compose as 8189/udp).
 # Without this, MediaMTX uses random ephemeral UDP ports that are unreachable.
 webrtcLocalUDPAddress: :8189
+# STUN lets MediaMTX discover its public IP (srflx candidate) so viewers on
+# the public internet can connect. Without this, MediaMTX only advertises its
+# Docker-internal IP, which is unreachable outside the host.
+webrtcICEServers2:
+  - url: stun:stun.l.google.com:19302
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 # MediaMTX does not interpolate $VAR in user/pass fields — using a named user

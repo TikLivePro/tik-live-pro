@@ -126,13 +126,23 @@ function WhepPlayer({
     pc.addTransceiver('audio', { direction: 'recvonly' });
 
     pc.ontrack = (event) => {
-      if (video.srcObject !== event.streams[0]) {
-        video.srcObject = event.streams[0] ?? null;
+      if (event.streams.length > 0 && event.streams[0]) {
+        video.srcObject = event.streams[0];
+      } else {
+        // MediaMTX may send tracks without stream association — build one manually
+        if (!(video.srcObject instanceof MediaStream)) {
+          video.srcObject = new MediaStream();
+        }
+        (video.srcObject as MediaStream).addTrack(event.track);
       }
     };
 
+    // Fall back to HLS if ICE never connects or hard-fails within 8 s
+    const fallbackTimer = setTimeout(() => onError(), 8000);
+
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed') onError();
+      if (pc.connectionState === 'connected') clearTimeout(fallbackTimer);
+      if (pc.connectionState === 'failed') { clearTimeout(fallbackTimer); onError(); }
     };
 
     let closed = false;
@@ -173,6 +183,7 @@ function WhepPlayer({
 
     return () => {
       closed = true;
+      clearTimeout(fallbackTimer);
       pc.close();
     };
   }, [src, onError]);

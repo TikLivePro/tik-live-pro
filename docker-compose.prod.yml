@@ -192,10 +192,11 @@ services:
       - MEDIAMTX_API_USER=${MEDIAMTX_API_USER}
       - MEDIAMTX_API_PASS=${MEDIAMTX_API_PASS}
     ports:
-      - "1936:1936"   # RTMP input
-      - "8888:8888"   # HLS output
-      - "8889:8889"   # WebRTC
-      - "9997:9997"   # REST API
+      - "1936:1936"        # RTMP input
+      - "8888:8888"        # HLS output
+      - "8889:8889"        # WebRTC HTTP (WHIP/WHEP signaling)
+      - "8189:8189/udp"   # WebRTC media — ICE/DTLS/SRTP (MUST be UDP)
+      - "9997:9997"        # REST API
     deploy:
       resources:
         limits:
