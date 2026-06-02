@@ -4,8 +4,23 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Hls from 'hls.js';
 import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 import { useElapsedTime } from '../hooks/useElapsedTime';
+
+const WEBRTC_BASE =
+  process.env.NEXT_PUBLIC_MEDIAMTX_WEBRTC_URL ?? 'http://localhost:8889';
+
+function toWhepUrl(hlsUrl: string): string | null {
+  try {
+    const { pathname } = new URL(hlsUrl);
+    const key = pathname.split('/live/')[1]?.split('/')[0];
+    if (!key) return null;
+    return `${WEBRTC_BASE}/live/${key}/whep`;
+  } catch {
+    return null;
+  }
+}
 
 export interface PublicSession {
   id: string;
@@ -59,12 +74,91 @@ function HlsPlayer({ src, title }: { src: string; title: string }): React.ReactE
 
     if (!Hls.isSupported()) return;
 
-    const hls = new Hls({ enableWorker: true });
+    const hls = new Hls({
+      enableWorker: true,
+      lowLatencyMode: true,     // fetch LL-HLS partial segments
+      liveSyncDuration: 1,      // target 1 s behind live edge (was 3× segment = 3 s)
+      liveMaxLatencyDuration: 5, // re-sync if latency exceeds 5 s
+      maxBufferLength: 5,
+    });
     hls.loadSource(src);
     hls.attachMedia(video);
 
     return () => {
       hls.destroy();
+    };
+  }, [src]);
+
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      controls
+      playsInline
+      muted
+      className="aspect-video w-full"
+      aria-label={title}
+    />
+  );
+}
+
+// WebRTC WHEP viewer — sub-500 ms latency, no HLS segment buffering
+function WhepPlayer({ src, title }: { src: string; title: string }): React.ReactElement {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !src) return;
+
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    });
+
+    pc.addTransceiver('video', { direction: 'recvonly' });
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+
+    pc.ontrack = (event) => {
+      if (video.srcObject !== event.streams[0]) {
+        video.srcObject = event.streams[0] ?? null;
+      }
+    };
+
+    let closed = false;
+
+    async function connect() {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      await new Promise<void>((resolve) => {
+        if (pc.iceGatheringState === 'complete') { resolve(); return; }
+        const handler = () => {
+          if (pc.iceGatheringState === 'complete') {
+            pc.removeEventListener('icegatheringstatechange', handler);
+            resolve();
+          }
+        };
+        pc.addEventListener('icegatheringstatechange', handler);
+        setTimeout(resolve, 3000);
+      });
+
+      if (closed) return;
+
+      const res = await fetch(src, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: pc.localDescription?.sdp ?? '',
+      });
+
+      if (!res.ok) throw new Error(`WHEP ${res.status}`);
+      const answerSdp = await res.text();
+      await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+    }
+
+    connect().catch((err) => console.error('[whep]', err));
+
+    return () => {
+      closed = true;
+      pc.close();
     };
   }, [src]);
 
@@ -237,12 +331,18 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
           </div>
         )}
 
-        {/* HLS player embed */}
-        {isLive && session.platformHlsUrl && (
-          <div className="mt-2 w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
-            <HlsPlayer src={session.platformHlsUrl} title={session.title} />
-          </div>
-        )}
+        {/* Player — WebRTC WHEP preferred (sub-500ms), HLS fallback */}
+        {isLive && session.platformHlsUrl && (() => {
+          const whepUrl = toWhepUrl(session.platformHlsUrl!);
+          const useWhep = !!whepUrl && typeof RTCPeerConnection !== 'undefined';
+          return (
+            <div className="mt-2 w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
+              {useWhep
+                ? <WhepPlayer src={whepUrl} title={session.title} />
+                : <HlsPlayer src={session.platformHlsUrl!} title={session.title} />}
+            </div>
+          );
+        })()}
 
         {/* CTA */}
         <Link
