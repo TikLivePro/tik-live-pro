@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { cookies } from 'next/headers';
-import Script from 'next/script';
 import { defaultLocale, isSupported, type SupportedLocale } from '@tik-live-pro/i18n';
 import { Providers } from './providers';
 import './globals.css';
@@ -24,14 +23,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang={locale} suppressHydrationWarning>
+      <head>
+        {/* Runs synchronously before first paint to avoid theme flash.
+            Placed in <head> (not via next/script) because React 19 does not
+            execute <script> tags rendered into the client component tree. */}
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('theme')||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.toggle('dark',t==='dark')}catch(e){}})()` }} />
+      </head>
       <body className={`${inter.variable} font-sans antialiased`}>
-        <Script
-          id="theme-init"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('theme')||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.toggle('dark',t==='dark')}catch(e){}})()`,
-          }}
-        />
         <Providers locale={locale} messages={messages}>
           {children}
         </Providers>
