@@ -1,6 +1,6 @@
 # TikLivePro — Architecture Overview
 
-> **Last updated:** 2026-06-01 (added MediaMTX platform-native streaming relay; document downstream JWT verification pattern)
+> **Last updated:** 2026-06-02 (add stream-orchestrator to API Gateway routing; fix ingest route prefix to /stream-orchestrator/sessions/:id/ingest)
 > Keep this file up-to-date whenever services, ports, infrastructure, or data flows change.
 
 ## Table of Contents

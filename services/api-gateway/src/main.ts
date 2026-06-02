@@ -20,6 +20,7 @@ const envSchema = baseEnvSchema.extend({
   COMMENTS_SERVICE_URL: z.string().url(),
   NOTIFICATIONS_SERVICE_URL: z.string().url(),
   ANALYTICS_SERVICE_URL: z.string().url(),
+  STREAM_ORCHESTRATOR_SERVICE_URL: z.string().url(),
 });
 
 const env = parseEnv(envSchema);
@@ -34,7 +35,13 @@ const SERVICE_ROUTES: Record<string, string> = {
   '/comments': env.COMMENTS_SERVICE_URL,
   '/notifications': env.NOTIFICATIONS_SERVICE_URL,
   '/analytics': env.ANALYTICS_SERVICE_URL,
+  '/stream-orchestrator': env.STREAM_ORCHESTRATOR_SERVICE_URL,
 };
+
+// Routes whose prefix is stripped before forwarding to the upstream.
+// The upstream service registers routes without the gateway prefix.
+// Example: GET /stream-orchestrator/sessions/:id/ingest → upstream receives /sessions/:id/ingest.
+const STRIP_PREFIX_ROUTES = new Set(['/stream-orchestrator']);
 
 const PUBLIC_PREFIXES = new Set(['/auth']);
 
@@ -658,6 +665,27 @@ All error responses follow a consistent envelope:
         },
 
         // -----------------------------------------------------------------------
+        // STREAM ORCHESTRATOR
+        // -----------------------------------------------------------------------
+        '/stream-orchestrator/sessions/{sessionId}/ingest': {
+          get: {
+            tags: ['Streaming'],
+            summary: 'Get ingest endpoint',
+            description: 'Returns the RTMP ingest URL, WHIP URL, HLS URL, and stream key for a session that is ready to receive a video stream. Poll until status is `waiting_for_stream` before starting WHIP/RTMP.',
+            security: [{ BearerAuth: [] }],
+            parameters: [
+              { in: 'path', name: 'sessionId', required: true, schema: { type: 'string', format: 'uuid' }, description: 'Live session ID.' },
+            ],
+            responses: {
+              200: { description: 'Ingest endpoint ready.', content: { 'application/json': { schema: { type: 'object', required: ['ingestUrl', 'ingestKey', 'hlsUrl', 'whipUrl', 'status'], properties: { ingestUrl: { type: 'string' }, ingestKey: { type: 'string' }, hlsUrl: { type: 'string' }, whipUrl: { type: 'string' }, status: { type: 'string', enum: ['waiting_for_stream', 'live', 'ending', 'ended', 'error'] } } } } } },
+              401: { description: 'Unauthorized.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              404: { description: 'Session not found.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              409: { description: 'Ingest not ready yet (session is idle or starting). Retry after a short delay.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            },
+          },
+        },
+
+        // -----------------------------------------------------------------------
         // BILLING
         // -----------------------------------------------------------------------
         '/billing/plans': {
@@ -1044,7 +1072,10 @@ All error responses follow a consistent envelope:
         await request.jwtVerify();
       }
 
-      const targetUrl = `${upstream}${request.url}`;
+      const upstreamPath = STRIP_PREFIX_ROUTES.has(prefix)
+        ? request.url.slice(prefix.length) || '/'
+        : request.url;
+      const targetUrl = `${upstream}${upstreamPath}`;
       const forwardedHeaders = Object.fromEntries(
         Object.entries(request.headers).filter(
           ([k, v]) => v !== undefined && !HOP_BY_HOP.has(k.toLowerCase()),

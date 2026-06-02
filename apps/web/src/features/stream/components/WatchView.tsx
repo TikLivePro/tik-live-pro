@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import Hls from 'hls.js';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { useElapsedTime } from '../hooks/useElapsedTime';
@@ -42,6 +43,43 @@ function LogoMark(): React.ReactElement {
 }
 
 const POLL_INTERVAL = 5000;
+
+function HlsPlayer({ src, title }: { src: string; title: string }): React.ReactElement {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari — native HLS support
+      video.src = src;
+      return;
+    }
+
+    if (!Hls.isSupported()) return;
+
+    const hls = new Hls({ enableWorker: true });
+    hls.loadSource(src);
+    hls.attachMedia(video);
+
+    return () => {
+      hls.destroy();
+    };
+  }, [src]);
+
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      controls
+      playsInline
+      muted
+      className="aspect-video w-full"
+      aria-label={title}
+    />
+  );
+}
 
 export function WatchView({ initialSession, apiBase }: Props): React.ReactElement {
   const t = useTranslations('watch');
@@ -202,14 +240,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
         {/* HLS player embed */}
         {isLive && session.platformHlsUrl && (
           <div className="mt-2 w-full max-w-2xl overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl">
-            <video
-              src={session.platformHlsUrl}
-              autoPlay
-              controls
-              playsInline
-              className="aspect-video w-full"
-              aria-label={session.title}
-            />
+            <HlsPlayer src={session.platformHlsUrl} title={session.title} />
           </div>
         )}
 
