@@ -51,15 +51,19 @@ webrtc.tiklivepro.me {
     }
 
     # Actual WHIP / WebRTC requests — proxy to MediaMTX.
-    # header_down runs after the upstream responds, so it correctly modifies
-    # the proxied response headers. Access-Control-Expose-Headers is required
-    # so the browser WHIP client can read the Location header from the 201
-    # response (Location is not a CORS-safelisted header).
+    # MediaMTX v1.18+ already sets Access-Control-Allow-Origin: * natively.
+    # Using `header { defer }` instead of header_down ensures the CORS headers
+    # are set (or overridden) after MediaMTX responds, regardless of which
+    # version of Caddy is installed. header_down's "set" form can silently
+    # no-op when the upstream header is absent in some Caddy builds.
+    # Access-Control-Expose-Headers is required so the browser WHIP client
+    # can read the Location header from the 201 response.
     handle {
-        reverse_proxy localhost:8889 {
-            header_down -Access-Control-Allow-Origin
-            header_down Access-Control-Allow-Origin  "*"
-            header_down Access-Control-Expose-Headers "Location"
+        header {
+            Access-Control-Allow-Origin  "*"
+            Access-Control-Expose-Headers "Location"
+            defer
         }
+        reverse_proxy localhost:8889
     }
 }
