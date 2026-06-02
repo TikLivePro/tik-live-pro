@@ -113,6 +113,10 @@ function WhepPlayer({
   onError: () => void;
 }): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Ref so onError identity changes (re-renders from parent polls) never
+  // restart the RTCPeerConnection mid-handshake.
+  const onErrorRef = useRef(onError);
+  useEffect(() => { onErrorRef.current = onError; });
 
   useEffect(() => {
     const video = videoRef.current;
@@ -138,11 +142,11 @@ function WhepPlayer({
     };
 
     // Fall back to HLS if ICE never connects or hard-fails within 8 s
-    const fallbackTimer = setTimeout(() => onError(), 8000);
+    const fallbackTimer = setTimeout(() => onErrorRef.current(), 8000);
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'connected') clearTimeout(fallbackTimer);
-      if (pc.connectionState === 'failed') { clearTimeout(fallbackTimer); onError(); }
+      if (pc.connectionState === 'failed') { clearTimeout(fallbackTimer); onErrorRef.current(); }
     };
 
     let closed = false;
@@ -178,7 +182,7 @@ function WhepPlayer({
 
     connect().catch((err) => {
       console.error('[whep]', err);
-      onError();
+      onErrorRef.current();
     });
 
     return () => {
@@ -186,7 +190,7 @@ function WhepPlayer({
       clearTimeout(fallbackTimer);
       pc.close();
     };
-  }, [src, onError]);
+  }, [src]); // ← only src; onError is read via ref so identity changes don't restart ICE
 
   return (
     <video
