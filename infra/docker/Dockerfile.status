@@ -53,7 +53,7 @@ WORKDIR /app
 
 COPY --from=builder --chown=nextjs:nodejs /app/apps/status/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/status/.next/static ./apps/status/.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/apps/status/public         ./apps/status/public 2>/dev/null || true
+COPY --from=builder --chown=nextjs:nodejs /app/apps/status/public         ./apps/status/public
 
 USER nextjs
 
