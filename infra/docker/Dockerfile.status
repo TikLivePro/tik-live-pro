@@ -32,11 +32,13 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN mkdir -p /app/apps/status/public
 
 RUN pnpm install --frozen-lockfile --filter "@tik-live-pro/status..." --prod=false
 
 ENV NEXT_TELEMETRY_DISABLED=1
+
+# Ensure source path exists in builder stage for runtime COPY --from=builder.
+RUN mkdir -p /app/apps/status/public
 
 RUN pnpm --filter "@tik-live-pro/status" build
 
