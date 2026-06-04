@@ -10,6 +10,7 @@ import { useElapsedTime } from '../hooks/useElapsedTime';
 import { useCameraStream } from '../hooks/useCameraStream';
 import { useWhipStream } from '../hooks/useWhipStream';
 import { useStreamStore } from '../store/stream.store';
+import { getVideoQualityPreset } from '../consts/stream.consts';
 import { useComments } from '@/features/comments/hooks/useComments';
 import { useRecording } from '../hooks/useRecording';
 import type { LiveSessionId } from '@tik-live-pro/shared-types';
@@ -30,7 +31,7 @@ export function FullscreenLiveView(): React.ReactElement {
   const router = useRouter();
   const { currentSession, isEnding, isPausing, endSession, pauseSession, resumeSession } =
     useStream();
-  const { comments, liveReactions, addReaction, removeReaction } = useStreamStore();
+  const { comments, liveReactions, addReaction, removeReaction, videoQualityId } = useStreamStore();
   const isPaused = currentSession?.status === 'paused';
   const {
     videoRef,
@@ -130,7 +131,8 @@ export function FullscreenLiveView(): React.ReactElement {
       // Reset to false on failure so the next effect cycle retries automatically.
       whipStartedRef.current = true;
       try {
-        await connectWhip(whipUrl, stream);
+        const bitrate = getVideoQualityPreset(useStreamStore.getState().videoQualityId).bitrate;
+        await connectWhip(whipUrl, stream, bitrate);
       } catch {
         whipStartedRef.current = false;
       }

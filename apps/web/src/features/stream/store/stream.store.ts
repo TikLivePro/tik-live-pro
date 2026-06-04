@@ -1,9 +1,16 @@
 import { create } from 'zustand';
 import type { LiveSession, LiveSessionStatus } from '@tik-live-pro/shared-types';
 import type { Comment } from '@tik-live-pro/shared-types';
+import { DEFAULT_VIDEO_QUALITY_ID } from '../consts/stream.consts';
 
 const MAX_COMMENTS = 200;
 const MAX_REACTIONS = 20;
+const QUALITY_STORAGE_KEY = 'tiklivepro:videoQualityId';
+
+function readStoredQuality(): string {
+  if (typeof window === 'undefined') return DEFAULT_VIDEO_QUALITY_ID;
+  return localStorage.getItem(QUALITY_STORAGE_KEY) ?? DEFAULT_VIDEO_QUALITY_ID;
+}
 
 export interface LiveReaction {
   id: string;
@@ -21,6 +28,7 @@ interface StreamState {
   isPausing: boolean;
   isMinimized: boolean;
   activeStream: MediaStream | null;
+  videoQualityId: string;
   setSession: (session: LiveSession | null) => void;
   updateSessionStatus: (status: LiveSessionStatus) => void;
   addComment: (comment: Comment) => void;
@@ -35,6 +43,7 @@ interface StreamState {
   setPausing: (value: boolean) => void;
   setMinimized: (value: boolean) => void;
   setActiveStream: (stream: MediaStream | null) => void;
+  setVideoQualityId: (id: string) => void;
 }
 
 export const useStreamStore = create<StreamState>()((set, get) => ({
@@ -47,6 +56,7 @@ export const useStreamStore = create<StreamState>()((set, get) => ({
   isPausing: false,
   isMinimized: false,
   activeStream: null,
+  videoQualityId: readStoredQuality(),
 
   setSession: (session) => {
     if (session === null) {
@@ -97,4 +107,8 @@ export const useStreamStore = create<StreamState>()((set, get) => ({
   setPausing: (value) => set({ isPausing: value }),
   setMinimized: (value) => set({ isMinimized: value }),
   setActiveStream: (stream) => set({ activeStream: stream }),
+  setVideoQualityId: (id) => {
+    if (typeof window !== 'undefined') localStorage.setItem(QUALITY_STORAGE_KEY, id);
+    set({ videoQualityId: id });
+  },
 }));

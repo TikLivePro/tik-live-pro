@@ -67,6 +67,9 @@
     "deselectAll": "Tout désélectionner",
     "optionalLabel": "optionnel",
     "endStream": "Terminer le stream",
+    "quality": {
+      "label": "Qualité d'enregistrement"
+    },
     "camera": {
       "optional": "Prévisualisation caméra (optionnelle)",
       "preview": "Prévisualisez votre caméra avant de démarrer",

@@ -6,7 +6,7 @@ export type WhipState = 'idle' | 'connecting' | 'connected' | 'failed';
 
 export interface WhipStreamResult {
   state: WhipState;
-  connect: (whipUrl: string, stream: MediaStream) => Promise<void>;
+  connect: (whipUrl: string, stream: MediaStream, bitrate?: number) => Promise<void>;
   disconnect: () => void;
 }
 
@@ -22,7 +22,7 @@ export function useWhipStream(): WhipStreamResult {
     setState('idle');
   }, []);
 
-  const connect = useCallback(async (whipUrl: string, stream: MediaStream) => {
+  const connect = useCallback(async (whipUrl: string, stream: MediaStream, bitrate?: number) => {
     disconnect();
     setState('connecting');
 
@@ -34,7 +34,7 @@ export function useWhipStream(): WhipStreamResult {
 
       for (const track of stream.getTracks()) {
         const sendEncodings: RTCRtpEncodingParameters[] =
-          track.kind === 'video' ? [{ maxBitrate: 1_500_000 }] : [];
+          track.kind === 'video' ? [{ maxBitrate: bitrate ?? 2_500_000 }] : [];
         const transceiver = pc.addTransceiver(track, { streams: [stream], sendEncodings });
         if (track.kind === 'video') {
           // MediaMTX can only remux H.264 to HLS — VP8/VP9 would produce a 404 HLS response.

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStreamStore } from '../store/stream.store';
+import { getVideoQualityPreset } from '../consts/stream.consts';
 
 export type CameraState = 'idle' | 'requesting' | 'active' | 'denied' | 'error';
 
@@ -90,12 +91,12 @@ export function useCameraStream(autoStart = false): CameraStreamResult {
     acquiringRef.current = true;
     setState('requesting');
     try {
+      const qualityId = useStreamStore.getState().videoQualityId;
+      const preset = getVideoQualityPreset(qualityId);
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          // Cap at 720p/30fps — keeps bitrate in range for mobile networks
-          // while maintaining acceptable quality for live streaming.
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 },
+          width: { ideal: preset.width, max: preset.width },
+          height: { ideal: preset.height, max: preset.height },
           frameRate: { ideal: 30, max: 30 },
         },
         audio: true,

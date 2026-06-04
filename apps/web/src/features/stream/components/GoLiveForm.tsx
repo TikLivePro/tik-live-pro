@@ -7,6 +7,8 @@ import { AccountSelector } from './AccountSelector';
 import { CameraPreview } from './CameraPreview';
 import { cn } from '@/lib/utils';
 import type { SocialAccountId } from '@tik-live-pro/shared-types';
+import { VIDEO_QUALITY_PRESETS } from '../consts/stream.consts';
+import { useStreamStore } from '../store/stream.store';
 
 interface Props {
   onSubmit: (params: { title: string; description?: string; destinationIds: SocialAccountId[] }) => void;
@@ -16,6 +18,7 @@ interface Props {
 export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
   const t = useTranslations('stream');
   const { data: accounts = [] } = useSocialAccounts();
+  const { videoQualityId, setVideoQualityId } = useStreamStore();
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -84,6 +87,35 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
           disabled={isLoading}
           className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand/50 disabled:opacity-60"
         />
+      </div>
+
+      {/* Quality selector */}
+      <div className="space-y-2">
+        <p className="text-sm font-medium">{t('quality.label')}</p>
+        <div className="grid grid-cols-3 gap-2">
+          {VIDEO_QUALITY_PRESETS.map((preset) => {
+            const isSelected = videoQualityId === preset.id;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                disabled={isLoading}
+                onClick={() => setVideoQualityId(preset.id)}
+                className={cn(
+                  'flex flex-col items-center rounded-xl border px-2 py-2.5 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                  isSelected
+                    ? 'border-brand/60 bg-brand/10 text-brand'
+                    : 'border-border bg-background text-foreground hover:border-border/80 hover:bg-muted/50',
+                )}
+              >
+                <span className="text-sm font-semibold">{preset.label}</span>
+                <span className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
+                  {preset.subLabel}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Account selector — optional */}
