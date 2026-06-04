@@ -53,13 +53,13 @@ apiAddress: :9997
 # MediaMTX writes .fmp4.part while the stream is live, then renames to .fmp4
 # at end-of-segment or stream stop. The RecordingUploader in stream-orchestrator
 # watches /recordings, uploads completed .fmp4 files to object storage, then
-# deletes them locally. recordDeleteAfter: 0 disables auto-delete so the uploader
+# deletes them locally. recordDeleteAfter: 0s disables auto-delete so the uploader
 # controls the lifecycle.
 record: no
 recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
 recordFormat: fmp4
 recordSegmentDuration: 1h
-recordDeleteAfter: 0
+recordDeleteAfter: 0s
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 # Allow any dynamically-created path (browser WHIP publisher, RTMP relay, etc.)

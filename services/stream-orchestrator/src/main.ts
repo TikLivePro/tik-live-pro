@@ -48,15 +48,34 @@ const envSchema = baseEnvSchema.extend({
   MEDIAMTX_API_USER: z.string().default(''),
   MEDIAMTX_API_PASS: z.string().default(''),
   // Recording upload — all optional. Leave RECORDING_STORAGE_PROVIDER unset to disable.
+  // z.preprocess coerces empty strings (from compose ${VAR:-} expansion) to undefined.
   RECORDINGS_DIR: z.string().default('/recordings'),
   // 'minio' is for local dev only — uses forcePathStyle=true
-  RECORDING_STORAGE_PROVIDER: z.enum(['do-spaces', 'r2', 'minio']).optional(),
-  RECORDING_STORAGE_BUCKET: z.string().optional(),
+  RECORDING_STORAGE_PROVIDER: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.enum(['do-spaces', 'r2', 'minio']).optional(),
+  ),
+  RECORDING_STORAGE_BUCKET: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.string().optional(),
+  ),
   RECORDING_STORAGE_REGION: z.string().default('auto'),
-  RECORDING_STORAGE_ENDPOINT: z.string().url().optional(),
-  RECORDING_STORAGE_ACCESS_KEY_ID: z.string().optional(),
-  RECORDING_STORAGE_SECRET_ACCESS_KEY: z.string().optional(),
-  RECORDING_STORAGE_CDN_URL: z.string().url().optional(),
+  RECORDING_STORAGE_ENDPOINT: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.string().url().optional(),
+  ),
+  RECORDING_STORAGE_ACCESS_KEY_ID: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.string().optional(),
+  ),
+  RECORDING_STORAGE_SECRET_ACCESS_KEY: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.string().optional(),
+  ),
+  RECORDING_STORAGE_CDN_URL: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.string().url().optional(),
+  ),
 });
 
 const env = parseEnv(envSchema);
