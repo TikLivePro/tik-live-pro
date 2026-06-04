@@ -37,6 +37,9 @@ RUN pnpm install --frozen-lockfile --filter "@tik-live-pro/status..." --prod=fal
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Ensure source path exists in builder stage for runtime COPY --from=builder.
+RUN mkdir -p /app/apps/status/public
+
 RUN pnpm --filter "@tik-live-pro/status" build
 
 # ── Stage 4: runtime ──────────────────────────────────────────────────────────
