@@ -139,6 +139,43 @@
     "noDestinationsHint": "No platform selected — stream will run without broadcasting to social media",
     "recordingEnabled": "Your stream will be saved to cloud storage",
     "recordingDisabled": "Upgrade your plan to save stream recordings",
+    "recording": {
+      "start": "Record",
+      "stop": "Stop REC",
+      "active": "REC",
+      "started": "Recording started",
+      "stopped": "Recording stopped",
+      "paused": "Recording paused",
+      "resumed": "Recording resumed",
+      "startFailed": "Failed to start recording",
+      "stopFailed": "Failed to stop recording",
+      "pauseFailed": "Failed to pause recording",
+      "resumeFailed": "Failed to resume recording"
+    },
+    "recordings": {
+      "sectionLabel": "RECORDINGS",
+      "activeHeading": "Active",
+      "completedHeading": "Completed",
+      "empty": "No active recordings",
+      "completedEmpty": "No recordings saved yet",
+      "activeLabel": "Recording",
+      "pausedLabel": "Paused",
+      "stopRecording": "Stop recording",
+      "pauseRecording": "Pause recording",
+      "resumeRecording": "Resume recording",
+      "segmentCount": "{n, plural, one {# segment} other {# segments}}",
+      "view": "View",
+      "download": "Download",
+      "fileSize": "{size} MB"
+    },
+    "viewers": {
+      "showAudience": "Show viewers to audience",
+      "hideAudience": "Hide viewers from audience",
+      "panel": "Live viewers",
+      "noneYet": "No viewers yet",
+      "updatedOn": "Viewer list visible",
+      "updatedOff": "Viewer list hidden"
+    },
     "errors": {
       "noDestinations": "Please add at least one destination",
       "createFailed": "Failed to create the session",
@@ -438,7 +475,21 @@
     "notFound": "Stream Not Found",
     "notFoundDesc": "This link is invalid or the stream has been removed.",
     "poweredBy": "Powered by TikLivePro",
-    "goToApp": "Go to TikLivePro"
+    "goToApp": "Go to TikLivePro",
+    "like": "Like",
+    "comment": "Comment",
+    "comments": "Comments",
+    "share": "Share",
+    "viewers": "Viewers",
+    "viewersList": "Viewers list",
+    "signInToInteract": "Sign in to like and comment",
+    "signInDesc": "Create a free account to join the conversation.",
+    "signIn": "Sign in",
+    "notNow": "Not now",
+    "noViewers": "No viewers yet",
+    "noComments": "No comments yet",
+    "commentPlaceholder": "Add a comment…",
+    "send": "Send"
   },
   "notFound": {
     "heading": "Page Not Found",
@@ -448,7 +499,8 @@
   "landing": {
     "nav": {
       "signIn": "Sign In",
-      "getStarted": "Get Started Free"
+      "getStarted": "Get Started Free",
+      "goToDashboard": "Go to Dashboard"
     },
     "hero": {
       "badge": "Multi-Platform Live Streaming",

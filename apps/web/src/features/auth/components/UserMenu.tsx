@@ -9,16 +9,21 @@ import { useProfile } from '../hooks/useProfile';
 import { useLocale } from '../hooks/useLocale';
 import { getInitials } from '@/lib/text.utils';
 import { cn } from '@/lib/utils';
-import { SettingsGearIcon, LogOutIcon, ChevronDownIcon, SunIcon, MoonIcon, GlobeIcon } from './AuthIcons';
+import { SettingsGearIcon, LogOutIcon, ChevronDownIcon, SunIcon, MoonIcon, GlobeIcon, BroadcastIcon } from './AuthIcons';
 import { AVATAR_COLORS } from '@/lib/avatar.consts';
 
-export function UserMenu(): React.ReactElement {
+interface UserMenuProps {
+  showDashboardLink?: boolean;
+}
+
+export function UserMenu({ showDashboardLink = false }: UserMenuProps): React.ReactElement {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const { logout } = useAuth();
   const { theme, toggle } = useTheme();
   const t = useTranslations('auth');
   const tSettings = useTranslations('settings');
+  const tLandingNav = useTranslations('landing.nav');
   const { displayName, email, subscriptionTier } = useProfile();
   const { locale, setLocale } = useLocale();
 
@@ -84,6 +89,16 @@ export function UserMenu(): React.ReactElement {
 
           {/* Actions */}
           <div className="py-1.5">
+            {showDashboardLink && (
+              <Link
+                href="/dashboard"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors hover:bg-muted"
+              >
+                <BroadcastIcon className="h-4 w-4 flex-shrink-0 text-brand" />
+                <span className="text-brand">{tLandingNav('goToDashboard')}</span>
+              </Link>
+            )}
             <Link
               href="/settings"
               onClick={() => setOpen(false)}

@@ -1,5 +1,8 @@
+import net from 'net';
 import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
+import { drizzle as drizzleNeon } from 'drizzle-orm/neon-http';
+import { neon } from '@neondatabase/serverless';
 import { eq } from 'drizzle-orm';
 import { plans } from './schema.js';
 
@@ -39,12 +42,10 @@ const PLANS = [
   },
 ] as const;
 
-async function seed(): Promise<void> {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  const db = drizzle(pool);
+type Db = ReturnType<typeof drizzle> | ReturnType<typeof drizzleNeon>;
 
+async function upsertPlans(db: Db): Promise<void> {
   console.log('Seeding billing plans…');
-
   for (const plan of PLANS) {
     const existing = await db.select().from(plans).where(eq(plans.slug, plan.slug));
     if (existing.length > 0) {
@@ -63,8 +64,25 @@ async function seed(): Promise<void> {
       console.log(`  inserted: ${plan.slug}`);
     }
   }
+}
 
-  await pool.end();
+async function seed(): Promise<void> {
+  const DATABASE_URL = process.env.DATABASE_URL!;
+
+  // Neon/pg hosts expose AAAA records but IPv6 is unreachable in most hosted
+  // environments. Disable Happy Eyeballs so both TCP and fetch use IPv4 directly.
+  net.setDefaultAutoSelectFamily(false);
+
+  if (DATABASE_URL.includes('neon.tech')) {
+    const db = drizzleNeon(neon(DATABASE_URL));
+    await upsertPlans(db);
+  } else {
+    const pool = new Pool({ connectionString: DATABASE_URL });
+    const db = drizzle(pool);
+    await upsertPlans(db);
+    await pool.end();
+  }
+
   console.log('Done.');
 }
 

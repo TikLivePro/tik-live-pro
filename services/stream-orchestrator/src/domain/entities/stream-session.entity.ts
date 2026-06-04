@@ -15,6 +15,13 @@ export const StreamSessionStatus = {
 } as const;
 export type StreamSessionStatus = (typeof StreamSessionStatus)[keyof typeof StreamSessionStatus];
 
+export const RecordingStatus = {
+  NONE: 'none',
+  RECORDING: 'recording',
+  PAUSED: 'paused',
+} as const;
+export type RecordingStatus = (typeof RecordingStatus)[keyof typeof RecordingStatus];
+
 export class StreamSession {
   private constructor(
     private readonly _sessionId: LiveSessionId,
@@ -28,6 +35,7 @@ export class StreamSession {
     private readonly _createdAt: Date,
     private _startedAt: Date | null,
     private _endedAt: Date | null,
+    private _recordingStatus: RecordingStatus,
   ) {}
 
   static create(
@@ -49,6 +57,7 @@ export class StreamSession {
       new Date(),
       null,
       null,
+      RecordingStatus.NONE,
     );
   }
 
@@ -64,6 +73,7 @@ export class StreamSession {
     createdAt: Date;
     startedAt: Date | null;
     endedAt: Date | null;
+    recordingStatus?: RecordingStatus;
   }): StreamSession {
     return new StreamSession(
       props.sessionId,
@@ -77,6 +87,7 @@ export class StreamSession {
       props.createdAt,
       props.startedAt,
       props.endedAt,
+      props.recordingStatus ?? RecordingStatus.NONE,
     );
   }
 
@@ -165,6 +176,18 @@ export class StreamSession {
     );
   }
 
+  startRecording(): void {
+    this._recordingStatus = RecordingStatus.RECORDING;
+  }
+
+  pauseRecording(): void {
+    this._recordingStatus = RecordingStatus.PAUSED;
+  }
+
+  stopRecording(): void {
+    this._recordingStatus = RecordingStatus.NONE;
+  }
+
   get sessionId(): LiveSessionId { return this._sessionId; }
   get userId(): UserId { return this._userId; }
   get title(): string { return this._title; }
@@ -176,6 +199,7 @@ export class StreamSession {
   get createdAt(): Date { return this._createdAt; }
   get startedAt(): Date | null { return this._startedAt; }
   get endedAt(): Date | null { return this._endedAt; }
+  get recordingStatus(): RecordingStatus { return this._recordingStatus; }
 
   private requireDestination(socialAccountId: SocialAccountId): Destination {
     const dest = this.getDestination(socialAccountId);

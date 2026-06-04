@@ -10,6 +10,8 @@ import type { LiveSessionId, UserId, SocialAccountId } from '@tik-live-pro/share
 import { SocialPlatform, DestinationStatus } from '@tik-live-pro/shared-types';
 import type { StreamTargetInfo } from '../../src/domain/value-objects/stream-target-info.js';
 
+global.fetch = jest.fn().mockResolvedValue({ ok: true } as Response);
+
 const sessionId = 'sess-001' as LiveSessionId;
 const userId = 'user-001' as UserId;
 const accountId = 'acc-001' as SocialAccountId;
@@ -92,10 +94,12 @@ describe('StopBroadcastUseCase', () => {
       sessionLive: jest.fn(),
       sessionError: jest.fn(),
       healthUpdated: jest.fn(),
+      sessionBroadcastStopped: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<StreamEventPublisher>;
 
     const useCase = new StopBroadcastUseCase(
       repo, tokenProvider, adapterRegistry, streamArrivalHandler, eventPublisher, mockLogger,
+      'http://localhost:9997', undefined,
     );
 
     await useCase.execute({ sessionId, correlationId: 'corr-1' });
@@ -128,8 +132,9 @@ describe('StopBroadcastUseCase', () => {
       { getToken: jest.fn() },
       { get: jest.fn(), register: jest.fn(), has: jest.fn(), supported: jest.fn() } as unknown as AdapterRegistry,
       { stopWorker: jest.fn(), execute: jest.fn(), activeWorkerCount: jest.fn() } as unknown as HandleStreamArrivedUseCase,
-      { destinationStatusChanged: jest.fn(), sessionLive: jest.fn(), sessionError: jest.fn(), healthUpdated: jest.fn() } as unknown as StreamEventPublisher,
+      { destinationStatusChanged: jest.fn(), sessionLive: jest.fn(), sessionError: jest.fn(), healthUpdated: jest.fn(), sessionBroadcastStopped: jest.fn().mockResolvedValue(undefined) } as unknown as StreamEventPublisher,
       mockLogger,
+      'http://localhost:9997', undefined,
     );
 
     await useCase.execute({ sessionId, correlationId: 'corr-1' });

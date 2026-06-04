@@ -15,8 +15,9 @@
 #   infra (postgres 512 m + redis 300 m + nats 128 m)   ~  940 MB
 #   10 microservices (128–320 m each)                    ~ 1 780 MB
 #   web (Next.js standalone)                             ~  512 MB
+#   status page                                          ~   96 MB
 #   ─────────────────────────────────────────────────────────────
-#   Total                                                ~ 3 232 MB  ← fits
+#   Total                                                ~ 3 328 MB  ← fits
 #
 # Observability profile adds ~2 GB (Jaeger + otel + Prometheus + Grafana).
 # Start it only on an 8 GB Droplet:
@@ -495,6 +496,45 @@ services:
           memory: 320m
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3009/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Status page — https://status.tiklivepro.me ─────────────────────────────
+
+  status:
+    <<: *service-defaults
+    image: ${REGISTRY:-ghcr.io/tik-live-pro}/status:${IMAGE_TAG:-latest}
+    environment:
+      NODE_ENV: production
+      PORT: "3011"
+      HOSTNAME: "0.0.0.0"
+      NEXT_TELEMETRY_DISABLED: "1"
+      NODE_OPTIONS: "--max-old-space-size=64"
+      API_GATEWAY_URL: http://api-gateway:3000
+      AUTH_SERVICE_URL: http://auth:3001
+      USERS_SERVICE_URL: http://users:3002
+      LIVE_SESSION_SERVICE_URL: http://live-session:3003
+      BILLING_SERVICE_URL: http://billing:3004
+      INTEGRATIONS_SERVICE_URL: http://integrations:3005
+      COMMENTS_SERVICE_URL: http://comments:3006
+      NOTIFICATIONS_SERVICE_URL: http://notifications:3007
+      ANALYTICS_SERVICE_URL: http://analytics:3008
+      STREAM_ORCHESTRATOR_URL: http://stream-orchestrator:3009
+      MEDIAMTX_API_URL: http://mediamtx:9997
+      NATS_MONITORING_URL: http://nats:8222
+    ports:
+      - "3011:3011"
+    depends_on:
+      nats:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 96m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3011/"]
       interval: 15s
       timeout: 5s
       retries: 5

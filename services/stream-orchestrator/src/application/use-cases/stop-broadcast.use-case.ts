@@ -21,6 +21,8 @@ export class StopBroadcastUseCase {
     private readonly streamArrivalHandler: HandleStreamArrivedUseCase,
     private readonly eventPublisher: StreamEventPublisher,
     private readonly logger: Logger,
+    private readonly mediaMtxApiUrl: string,
+    private readonly mediaMtxApiAuthHeader: string | undefined,
   ) {}
 
   async execute(input: StopBroadcastInput): Promise<void> {
@@ -40,10 +42,12 @@ export class StopBroadcastUseCase {
       return;
     }
 
-    // Stop the ffmpeg worker first
+    // Stop the ffmpeg worker and any active recording
     if (session.ingestKey) {
       await this.streamArrivalHandler.stopWorker(session.ingestKey);
+      await this.stopMediaMtxRecording(session.ingestKey);
     }
+    session.stopRecording();
 
     session.beginEnding();
 
@@ -96,5 +100,19 @@ export class StopBroadcastUseCase {
     );
 
     this.logger.info({ sessionId: input.sessionId }, 'Broadcast stopped');
+  }
+
+  private async stopMediaMtxRecording(ingestKey: string): Promise<void> {
+    const pathName = encodeURIComponent(`live/${ingestKey}`);
+    const headers: Record<string, string> = {};
+    if (this.mediaMtxApiAuthHeader) headers['Authorization'] = this.mediaMtxApiAuthHeader;
+    try {
+      await fetch(`${this.mediaMtxApiUrl}/v3/config/paths/delete/${pathName}`, {
+        method: 'DELETE',
+        headers,
+      });
+    } catch (err) {
+      this.logger.warn({ err, ingestKey }, 'Failed to stop MediaMTX recording on session end');
+    }
   }
 }

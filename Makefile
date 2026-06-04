@@ -16,7 +16,7 @@
 
 # -- Config --------------------------------------------------------------------
 
-TURBO        := pnpm turbo run --concurrency=12
+TURBO        := pnpm turbo run --concurrency=16
 DOCKER       := docker compose -f docker-compose.dev.yml
 DOCKER_PROD  := docker compose -f docker-compose.prod.yml
 IMAGE_TAG    ?= latest
@@ -48,19 +48,19 @@ PACKAGES := \
 # Declare all targets as phony (never match a file name)
 .PHONY: \
   install \
-  dev dev-no-turbo dev-services dev-web dev-web-no-turbo dev-mobile \
+  dev dev-no-turbo dev-services dev-web dev-web-no-turbo dev-status dev-mobile \
   infra-up infra-down infra-logs infra-ps infra-reset \
-  build build-services build-web build-packages \
+  build build-services build-web build-status build-packages \
   start \
   test test-services test-packages test-watch \
-  typecheck typecheck-services typecheck-web typecheck-mobile typecheck-packages \
+  typecheck typecheck-services typecheck-web typecheck-status typecheck-mobile typecheck-packages \
   lint lint-fix \
   format \
   clean clean-dist clean-deps \
   db-create db-create-prod db-generate db-migrate db-migrate-prod db-studio db-seed db-seed-billing db-seed-prod \
   db-logs nats-logs nats-streams nats-streams-prod mediamtx-logs mediamtx-ps \
   logs-gateway logs-auth logs-users logs-integrations logs-live-session \
-  logs-orchestrator logs-comments logs-billing logs-notifications logs-analytics \
+  logs-orchestrator logs-comments logs-billing logs-notifications logs-analytics logs-status \
   docker-image docker-images prod-up prod-down prod-logs prod-ps \
   k8s-apply k8s-delete k8s-status k8s-rollout \
   help
@@ -77,14 +77,14 @@ install:
 # DEVELOPMENT
 # ==============================================================================
 
-## dev: Start all backend services + web app (no mobile)
+## dev: Start all backend services + web app + status page (no mobile)
 ##      Run this after `make infra-up`.
 dev:
-	$(TURBO) dev $(SERVICES) --filter=@tik-live-pro/web
+	$(TURBO) dev $(SERVICES) --filter=@tik-live-pro/web --filter=@tik-live-pro/status
 
-## dev-no-turbo: Start all backend services + web app without turbopack
+## dev-no-turbo: Start all backend services + web app (no turbopack) + status page
 dev-no-turbo:
-	$(TURBO) dev $(SERVICES) & pnpm --filter=@tik-live-pro/web run dev:no-turbo
+	$(TURBO) dev $(SERVICES) --filter=@tik-live-pro/status & pnpm --filter=@tik-live-pro/web run dev:no-turbo
 
 ## dev-services: Start backend services only (all 10 microservices)
 ##               Useful when the web app is already running separately.
@@ -98,6 +98,10 @@ dev-web:
 ## dev-web-no-turbo: Start the Next.js web app without turbopack (port 3010)
 dev-web-no-turbo:
 	pnpm --filter=@tik-live-pro/web run dev:no-turbo
+
+## dev-status: Start the status page only (port 3011, turbopack)
+dev-status:
+	$(TURBO) dev --filter=@tik-live-pro/status
 
 ## dev-mobile: Start the React Native dev server (Metro bundler)
 ##             Use `make android` or `make ios` in a separate terminal to run the app.
@@ -205,10 +209,14 @@ build-services:
 build-web:
 	$(TURBO) build --filter=@tik-live-pro/web
 
+## build-status: Build the status page for production
+build-status:
+	$(TURBO) build --filter=@tik-live-pro/status
+
 ## start: Start all services from compiled dist/ output (production mode)
 ##        Run `make build` first.
 start:
-	$(TURBO) start $(SERVICES) --filter=@tik-live-pro/web
+	$(TURBO) start $(SERVICES) --filter=@tik-live-pro/web --filter=@tik-live-pro/status
 
 # ==============================================================================
 # DOCKER IMAGES
@@ -240,6 +248,7 @@ prod-up:
 	$(DOCKER_PROD) up -d
 	@echo ""
 	@echo "  API Gateway → http://localhost:3000"
+	@echo "  Status page → http://localhost:3011"
 	@echo "  Grafana     → http://localhost:3099"
 	@echo "  Prometheus  → http://localhost:9090"
 	@echo "  Jaeger      → http://localhost:16686"
@@ -296,6 +305,10 @@ typecheck-services:
 ## typecheck-web: Type-check the Next.js web app
 typecheck-web:
 	$(TURBO) typecheck --filter=@tik-live-pro/web
+
+## typecheck-status: Type-check the status page
+typecheck-status:
+	$(TURBO) typecheck --filter=@tik-live-pro/status
 
 ## typecheck-mobile: Type-check the React Native mobile app
 typecheck-mobile:
@@ -370,8 +383,11 @@ db-studio:
 ifndef svc
 	$(error svc is required. Usage: make db-studio svc=auth)
 endif
-	pnpm --filter=@tik-live-pro/$(svc)-service run db:studio 2>/dev/null || \
-	pnpm --filter=@tik-live-pro/$(svc) run db:studio
+	@if pnpm ls --filter=@tik-live-pro/$(svc)-service 2>/dev/null | grep -q "$(svc)-service"; then \
+		pnpm --filter=@tik-live-pro/$(svc)-service run db:studio; \
+	else \
+		pnpm --filter=@tik-live-pro/$(svc) run db:studio; \
+	fi
 
 ## db-seed: Seed all service databases with default data
 ##          Requires DB to be running: make infra-up && make db-migrate
@@ -464,6 +480,10 @@ logs-notifications:
 logs-analytics:
 	pnpm --filter=@tik-live-pro/analytics-service run dev
 
+## logs-status: Stream status page logs (dev server)
+logs-status:
+	pnpm --filter=@tik-live-pro/status run dev
+
 # ==============================================================================
 # KUBERNETES
 # ==============================================================================
@@ -489,6 +509,7 @@ k8s-apply:
 	kubectl apply -f infra/kubernetes/notifications-deployment.yaml
 	kubectl apply -f infra/kubernetes/analytics-deployment.yaml
 	kubectl apply -f infra/kubernetes/stream-orchestrator-deployment.yaml
+	kubectl apply -f infra/kubernetes/status-deployment.yaml
 	@echo "→ Deploying observability stack…"
 	kubectl apply -f infra/kubernetes/observability.yaml
 	@echo "→ Applying Ingress…"
@@ -516,7 +537,7 @@ k8s-rollout:
 	kubectl rollout restart deployment \
 	  api-gateway auth-service users-service live-session-service \
 	  billing-service integrations-service comments-service \
-	  notifications-service analytics-service stream-orchestrator \
+	  notifications-service analytics-service stream-orchestrator status \
 	  -n tik-live-pro
 
 # ==============================================================================
@@ -544,6 +565,7 @@ help:
 	@echo "  analytics         → http://localhost:3008  (docs: /docs)"
 	@echo "  stream-orchestr.  → http://localhost:3009  (docs: /docs)"
 	@echo "  web app           → http://localhost:3010"
+	@echo "  status page       → http://localhost:3011"
 	@echo ""
 	@echo "MediaMTX (platform-native streaming relay — Docker):"
 	@echo "  RTMP ingest       → rtmp://localhost:1936/live/<ingestKey>"

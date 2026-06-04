@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, jsonb, bigint } from 'drizzle-orm/pg-core';
 
 export const streamSessions = pgTable('stream_sessions', {
   sessionId: uuid('session_id').primaryKey(),
@@ -10,6 +10,20 @@ export const streamSessions = pgTable('stream_sessions', {
   ingestKey: text('ingest_key').unique(),
   startedAt: timestamp('started_at', { withTimezone: true }),
   endedAt: timestamp('ended_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  recordingStatus: text('recording_status').notNull().default('none'),
+});
+
+export const recordings = pgTable('recordings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  sessionId: uuid('session_id')
+    .notNull()
+    .references(() => streamSessions.sessionId, { onDelete: 'cascade' }),
+  ingestKey: text('ingest_key').notNull(),
+  fileKey: text('file_key').notNull().unique(),
+  publicUrl: text('public_url').notNull(),
+  fileName: text('file_name').notNull(),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

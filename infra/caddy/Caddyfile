@@ -2,6 +2,10 @@ tiklivepro.me, www.tiklivepro.me {
     reverse_proxy localhost:3010
 }
 
+status.tiklivepro.me {
+    reverse_proxy localhost:3011
+}
+
 api.tiklivepro.me {
     # WebSocket connections from the comments socket.io client go directly
     # to the comments service — the API gateway's fetch() proxy does not

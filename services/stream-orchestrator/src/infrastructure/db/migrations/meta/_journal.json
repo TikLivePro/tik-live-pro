@@ -8,6 +8,34 @@
       "when": 1779336151178,
       "tag": "0000_slippery_gorilla_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780458000000,
+      "tag": "0001_recordings_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780468863182,
+      "tag": "0002_freezing_marauders",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1780640000000,
+      "tag": "0003_recording_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1780542862861,
+      "tag": "0004_fearless_naoko",
+      "breakpoints": true
     }
   ]
 }

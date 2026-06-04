@@ -7,6 +7,7 @@ import { StreamPanel } from '@/features/stream/components/StreamPanel';
 import { CommentFeed } from '@/features/comments/components/CommentFeed';
 import { AccountList } from '@/features/accounts/components/AccountList';
 import { HistorySidebar } from '@/features/stream/components/HistorySidebar';
+import { RecordingsSidebar } from '@/features/stream/components/RecordingsSidebar';
 import { UserMenu } from '@/features/auth/components/UserMenu';
 import { NotificationBell } from '@/features/notifications/components/NotificationBell';
 import { useStreamStore, useActiveSession } from '@/features/stream';
@@ -18,6 +19,7 @@ const STOPPABLE_STATUSES = new Set(['live', 'starting', 'paused']);
 export default function DashboardPage(): React.ReactElement {
   const t = useTranslations('stream');
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [recordingsOpen, setRecordingsOpen] = useState(false);
   useActiveSession();
   const currentSession = useStreamStore((s) => s.currentSession);
   const { endSession, pauseSession, resumeSession, isEnding, isPausing } = useStream();
@@ -57,6 +59,28 @@ export default function DashboardPage(): React.ReactElement {
               >
                 <circle cx="12" cy="12" r="10" />
                 <polyline points="12 6 12 12 16 14" />
+              </svg>
+            </button>
+            {/* Recordings toggle */}
+            <button
+              type="button"
+              onClick={() => setRecordingsOpen(true)}
+              aria-label={t('recordings.sectionLabel')}
+              title={t('recordings.sectionLabel')}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="8" />
+                <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
               </svg>
             </button>
             <NotificationBell />
@@ -150,6 +174,10 @@ export default function DashboardPage(): React.ReactElement {
       </main>
 
       <HistorySidebar open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <RecordingsSidebar
+        open={recordingsOpen}
+        onClose={() => setRecordingsOpen(false)}
+      />
     </div>
   );
 }

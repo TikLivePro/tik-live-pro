@@ -14,6 +14,8 @@
 #   jaeger      Jaeger all-in-one       16686 (UI)
 #   prometheus  Prometheus              9090
 #   grafana     Grafana                 3099 → 3000
+#   minio       S3-compatible storage   9000 (API)     9001 (Console UI)
+#   minio-init  Creates the recordings bucket on first start (runs once then exits)
 #
 # Quickstart:
 #   make infra-up     # start all containers (detached)
@@ -27,6 +29,19 @@
 #     SMTP_SECURE=false     SMTP_USER=dev        SMTP_PASS=dev
 #     SMTP_FROM=TikLive Pro <dev@tiklivepro.me>
 #   Then open http://localhost:8025 to read captured messages.
+#
+# Object storage (MinIO — local R2/Spaces substitute):
+#   MinIO is S3-compatible. The RecordingUploader in stream-orchestrator uses it
+#   with forcePathStyle=true (required for MinIO, unlike R2 or DO Spaces).
+#   Console: http://localhost:9001  (minioadmin / minioadmin)
+#   Bucket:  tiklivepro-recordings  (created automatically by minio-init)
+#
+# Recordings directory:
+#   MediaMTX writes .fmp4 segments to /recordings inside its container.
+#   That path is bind-mounted from /tmp/tiklive-recordings on the host, so the
+#   host-based stream-orchestrator (RECORDINGS_DIR=/tmp/tiklive-recordings) sees
+#   the same files and can upload them to MinIO.
+#   Recording is disabled by default in mediamtx.yml — set record: true to test.
 #
 # Notes:
 #   - On Linux, host.docker.internal is not available by default.
@@ -157,27 +172,70 @@ services:
       - jaeger
     restart: unless-stopped
 
+  # Init container: chmod 777 the recordings bind-mount so the host-based
+  # stream-orchestrator (running as the current user) can delete segments after upload.
+  # Runs as root inside Alpine, which is sufficient to chmod the host directory.
+  # mediamtx depends on this completing before it starts.
+  mediamtx-init:
+    image: alpine:latest
+    command: ["sh", "-c", "mkdir -p /recordings && chmod 777 /recordings"]
+    volumes:
+      - /tmp/tiklive-recordings:/recordings
+    restart: "no"
+
   mediamtx:
     image: bluenviron/mediamtx:latest
+    # No custom entrypoint — recent mediamtx images use a scratch base with no /bin/sh.
+    # mediamtx-init (above) ensures /recordings is 777 before this container starts.
+    depends_on:
+      mediamtx-init:
+        condition: service_completed_successfully
     volumes:
       - ./infra/mediamtx/mediamtx.yml:/mediamtx.yml:ro
+      - /tmp/tiklive-recordings:/recordings
     ports:
       - "1936:1936"       # RTMP input — ffmpeg workers push here
       - "8888:8888"       # HLS output — browser viewers read from here
       - "8889:8889"       # WebRTC HTTP (WHIP/WHEP signalling)
       - "8189:8189/udp"   # WebRTC ICE UDP — must be mapped for browser streams to flow
       - "9997:9997"       # REST API
-    # Increase the kernel UDP receive buffer inside the container so the WebRTC
-    # ICE stack can absorb bursts without dropping RTP packets. The Linux default
-    # is ~212 KB; 7.5 MB is the recommended floor for WebRTC at HD bitrates.
-    # net.core.* sysctls are host-namespaced — Docker can only set them when the
-    # host kernel allows it (requires Linux ≥ 4.15 and no seccomp restriction).
-    # If this causes a "sysctl is not allowed" error, set it on the host instead:
+    # net.core.rmem_max / wmem_max must be set on the host — runc blocks container
+    # access to host-namespaced procfs entries on modern kernels. Set once with:
     #   sudo sysctl -w net.core.rmem_max=7500000 net.core.wmem_max=7500000
-    sysctls:
-      net.core.rmem_max: 7500000
-      net.core.wmem_max: 7500000
+    # The container inherits the host value; no sysctls block needed here.
     restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API — stream-orchestrator connects here
+      - "9001:9001"   # Console UI — http://localhost:9001
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      mc mb --ignore-existing local/tiklivepro-recordings &&
+      mc anonymous set public local/tiklivepro-recordings &&
+      echo 'MinIO bucket ready: tiklivepro-recordings'
+      "
+    restart: "no"
 
 volumes:
   nats_data:
@@ -185,3 +243,4 @@ volumes:
   redis_data:
   prometheus_data:
   grafana_data:
+  minio_data:

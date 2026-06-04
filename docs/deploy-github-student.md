@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-06-01 (MediaMTX auth ouverte en prod ; port WebRTC ICE UDP 8189 ; port comments 3006 exposé ; WHIP URL via réponse API ; SERVER_PUBLIC_IP pour les candidats ICE WebRTC)
+> Dernière mise à jour : 2026-06-03 (add status.tiklivepro.me DNS + Caddyfile block; recording now per-session via API; recording download route exposed under /stream-orchestrator/*)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -66,6 +66,8 @@ Services externes gratuits
 | Redis managé | Upstash | upstash.com |
 | Registry d'images | GitHub Container Registry | github.com |
 | CI/CD | GitHub Actions | github.com |
+| Stockage vidéo (option A) | DigitalOcean Spaces | cloud.digitalocean.com/spaces |
+| Stockage vidéo (option B) | Cloudflare R2 (10 GB gratuit, 0 frais d'egress) | cloudflare.com/developer-platform/r2 |
 
 ---
 
@@ -102,6 +104,12 @@ Services externes gratuits
 | CNAME Record | `api` | `tiklivepro.me.` | Automatic |
 | CNAME Record | `hls` | `tiklivepro.me.` | Automatic |
 | CNAME Record | `webrtc` | `tiklivepro.me.` | Automatic |
+| CNAME Record | `status` | `tiklivepro.me.` | Automatic |
+
+> **Option R2 avec domaine custom (`recordings.tiklivepro.me`) :** Cloudflare R2 refuse les domaines custom si le DNS n'est **pas** géré par Cloudflare (erreur : *"That domain was not found on your account"*). Le sous-domaine `recordings` ne peut donc pas être ajouté dans Namecheap. Deux solutions :
+> - **Recommandé :** migrer l'ensemble du DNS de `tiklivepro.me` vers Cloudflare (gratuit) — les enregistrements ci-dessus sont recréés dans Cloudflare DNS, et le custom domain R2 fonctionne. Voir `docs/recording.md § 5` (Chemin A).
+> - **Alternatif :** utiliser l'URL `pub-<hash>.r2.dev` fournie par Cloudflare — aucune config DNS supplémentaire. Voir `docs/recording.md § 5` (Chemin B).
+> - **Option DO Spaces :** aucune contrainte de ce type — le CDN Spaces fonctionne sans migration DNS.
 
 Vérifier la propagation (5–30 min) — **tous les enregistrements** doivent retourner `188.166.197.25` :
 ```bash
@@ -110,6 +118,7 @@ dig www.tiklivepro.me +short
 dig api.tiklivepro.me +short
 dig hls.tiklivepro.me +short
 dig webrtc.tiklivepro.me +short
+dig status.tiklivepro.me +short
 ```
 
 > **Erreur fréquente :** si l'un des sous-domaines retourne vide ou une erreur `NXDOMAIN`, l'enregistrement correspondant est absent dans Namecheap. Retournez dans **Advanced DNS** et ajoutez l'enregistrement manquant — les CNAME `api`, `hls` et `webrtc` sont souvent oubliés.
@@ -205,10 +214,15 @@ apt install -y caddy
 
 Le Caddyfile canonique est versionné dans `infra/caddy/Caddyfile` et **déployé automatiquement** par le workflow CI à chaque tag (`systemctl reload caddy` est appelé après le `scp`). Vous n'avez à le créer manuellement qu'une seule fois pour le premier déploiement.
 
-`/etc/caddy/Caddyfile` :
+`/etc/caddy/Caddyfile` — le fichier canonique est versionné dans `infra/caddy/Caddyfile` et **déployé automatiquement** par le CI. La version complète fait référence :
+
 ```
 tiklivepro.me, www.tiklivepro.me {
     reverse_proxy localhost:3010
+}
+
+status.tiklivepro.me {
+    reverse_proxy localhost:3011
 }
 
 api.tiklivepro.me {
@@ -225,20 +239,30 @@ api.tiklivepro.me {
 }
 
 hls.tiklivepro.me {
-    reverse_proxy localhost:8888
-    header {
-        Access-Control-Allow-Origin  "*"
-        Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
-        Access-Control-Allow-Headers "Range"
+    reverse_proxy localhost:8888 {
+        header_down -Access-Control-Allow-Origin
+        header_down Access-Control-Allow-Origin  "*"
+        header_down Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+        header_down Access-Control-Allow-Headers "Range"
     }
 }
 
 webrtc.tiklivepro.me {
-    reverse_proxy localhost:8889
-    header {
-        Access-Control-Allow-Origin  "*"
-        Access-Control-Allow-Methods "GET, HEAD, POST, OPTIONS"
-        Access-Control-Allow-Headers "Content-Type, Authorization"
+    @cors_preflight method OPTIONS
+    handle @cors_preflight {
+        header Access-Control-Allow-Origin  "*"
+        header Access-Control-Allow-Methods "GET, HEAD, POST, OPTIONS"
+        header Access-Control-Allow-Headers "Content-Type, Authorization"
+        header Access-Control-Max-Age       "86400"
+        respond "" 204
+    }
+    handle {
+        header {
+            Access-Control-Allow-Origin   "*"
+            Access-Control-Expose-Headers "Location"
+            defer
+        }
+        reverse_proxy localhost:8889
     }
 }
 ```
@@ -247,6 +271,8 @@ systemctl reload caddy
 ```
 
 > **Pourquoi CORS sur `hls` ?** Le player HLS dans le navigateur fait des requêtes XHR vers `hls.tiklivepro.me` depuis l'origine `tiklivepro.me`. Sans `Access-Control-Allow-Origin`, le navigateur bloque les segments `.m3u8` et `.ts`. Le header `Range` est requis pour les requêtes de segments partiels (HLS byte-range).
+>
+> **Pourquoi `header_down` sur `hls` et `header { defer }` sur `webrtc` ?** `header_down` modifie les headers **après** la réponse upstream (nécessaire pour écraser ceux que MediaMTX envoie déjà). Sur `webrtc`, `defer` a le même effet mais via la directive `header` standard. Le WHIP preflight (`OPTIONS`) est géré directement par Caddy car MediaMTX ne répond pas toujours `2xx` aux `OPTIONS`.
 
 ### 6d — Dossier du projet
 
@@ -447,6 +473,37 @@ Trois fournisseurs sont supportés via `SMTP_PROVIDER` : `gmail`, `sendgrid`, ou
 >
 > **Limite Gmail gratuit :** 500 emails/jour — largement suffisant pour un projet étudiant.
 
+**Enregistrement vidéo — Cloud Storage (optionnel)**
+
+Choisissez l'une des deux options. Laissez `RECORDING_STORAGE_PROVIDER` vide pour désactiver l'enregistrement.
+Voir `docs/recording.md` pour les instructions complètes.
+
+> **L'enregistrement est activé par session** — il ne démarre pas automatiquement à la connexion du broadcaster. L'utilisateur ou l'application appelle `POST /stream-orchestrator/sessions/:id/recording/start` pour activer l'enregistrement sur un stream actif. Une fois le stream terminé, les fichiers uploadés sont listables via `GET /stream-orchestrator/sessions/:id/recordings` et téléchargeables via `GET /stream-orchestrator/recordings/:id/download` — ces routes sont accessibles à `https://api.tiklivepro.me/stream-orchestrator/…` (bloc Caddy `/stream-orchestrator/*`). Si `RECORDING_STORAGE_PROVIDER` est absent, l'activation de l'enregistrement fonctionne (MediaMTX écrit les fichiers) mais les fichiers ne sont pas uploadés et aucune entrée en DB n'est créée.
+
+*Option A — DigitalOcean Spaces* (couvert par votre crédit $200)
+
+| Secret | Valeur |
+|--------|--------|
+| `RECORDING_STORAGE_PROVIDER` | `do-spaces` |
+| `RECORDING_STORAGE_BUCKET` | Nom du bucket Spaces (ex : `tiklivepro-recordings`) |
+| `RECORDING_STORAGE_REGION` | Région du bucket (ex : `fra1`) |
+| `RECORDING_STORAGE_ENDPOINT` | `https://fra1.digitaloceanspaces.com` |
+| `RECORDING_STORAGE_ACCESS_KEY_ID` | DO Spaces > API > Spaces Keys > Key |
+| `RECORDING_STORAGE_SECRET_ACCESS_KEY` | DO Spaces > API > Spaces Keys > Secret |
+| `RECORDING_STORAGE_CDN_URL` | URL CDN du bucket (optionnel, ex : `https://tiklivepro-recordings.fra1.cdn.digitaloceanspaces.com`) |
+
+*Option B — Cloudflare R2* (10 GB/mois gratuit, aucun frais d'egress)
+
+| Secret | Valeur |
+|--------|--------|
+| `RECORDING_STORAGE_PROVIDER` | `r2` |
+| `RECORDING_STORAGE_BUCKET` | Nom du bucket R2 (ex : `tiklivepro-recordings`) |
+| `RECORDING_STORAGE_REGION` | `auto` |
+| `RECORDING_STORAGE_ENDPOINT` | `https://<ACCOUNT_ID>.r2.cloudflarestorage.com` |
+| `RECORDING_STORAGE_ACCESS_KEY_ID` | R2 > Manage R2 API Tokens > Access Key ID |
+| `RECORDING_STORAGE_SECRET_ACCESS_KEY` | R2 > Manage R2 API Tokens > Secret Access Key |
+| `RECORDING_STORAGE_CDN_URL` | URL publique du bucket. Deux formes possibles — voir `docs/recording.md § 5` : (1) domaine custom `https://recordings.tiklivepro.me` **seulement si le DNS de tiklivepro.me est migré vers Cloudflare** ; (2) URL directe `https://pub-<hash>.r2.dev` si vous gardez Namecheap comme DNS. |
+
 **Observability (optionnel)**
 
 | Secret | Description |
@@ -561,8 +618,11 @@ Le fichier `.env` est **recréé à chaque déploiement** depuis les secrets Git
 |-------|--------|
 | Site web | `https://tiklivepro.me` |
 | API Gateway | `https://api.tiklivepro.me` |
+| Status page | `https://status.tiklivepro.me` |
 | HLS viewer (stream natif) | `https://hls.tiklivepro.me/live/<ingestKey>/index.m3u8` |
 | WHIP ingest (broadcaster) | `https://webrtc.tiklivepro.me/live/<ingestKey>/whip` |
+| Recordings (actifs) | `https://api.tiklivepro.me/stream-orchestrator/recordings` |
+| Recordings (terminés) | `https://api.tiklivepro.me/stream-orchestrator/sessions/<id>/recordings` |
 | Terms of Service | `https://tiklivepro.me/legal/terms` |
 | Privacy Policy | `https://tiklivepro.me/legal/privacy` |
 | OAuth Redirect (TikTok) | `https://api.tiklivepro.me/integrations/oauth/tiktok/callback` |
@@ -632,6 +692,7 @@ Cause : l'enregistrement DNS correspondant est absent dans Namecheap.
 dig hls.tiklivepro.me +short      # doit retourner 188.166.197.25
 dig api.tiklivepro.me +short
 dig webrtc.tiklivepro.me +short
+dig status.tiklivepro.me +short
 ```
 
 Fix : **Namecheap > Domain List > Manage > Advanced DNS** — ajoutez l'enregistrement manquant :
@@ -641,6 +702,7 @@ Fix : **Namecheap > Domain List > Manage > Advanced DNS** — ajoutez l'enregist
 | CNAME Record | `hls` | `tiklivepro.me.` |
 | CNAME Record | `api` | `tiklivepro.me.` |
 | CNAME Record | `webrtc` | `tiklivepro.me.` |
+| CNAME Record | `status` | `tiklivepro.me.` |
 
 Attendez 5–30 min puis relancez le `dig`. Une fois le DNS propagé, Caddy émet automatiquement le certificat SSL Let's Encrypt pour le sous-domaine.
 

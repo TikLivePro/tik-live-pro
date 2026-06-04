@@ -1,6 +1,6 @@
 # TikLivePro — Infrastructure Guide
 
-> **Last updated:** 2026-06-01 (fix comments service port exposure; WebRTC ICE UDP port 8189 added; MediaMTX prod auth switched to open auth; WHIP URL sourced from API response; fix Caddy CORS headers for proxied responses — use header_down inside reverse_proxy; add Access-Control-Expose-Headers: Location for WHIP 201)
+> **Last updated:** 2026-06-02 (add status page at status.tiklivepro.me port 3011; Caddyfile + docker-compose + K8s ingress + Dockerfile.status added)
 > Update whenever a Dockerfile, compose file, Kubernetes manifest, or build script changes.
 
 ## Table of Contents
@@ -244,6 +244,7 @@ Config file: `infra/caddy/Caddyfile` — versioned in the repo, auto-deployed by
 | `api.tiklivepro.me/socket.io/*` | `localhost:3006` | Comments socket.io WebSocket — routed directly to the comments service because the API gateway's `fetch()` proxy does not handle WebSocket upgrades. **The comments container must expose `3006:3006`** in `docker-compose.prod.managed.yml` so Caddy (a host-level service) can reach it. |
 | `api.tiklivepro.me/stream-orchestrator/*` | `localhost:3009` (prefix stripped) | Stream orchestrator REST API — exposes the internal service under a path prefix so browsers can reach `GET /sessions/:id/ingest` without a separate subdomain |
 | `api.tiklivepro.me` (all other paths) | `localhost:3000` | API Gateway (REST) |
+| `status.tiklivepro.me` | `localhost:3011` | Status page (Next.js). Polls all service `/health` endpoints server-side and renders aggregated status. **DNS A record required**: point `status.tiklivepro.me` at the same droplet IP. The status container must expose `3011:3011`. |
 | `hls.tiklivepro.me` | `localhost:8888` | MediaMTX HLS relay. CORS headers added: `Allow-Origin *`, `Allow-Methods GET/HEAD/OPTIONS`, `Allow-Headers Range` |
 | `webrtc.tiklivepro.me` | `localhost:8889` | MediaMTX WebRTC/WHIP endpoint. Broadcasters' browsers POST SDP offers here to start a WHIP stream. CORS headers added via `header_down` inside `reverse_proxy`: `Allow-Origin *`, `Allow-Methods GET/HEAD/POST/OPTIONS`, `Allow-Headers Content-Type/Authorization`, `Expose-Headers Location` (required so the browser WHIP client can read the `Location` header from the 201 response). **DNS A record required**: point `webrtc.tiklivepro.me` at the same droplet IP as the other subdomains. |
 
@@ -384,6 +385,7 @@ Requires an NGINX Ingress Controller installed in the cluster.
 | Hostname | Backend |
 |---------|---------|
 | `tiklivepro.pro` | web-service:3010 |
+| `status.tiklivepro.pro` | status-service:3011 |
 | `api.tiklivepro.pro` | api-gateway:3000 |
 | `grafana.tiklivepro.pro` | grafana:3000 |
 | `jaeger.tiklivepro.pro` | jaeger:16686 |

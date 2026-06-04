@@ -1,6 +1,6 @@
 # TikLivePro — Architecture Overview
 
-> **Last updated:** 2026-06-02 (add stream-orchestrator to API Gateway routing; fix ingest route prefix to /stream-orchestrator/sessions/:id/ingest)
+> **Last updated:** 2026-06-03 (stream-orchestrator: add recordings table, per-session recording control via MediaMTX config API, recording list/download routes)
 > Keep this file up-to-date whenever services, ports, infrastructure, or data flows change.
 
 ## Table of Contents
@@ -74,7 +74,8 @@
 | comments | 3006 | `@tik-live-pro/comments-service` | `tiklivepro_comments` | Platform comment polling, WebSocket fan-out |
 | notifications | 3007 | `@tik-live-pro/notifications-service` | `tiklivepro_notifications` | Push and email notifications via NATS workqueue |
 | analytics | 3008 | `@tik-live-pro/analytics-service` | `tiklivepro_analytics` | Event aggregation, usage metrics |
-| stream-orchestrator | 3009 | `@tik-live-pro/stream-orchestrator` | `tiklivepro_stream` | RTMP ingestion (port 1935), multi-destination broadcast via TikTok/Facebook adapters and platform-native MediaMTX relay |
+| stream-orchestrator | 3009 | `@tik-live-pro/stream-orchestrator` | `tiklivepro_stream` | RTMP ingestion (port 1935), multi-destination broadcast via TikTok/Facebook adapters and platform-native MediaMTX relay; per-session recording control via MediaMTX config API; `recordings` table persists completed segments after S3 upload |
+| **status** | **3011** | `@tik-live-pro/status` | — | Public status page at https://status.tiklivepro.me — polls all service `/health` endpoints server-side and renders aggregated status |
 
 ---
 
@@ -85,7 +86,8 @@
 | NATS JetStream | 4222 (client), 6222 (cluster), 8222 (monitoring) | Event bus — 3-node StatefulSet with `replicas: 3` on all streams |
 | PostgreSQL 16 | 5432 | Primary datastore — one database per service |
 | Redis 7 | 6379 | Session cache, rate-limiting counters, idempotency keys |
-| MediaMTX | 1936 (RTMP in), 8888 (HLS out), 8889 (WebRTC HTTP), 8189/udp (WebRTC ICE), 9997 (REST API) | Platform-native streaming relay — Go binary, ~5 MB RAM. Receives RTMP relay from ffmpeg workers; serves HLS and WebRTC to browser viewers. Open auth (`user: any`) in both dev and prod. Config: `infra/mediamtx/mediamtx.yml` (dev) / `mediamtx.prod.yml` (prod) |
+| MediaMTX | 1936 (RTMP in), 8888 (HLS out), 8889 (WebRTC HTTP), 8189/udp (WebRTC ICE), 9997 (REST API) | Platform-native streaming relay — Go binary, ~5 MB RAM. Receives RTMP relay from ffmpeg workers; serves HLS and WebRTC to browser viewers. Records streams to `/recordings` volume (fmp4, 1h segments). Open auth (`user: any`) in both dev and prod. Config: `infra/mediamtx/mediamtx.yml` (dev) / `mediamtx.prod.yml` (prod) |
+| Object Storage | — (external) | Video recording archive. Option A: DigitalOcean Spaces (S3-compat, $5/mo, covered by $200 credit). Option B: Cloudflare R2 (10 GB/mo free, no egress fees). `RecordingUploader` in `stream-orchestrator` watches the `mediamtx_recordings` Docker volume and uploads completed `.fmp4` files. See `docs/recording.md`. |
 | OTel Collector | 4317 (gRPC), 4318 (HTTP), 8888 (self-metrics), 8889 (prom export) | Receives OTLP traces/metrics/logs from all services; exports to Jaeger + Prometheus |
 | Jaeger | 16686 (UI), 14268 (HTTP), 4317 (OTLP) | Distributed trace visualization |
 | Prometheus | 9090 | Metrics scraping and alerting |
@@ -233,7 +235,8 @@ Alert rules defined in `infra/observability/alerts/service-alerts.yml`:
 ```
 Host machine (Node.js processes via Turborepo)
   ├── All 10 microservices run directly on host ports 3000–3009
-  └── Next.js web app on port 3010
+  ├── Next.js web app on port 3010
+  └── Status page (Next.js) on port 3011
 
 Docker Compose (docker-compose.dev.yml)
   └── NATS, PostgreSQL, Redis, OTel Collector, Jaeger, Prometheus, Grafana
@@ -244,7 +247,7 @@ Docker Compose (docker-compose.dev.yml)
 
 ```
 Namespace: tik-live-pro
-├── Ingress (nginx) → api-gateway:3000, grafana:3000, jaeger:16686, prometheus:9090
+├── Ingress (nginx) → api-gateway:3000, status:3011, grafana:3000, jaeger:16686, prometheus:9090
 ├── Deployments (HPA-managed)
 │   ├── api-gateway        replicas: 2–15  cpu: 70%
 │   ├── auth-service       replicas: 2–10  cpu: 70%
@@ -260,6 +263,7 @@ Namespace: tik-live-pro
 │   ├── nats (3 replicas, 10 Gi each)
 │   └── postgres (1 replica, 20 Gi)
 ├── Deployments (single replica)
+│   ├── status             replicas: 1  port: 3011  (status.tiklivepro.me — health check poller)
 │   ├── mediamtx  — RTMP :1936 (internal)  HLS :8888 (public)  WebRTC HTTP :8889  ICE UDP :8189
 │   ├── redis, otel-collector, jaeger, prometheus, grafana  (observability)
 └── Secrets (one per service — never committed to git)

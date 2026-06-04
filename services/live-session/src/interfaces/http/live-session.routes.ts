@@ -93,6 +93,10 @@ const createSessionBody = z.object({
   destinationAccountIds: z.array(z.string().uuid()).default([]),
 });
 
+const patchSessionBody = z.object({
+  viewersVisible: z.boolean().optional(),
+});
+
 // ---------------------------------------------------------------------------
 
 export function registerLiveSessionRoutes(
@@ -130,6 +134,8 @@ export function registerLiveSessionRoutes(
                   platformHlsUrl: { type: 'string', nullable: true },
                   startedAt: { type: 'string', format: 'date-time', nullable: true },
                   endedAt: { type: 'string', format: 'date-time', nullable: true },
+                  viewersVisible: { type: 'boolean', description: 'Whether the broadcaster allows viewers to see the audience list.' },
+                  viewerCount: { type: 'integer', description: 'Current number of viewers.' },
                 },
               },
             },
@@ -154,8 +160,64 @@ export function registerLiveSessionRoutes(
           platformHlsUrl: session.platformHlsUrl,
           startedAt: session.startedAt?.toISOString() ?? null,
           endedAt: session.endedAt?.toISOString() ?? null,
+          viewersVisible: session.viewersVisible,
+          viewerCount: 0,
         },
       });
+    },
+  );
+
+  // GET /sessions/:sessionId/viewers — no auth, public viewer list ---------------
+  fastify.get<{ Params: { sessionId: string } }>(
+    '/sessions/:sessionId/viewers',
+    {
+      schema: {
+        tags: ['Live Sessions'],
+        summary: 'Get session viewers',
+        description: 'Returns the list of current viewers for a session. No authentication required. Only meaningful when the broadcaster has enabled `viewersVisible`.',
+        params: {
+          type: 'object',
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'string', format: 'uuid', description: 'Live session ID.' },
+          },
+        },
+        response: {
+          200: {
+            description: 'Viewer list.',
+            type: 'object',
+            required: ['data'],
+            properties: {
+              data: {
+                type: 'object',
+                properties: {
+                  viewers: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        id: { type: 'string' },
+                        displayName: { type: 'string' },
+                        joinedAt: { type: 'string', format: 'date-time' },
+                      },
+                    },
+                  },
+                  total: { type: 'integer' },
+                },
+              },
+            },
+          },
+          404: errorSchema('Session not found.'),
+        },
+      },
+    },
+    async (request, reply) => {
+      const sessionId = request.params.sessionId as LiveSessionId;
+      const session = await deps.sessionRepo.findById(sessionId);
+      if (!session) {
+        return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Session not found' } });
+      }
+      return reply.send({ data: { viewers: [], total: 0 } });
     },
   );
 
@@ -576,6 +638,59 @@ Resumes a session that is currently \`paused\`, transitioning it back to \`live\
         }
         throw err;
       }
+    },
+  );
+
+  // PATCH /sessions/:sessionId ----------------------------------------------
+  child.patch<{ Params: { sessionId: string } }>(
+    '/sessions/:sessionId',
+    {
+      schema: {
+        tags: ['Live Sessions'],
+        summary: 'Update session settings',
+        description: 'Partially updates mutable session settings. Currently supports toggling `viewersVisible`, which controls whether viewers on the public watch page can see the audience list.',
+        security: bearerAuth,
+        params: {
+          type: 'object',
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'string', format: 'uuid', description: 'Live session ID.' },
+          },
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            viewersVisible: { type: 'boolean', description: 'Whether to expose the viewer list on the public watch page.' },
+          },
+        },
+        response: {
+          204: { description: 'Update applied. No response body.' },
+          401: errorSchema('Missing or invalid Bearer token.'),
+          403: errorSchema('Session belongs to a different user.'),
+          404: errorSchema('Session not found.'),
+        },
+      },
+    },
+    async (request, reply) => {
+      const userId = (request.user as { sub: string }).sub as UserId;
+      const sessionId = request.params.sessionId as LiveSessionId;
+      const body = patchSessionBody.parse(request.body);
+
+      const session = await deps.sessionRepo.findById(sessionId);
+      if (!session) {
+        return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Session not found' } });
+      }
+      if (session.userId !== userId) {
+        return reply.status(403).send({ error: { code: 'FORBIDDEN', message: 'Forbidden' } });
+      }
+
+      if (body.viewersVisible !== undefined) {
+        session.setViewersVisible(body.viewersVisible);
+      }
+
+      await deps.sessionRepo.update(session);
+      return reply.status(204).send();
     },
   );
 

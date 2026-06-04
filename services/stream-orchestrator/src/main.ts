@@ -12,6 +12,7 @@ import { NatsJetStreamClient, ensureStreams } from '@tik-live-pro/events';
 import { AdapterRegistry, TikTokAdapter, FacebookAdapter } from '@tik-live-pro/platform-adapters';
 
 import { DrizzleStreamSessionRepository } from './infrastructure/db/stream-session.repo.impl.js';
+import { DrizzleRecordingRepository } from './infrastructure/db/recording.repo.impl.js';
 import { FfmpegStreamWorker } from './infrastructure/ffmpeg/ffmpeg-stream-worker.js';
 import { RtmpIngestServer } from './infrastructure/rtmp/rtmp-ingest-server.js';
 import { MediaMtxStreamWatcher } from './infrastructure/mediamtx/mediamtx-stream-watcher.js';
@@ -23,6 +24,7 @@ import { StartBroadcastUseCase } from './application/use-cases/start-broadcast.u
 import { StopBroadcastUseCase } from './application/use-cases/stop-broadcast.use-case.js';
 import { HandleStreamArrivedUseCase } from './application/use-cases/handle-stream-arrived.use-case.js';
 import { registerRoutes } from './interfaces/http/routes.js';
+import { RecordingUploader } from './infrastructure/storage/recording-uploader.js';
 
 const envSchema = baseEnvSchema.extend({
   DATABASE_URL: z.string().url(),
@@ -45,6 +47,16 @@ const envSchema = baseEnvSchema.extend({
   MEDIAMTX_API_URL: z.string().default('http://localhost:9997'),
   MEDIAMTX_API_USER: z.string().default(''),
   MEDIAMTX_API_PASS: z.string().default(''),
+  // Recording upload — all optional. Leave RECORDING_STORAGE_PROVIDER unset to disable.
+  RECORDINGS_DIR: z.string().default('/recordings'),
+  // 'minio' is for local dev only — uses forcePathStyle=true
+  RECORDING_STORAGE_PROVIDER: z.enum(['do-spaces', 'r2', 'minio']).optional(),
+  RECORDING_STORAGE_BUCKET: z.string().optional(),
+  RECORDING_STORAGE_REGION: z.string().default('auto'),
+  RECORDING_STORAGE_ENDPOINT: z.string().url().optional(),
+  RECORDING_STORAGE_ACCESS_KEY_ID: z.string().optional(),
+  RECORDING_STORAGE_SECRET_ACCESS_KEY: z.string().optional(),
+  RECORDING_STORAGE_CDN_URL: z.string().url().optional(),
 });
 
 const env = parseEnv(envSchema);
@@ -81,6 +93,7 @@ async function main(): Promise<void> {
 
   // Infrastructure
   const sessionRepo = new DrizzleStreamSessionRepository(db);
+  const recordingRepo = new DrizzleRecordingRepository(db);
   const tokenProvider = new IntegrationsTokenProvider(env.INTEGRATIONS_SERVICE_URL, logger);
   const eventPublisher = new StreamEventPublisher(nats);
 
@@ -102,6 +115,10 @@ async function main(): Promise<void> {
     env.MEDIAMTX_RTMP_URL,
     logger,
   );
+  const mediaMtxApiAuthHeader = env.MEDIAMTX_API_USER
+    ? `Basic ${Buffer.from(`${env.MEDIAMTX_API_USER}:${env.MEDIAMTX_API_PASS}`).toString('base64')}`
+    : undefined;
+
   const stopBroadcast = new StopBroadcastUseCase(
     sessionRepo,
     tokenProvider,
@@ -109,6 +126,8 @@ async function main(): Promise<void> {
     streamArrivalHandler,
     eventPublisher,
     logger,
+    env.MEDIAMTX_API_URL,
+    mediaMtxApiAuthHeader,
   );
 
   // RTMP ingest server — kept for OBS / external tool compatibility.
@@ -133,6 +152,36 @@ async function main(): Promise<void> {
   );
   mediaMtxWatcher.start();
 
+  // Recording uploader — optional. Uploads completed .fmp4 segments from the
+  // shared mediamtx_recordings volume to object storage (DO Spaces or R2).
+  let recordingUploader: RecordingUploader | null = null;
+  if (
+    env.RECORDING_STORAGE_PROVIDER &&
+    env.RECORDING_STORAGE_BUCKET &&
+    env.RECORDING_STORAGE_ENDPOINT &&
+    env.RECORDING_STORAGE_ACCESS_KEY_ID &&
+    env.RECORDING_STORAGE_SECRET_ACCESS_KEY
+  ) {
+    recordingUploader = new RecordingUploader(
+      env.RECORDINGS_DIR,
+      {
+        bucket: env.RECORDING_STORAGE_BUCKET,
+        region: env.RECORDING_STORAGE_REGION,
+        endpoint: env.RECORDING_STORAGE_ENDPOINT,
+        accessKeyId: env.RECORDING_STORAGE_ACCESS_KEY_ID,
+        secretAccessKey: env.RECORDING_STORAGE_SECRET_ACCESS_KEY,
+        cdnUrl: env.RECORDING_STORAGE_CDN_URL,
+        forcePathStyle: env.RECORDING_STORAGE_PROVIDER === 'minio',
+      },
+      logger,
+      recordingRepo,
+      sessionRepo,
+    );
+    recordingUploader.start();
+  } else {
+    logger.info('RecordingUploader disabled — RECORDING_STORAGE_PROVIDER not set');
+  }
+
   // NATS event consumer
   const consumer = new SessionEventConsumer(
     nats,
@@ -140,6 +189,9 @@ async function main(): Promise<void> {
     startBroadcast,
     stopBroadcast,
     logger,
+    sessionRepo,
+    env.MEDIAMTX_API_URL,
+    mediaMtxApiAuthHeader,
   );
   consumer.start();
 
@@ -224,11 +276,14 @@ This service is primarily driven by NATS JetStream events from the \`live-sessio
 
   registerRoutes(app, {
     sessionRepo,
+    recordingRepo,
     streamArrivalHandler,
     rtmpIngestHost: env.RTMP_INGEST_HOST === '0.0.0.0' ? 'localhost' : env.RTMP_INGEST_HOST,
     rtmpIngestPort: env.RTMP_INGEST_PORT,
     mediaMtxHlsUrl: env.MEDIAMTX_HLS_URL,
     mediaMtxWebrtcUrl: env.MEDIAMTX_WEBRTC_URL,
+    mediaMtxApiUrl: env.MEDIAMTX_API_URL,
+    mediaMtxApiAuthHeader,
   });
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
@@ -240,6 +295,7 @@ This service is primarily driven by NATS JetStream events from the \`live-sessio
     await app.close();
     rtmpServer.stop();
     mediaMtxWatcher.stop();
+    recordingUploader?.stop();
     await nats.drain();
     await pool.end();
     process.exit(0);

@@ -10,6 +10,10 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
+    "dev:web": "turbo run dev --filter=@tik-live-pro/web",
+    "dev:status": "turbo run dev --filter=@tik-live-pro/status",
+    "build:web": "turbo run build --filter=@tik-live-pro/web",
+    "build:status": "turbo run build --filter=@tik-live-pro/status",
     "test": "turbo run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",

@@ -48,7 +48,10 @@ const PUBLIC_PREFIXES = new Set(['/auth']);
 // Exact paths publicly accessible without a JWT (within otherwise-protected prefixes).
 const PUBLIC_PATHS = new Set(['/billing/plans']);
 // Pattern-matched public paths (e.g. /sessions/:id/public — shared watch pages).
-const PUBLIC_PATH_PATTERNS = [/^\/sessions\/[^/]+\/public$/];
+const PUBLIC_PATH_PATTERNS = [
+  /^\/sessions\/[^/]+\/public$/,
+  /^\/sessions\/[^/]+\/viewers$/,
+];
 
 async function bootstrap(): Promise<void> {
   const fastify = Fastify({
@@ -614,17 +617,59 @@ All error responses follow a consistent envelope:
               404: { description: 'Session not found.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
             },
           },
+          patch: {
+            tags: ['Live Sessions'],
+            summary: 'Update session settings',
+            description: 'Partially updates mutable session settings. Supports toggling `viewersVisible` to show or hide the audience list on the public watch page.',
+            security: [{ BearerAuth: [] }],
+            parameters: [
+              { in: 'path', name: 'sessionId', required: true, schema: { type: 'string', format: 'uuid' }, description: 'Live session ID.' },
+            ],
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      viewersVisible: { type: 'boolean', description: 'Whether to expose the viewer list on the public watch page.' },
+                    },
+                  },
+                },
+              },
+            },
+            responses: {
+              204: { description: 'Update applied.' },
+              401: { description: 'Unauthorized.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              403: { description: 'Session belongs to another user.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              404: { description: 'Session not found.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            },
+          },
         },
         '/sessions/{sessionId}/public': {
           get: {
             tags: ['Live Sessions'],
             summary: 'Get public session info',
-            description: 'Returns limited, public-facing session info (title, status, platforms, timestamps). No authentication required. Used for shared watch pages.',
+            description: 'Returns limited, public-facing session info (title, status, platforms, timestamps, viewersVisible). No authentication required. Used for shared watch pages.',
             parameters: [
               { in: 'path', name: 'sessionId', required: true, schema: { type: 'string', format: 'uuid' }, description: 'Live session ID.' },
             ],
             responses: {
-              200: { description: 'Public session info.', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'object', properties: { id: { type: 'string' }, title: { type: 'string' }, status: { type: 'string' }, platforms: { type: 'array', items: { type: 'string' } }, platformHlsUrl: { type: 'string', nullable: true }, startedAt: { type: 'string', nullable: true }, endedAt: { type: 'string', nullable: true } } } } } } } },
+              200: { description: 'Public session info.', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'object', properties: { id: { type: 'string' }, title: { type: 'string' }, status: { type: 'string' }, platforms: { type: 'array', items: { type: 'string' } }, platformHlsUrl: { type: 'string', nullable: true }, startedAt: { type: 'string', nullable: true }, endedAt: { type: 'string', nullable: true }, viewersVisible: { type: 'boolean' }, viewerCount: { type: 'integer' } } } } } } } },
+              404: { description: 'Session not found.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            },
+          },
+        },
+        '/sessions/{sessionId}/viewers': {
+          get: {
+            tags: ['Live Sessions'],
+            summary: 'Get session viewers',
+            description: 'Returns the list of current viewers. No authentication required. Only populated when the broadcaster has enabled `viewersVisible`.',
+            parameters: [
+              { in: 'path', name: 'sessionId', required: true, schema: { type: 'string', format: 'uuid' }, description: 'Live session ID.' },
+            ],
+            responses: {
+              200: { description: 'Viewer list.', content: { 'application/json': { schema: { type: 'object', properties: { data: { type: 'object', properties: { viewers: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, displayName: { type: 'string' }, joinedAt: { type: 'string' } } } }, total: { type: 'integer' } } } } } } } },
               404: { description: 'Session not found.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
             },
           },
@@ -667,6 +712,22 @@ All error responses follow a consistent envelope:
         // -----------------------------------------------------------------------
         // STREAM ORCHESTRATOR
         // -----------------------------------------------------------------------
+        '/stream-orchestrator/recordings/completed': {
+          get: {
+            tags: ['Streaming'],
+            summary: 'List completed recordings by session IDs',
+            description: 'Returns all uploaded recording files for the given comma-separated session IDs, sorted newest-first.',
+            security: [{ BearerAuth: [] }],
+            parameters: [
+              { in: 'query', name: 'sessionIds', required: false, schema: { type: 'string' }, description: 'Comma-separated list of session UUIDs.' },
+            ],
+            responses: {
+              200: { description: 'Completed recordings list.', content: { 'application/json': { schema: { type: 'object', properties: { items: { type: 'array', items: { type: 'object', properties: { id: { type: 'string' }, sessionId: { type: 'string' }, fileName: { type: 'string' }, publicUrl: { type: 'string' }, sizeBytes: { type: 'number' }, createdAt: { type: 'string', format: 'date-time' } } } } } } } } },
+              401: { description: 'Unauthorized.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            },
+          },
+        },
+
         '/stream-orchestrator/sessions/{sessionId}/ingest': {
           get: {
             tags: ['Streaming'],

@@ -1,0 +1,1 @@
+ALTER TABLE "stream_sessions" ADD COLUMN IF NOT EXISTS "recording_status" text DEFAULT 'none' NOT NULL;

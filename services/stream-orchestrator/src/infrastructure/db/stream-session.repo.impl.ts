@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { streamSessions, streamDestinations } from './schema.js';
 import type { IStreamSessionRepository } from '../../domain/repositories/stream-session.repository.js';
-import { StreamSession, type StreamSessionStatus } from '../../domain/entities/stream-session.entity.js';
+import { StreamSession, type StreamSessionStatus, type RecordingStatus } from '../../domain/entities/stream-session.entity.js';
 import { Destination, type DestinationId } from '../../domain/entities/destination.entity.js';
 import type { LiveSessionId, UserId, SocialAccountId, SocialPlatform, DestinationStatus } from '@tik-live-pro/shared-types';
 
@@ -58,6 +58,7 @@ export class DrizzleStreamSessionRepository implements IStreamSessionRepository 
       startedAt: session.startedAt,
       endedAt: session.endedAt,
       createdAt: session.createdAt,
+      recordingStatus: session.recordingStatus,
     });
   }
 
@@ -69,6 +70,7 @@ export class DrizzleStreamSessionRepository implements IStreamSessionRepository 
         ingestKey: session.ingestKey,
         startedAt: session.startedAt,
         endedAt: session.endedAt,
+        recordingStatus: session.recordingStatus,
       })
       .where(eq(streamSessions.sessionId, session.sessionId));
 
@@ -138,6 +140,7 @@ export class DrizzleStreamSessionRepository implements IStreamSessionRepository 
       createdAt: row.createdAt,
       startedAt: row.startedAt,
       endedAt: row.endedAt,
+      recordingStatus: row.recordingStatus as RecordingStatus,
     });
   }
 }

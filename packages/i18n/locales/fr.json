@@ -139,6 +139,43 @@
     "noDestinationsHint": "Aucune plateforme sélectionnée — le stream tournera sans diffuser sur les réseaux sociaux",
     "recordingEnabled": "Votre stream sera sauvegardé dans le stockage cloud",
     "recordingDisabled": "Améliorez votre abonnement pour sauvegarder vos enregistrements",
+    "recording": {
+      "start": "Enreg.",
+      "stop": "Arrêter",
+      "active": "REC",
+      "started": "Enregistrement démarré",
+      "stopped": "Enregistrement arrêté",
+      "paused": "Enregistrement mis en pause",
+      "resumed": "Enregistrement repris",
+      "startFailed": "Échec du démarrage de l'enregistrement",
+      "stopFailed": "Échec de l'arrêt de l'enregistrement",
+      "pauseFailed": "Échec de la mise en pause de l'enregistrement",
+      "resumeFailed": "Échec de la reprise de l'enregistrement"
+    },
+    "recordings": {
+      "sectionLabel": "ENREGISTREMENTS",
+      "activeHeading": "En cours",
+      "completedHeading": "Terminés",
+      "empty": "Aucun enregistrement actif",
+      "completedEmpty": "Aucun enregistrement sauvegardé",
+      "activeLabel": "En cours",
+      "pausedLabel": "En pause",
+      "stopRecording": "Arrêter l'enregistrement",
+      "pauseRecording": "Mettre en pause",
+      "resumeRecording": "Reprendre",
+      "segmentCount": "{n, plural, one {# segment} other {# segments}}",
+      "view": "Voir",
+      "download": "Télécharger",
+      "fileSize": "{size} Mo"
+    },
+    "viewers": {
+      "showAudience": "Montrer les spectateurs à l'audience",
+      "hideAudience": "Masquer les spectateurs à l'audience",
+      "panel": "Spectateurs en direct",
+      "noneYet": "Aucun spectateur pour l'instant",
+      "updatedOn": "Liste des spectateurs visible",
+      "updatedOff": "Liste des spectateurs masquée"
+    },
     "errors": {
       "noDestinations": "Veuillez ajouter au moins une destination",
       "createFailed": "Échec de la création de la session",
@@ -438,7 +475,21 @@
     "notFound": "Stream introuvable",
     "notFoundDesc": "Ce lien est invalide ou le stream a été supprimé.",
     "poweredBy": "Propulsé par TikLivePro",
-    "goToApp": "Aller sur TikLivePro"
+    "goToApp": "Aller sur TikLivePro",
+    "like": "J'aime",
+    "comment": "Commenter",
+    "comments": "Commentaires",
+    "share": "Partager",
+    "viewers": "Spectateurs",
+    "viewersList": "Liste des spectateurs",
+    "signInToInteract": "Connectez-vous pour aimer et commenter",
+    "signInDesc": "Créez un compte gratuit pour rejoindre la conversation.",
+    "signIn": "Se connecter",
+    "notNow": "Pas maintenant",
+    "noViewers": "Aucun spectateur pour l'instant",
+    "noComments": "Aucun commentaire pour l'instant",
+    "commentPlaceholder": "Ajouter un commentaire…",
+    "send": "Envoyer"
   },
   "notFound": {
     "heading": "Page introuvable",
@@ -448,7 +499,8 @@
   "landing": {
     "nav": {
       "signIn": "Se connecter",
-      "getStarted": "Commencer gratuitement"
+      "getStarted": "Commencer gratuitement",
+      "goToDashboard": "Aller au tableau de bord"
     },
     "hero": {
       "badge": "Streaming multi-plateforme",

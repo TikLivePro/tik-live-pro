@@ -45,6 +45,18 @@ spec:
                 port:
                   number: 3010
 
+    # Status page
+    - host: status.tiklivepro.pro
+      http:
+        paths:
+          - path: /()(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: status-service
+                port:
+                  number: 3011
+
     # All API traffic routes through the gateway
     - host: api.tiklivepro.pro
       http:

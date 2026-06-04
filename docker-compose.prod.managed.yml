@@ -80,7 +80,7 @@
 #   # enforced at the app layer via UUID ingestKeys. Ports 9997 and 1936 are internal-only.
 #
 # RAM budget on 4 GB Droplet (no observability):
-#   NATS 128m + MediaMTX 64m + 10 services ~1780m + web 512m ≈ 2484m  ← comfortable
+#   NATS 128m + MediaMTX 64m + 10 services ~1780m + web 512m + status 96m ≈ 2580m  ← comfortable
 # ==============================================================================
 
 x-service-defaults: &service-defaults
@@ -206,6 +206,7 @@ services:
     image: bluenviron/mediamtx:latest
     volumes:
       - ./infra/mediamtx/mediamtx.prod.yml:/mediamtx.yml:ro
+      - mediamtx_recordings:/recordings          # shared with stream-orchestrator for upload
     environment:
       # Tell MediaMTX to advertise the server's public IP in ICE candidates so
       # browsers can reach the UDP port from the internet. Without this, MediaMTX
@@ -487,7 +488,19 @@ services:
       MEDIAMTX_API_URL: http://mediamtx:9997
       MEDIAMTX_API_USER: ${MEDIAMTX_API_USER:-}
       MEDIAMTX_API_PASS: ${MEDIAMTX_API_PASS:-}
+      # Recording upload — optional. Omit RECORDING_STORAGE_PROVIDER to disable.
+      # See docs/recording.md for setup instructions (DO Spaces or Cloudflare R2).
+      RECORDINGS_DIR: /recordings
+      RECORDING_STORAGE_PROVIDER: ${RECORDING_STORAGE_PROVIDER:-}
+      RECORDING_STORAGE_BUCKET: ${RECORDING_STORAGE_BUCKET:-}
+      RECORDING_STORAGE_REGION: ${RECORDING_STORAGE_REGION:-auto}
+      RECORDING_STORAGE_ENDPOINT: ${RECORDING_STORAGE_ENDPOINT:-}
+      RECORDING_STORAGE_ACCESS_KEY_ID: ${RECORDING_STORAGE_ACCESS_KEY_ID:-}
+      RECORDING_STORAGE_SECRET_ACCESS_KEY: ${RECORDING_STORAGE_SECRET_ACCESS_KEY:-}
+      RECORDING_STORAGE_CDN_URL: ${RECORDING_STORAGE_CDN_URL:-}
       NODE_OPTIONS: "--max-old-space-size=192"
+    volumes:
+      - mediamtx_recordings:/recordings            # uploader reads .fmp4 files and deletes after upload
     ports:
       - "3009:3009"
       - "1935:1935"
@@ -502,6 +515,49 @@ services:
           memory: 320m
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3009/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Status page — https://status.tiklivepro.me ───────────────────────────────
+  # Lightweight Next.js app. Pings every service /health endpoint from the server
+  # side and serves the aggregated status at port 3011 (Caddy → status.tiklivepro.me).
+  # Uses internal Docker service hostnames — no public network access needed.
+
+  status:
+    <<: *service-defaults
+    image: ${REGISTRY:-ghcr.io/tik-live-pro}/status:${IMAGE_TAG:-latest}
+    environment:
+      NODE_ENV: production
+      PORT: "3011"
+      HOSTNAME: "0.0.0.0"
+      NEXT_TELEMETRY_DISABLED: "1"
+      NODE_OPTIONS: "--max-old-space-size=64"
+      # Internal URLs for health checks — resolved via Docker bridge network
+      API_GATEWAY_URL: http://api-gateway:3000
+      AUTH_SERVICE_URL: http://auth:3001
+      USERS_SERVICE_URL: http://users:3002
+      LIVE_SESSION_SERVICE_URL: http://live-session:3003
+      BILLING_SERVICE_URL: http://billing:3004
+      INTEGRATIONS_SERVICE_URL: http://integrations:3005
+      COMMENTS_SERVICE_URL: http://comments:3006
+      NOTIFICATIONS_SERVICE_URL: http://notifications:3007
+      ANALYTICS_SERVICE_URL: http://analytics:3008
+      STREAM_ORCHESTRATOR_URL: http://stream-orchestrator:3009
+      MEDIAMTX_API_URL: http://mediamtx:9997
+      NATS_MONITORING_URL: http://nats:8222
+    ports:
+      - "3011:3011"
+    depends_on:
+      nats:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 96m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3011/"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -562,3 +618,4 @@ volumes:
   nats_data:
   prometheus_data:
   grafana_data:
+  mediamtx_recordings:    # recording buffer: mediamtx writes, stream-orchestrator uploads + deletes

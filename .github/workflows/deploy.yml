@@ -129,11 +129,51 @@ jobs:
           cache-to: type=gha,mode=max,scope=web
           push: true
 
+  # ── Build status page ────────────────────────────────────────────────────────
+  build-status:
+    name: Build status page (Next.js standalone)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/status
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            type=ref,event=branch
+            type=sha,prefix=sha-,format=short
+
+      - name: Build & push status
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile.status
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=status
+          cache-to: type=gha,mode=max,scope=status
+          push: true
+
   # ── Deploy (uniquement sur tag v*.*.* ou dispatch manuel) ────────────────────
   deploy:
     name: Deploy ${{ github.ref_name }} to production
     runs-on: ubuntu-latest
-    needs: [build-services, build-web]
+    needs: [build-services, build-web, build-status]
     # Ne déploie PAS à chaque push sur main — seulement sur tag ou dispatch
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     environment: production

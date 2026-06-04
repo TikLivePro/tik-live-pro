@@ -13,6 +13,7 @@ export class LiveSession {
     private _status: LiveSessionStatus,
     private _destinations: PlatformStreamDestination[],
     private _shouldRecord: boolean,
+    private _viewersVisible: boolean,
     private _platformHlsUrl: string | null,
     private _startedAt: Date | null,
     private _endedAt: Date | null,
@@ -28,6 +29,7 @@ export class LiveSession {
       LSS.CREATED,
       [],
       shouldRecord,
+      false,
       null,
       null,
       null,
@@ -43,6 +45,7 @@ export class LiveSession {
     status: LiveSessionStatus;
     destinations: PlatformStreamDestination[];
     shouldRecord: boolean;
+    viewersVisible: boolean;
     platformHlsUrl: string | null;
     startedAt: Date | null;
     endedAt: Date | null;
@@ -56,6 +59,7 @@ export class LiveSession {
       props.status,
       props.destinations,
       props.shouldRecord,
+      props.viewersVisible,
       props.platformHlsUrl,
       props.startedAt,
       props.endedAt,
@@ -76,6 +80,10 @@ export class LiveSession {
       throw new DomainError(`Cannot mark live from status '${this._status}'`, 'INVALID_STATUS');
     }
     this._status = LSS.LIVE;
+  }
+
+  setViewersVisible(visible: boolean): void {
+    this._viewersVisible = visible;
   }
 
   setPlatformHlsUrl(url: string | null): void {
@@ -141,6 +149,7 @@ export class LiveSession {
   get status(): LiveSessionStatus { return this._status; }
   get destinations(): PlatformStreamDestination[] { return [...this._destinations]; }
   get shouldRecord(): boolean { return this._shouldRecord; }
+  get viewersVisible(): boolean { return this._viewersVisible; }
   get platformHlsUrl(): string | null { return this._platformHlsUrl; }
   get startedAt(): Date | null { return this._startedAt; }
   get endedAt(): Date | null { return this._endedAt; }

@@ -1,0 +1,1 @@
+ALTER TABLE "live_sessions" ADD COLUMN "viewers_visible" boolean DEFAULT false NOT NULL;

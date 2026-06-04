@@ -64,6 +64,17 @@ authInternalUsers:
 api: true
 apiAddress: :9997
 
+# ── Path defaults (record settings) ──────────────────────────────────────────
+# Disabled in dev by default — set record: true to test the upload pipeline locally.
+# /recordings is bind-mounted from /tmp/tiklive-recordings on the host (see docker-compose.dev.yml)
+# so stream-orchestrator (running on the host) can scan and upload the same files.
+pathDefaults:
+  record: false
+  recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+  recordFormat: fmp4
+  recordSegmentDuration: 1h
+  recordDeleteAfter: 0s
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 # Allow any dynamically-created path (browser WHIP publisher, RTMP relay, etc.)
 # NOTE: `all_others:` with no value parses as null in Go, causing path lookups

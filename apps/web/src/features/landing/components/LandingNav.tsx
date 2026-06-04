@@ -4,12 +4,13 @@ import React from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import { useTheme, useLocale, SunIcon, MoonIcon, GlobeIcon } from '@/features/auth';
+import { useTheme, useLocale, useAuthStore, UserMenu, SunIcon, MoonIcon, GlobeIcon } from '@/features/auth';
 
 export function LandingNav(): React.JSX.Element {
   const t = useTranslations('landing.nav');
   const { theme, toggle: toggleTheme } = useTheme();
   const { locale, setLocale, supportedLocales } = useLocale();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   return (
     <header className="sticky top-0 z-10 border-b border-border/50 bg-background/80 backdrop-blur-sm">
@@ -50,22 +51,28 @@ export function LandingNav(): React.JSX.Element {
             {theme === 'dark' ? <SunIcon className="h-4 w-4" /> : <MoonIcon className="h-4 w-4" />}
           </button>
 
-          <Link
-            href="/auth/login"
-            className="hidden px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"
-          >
-            {t('signIn')}
-          </Link>
+          {isAuthenticated ? (
+            <UserMenu showDashboardLink />
+          ) : (
+            <>
+              <Link
+                href="/auth/login"
+                className="hidden px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground sm:block"
+              >
+                {t('signIn')}
+              </Link>
 
-          <Link
-            href="/auth/login"
-            className={cn(
-              'rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white',
-              'shadow-sm transition-colors hover:bg-brand/90',
-            )}
-          >
-            {t('getStarted')}
-          </Link>
+              <Link
+                href="/auth/login"
+                className={cn(
+                  'rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white',
+                  'shadow-sm transition-colors hover:bg-brand/90',
+                )}
+              >
+                {t('getStarted')}
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </header>

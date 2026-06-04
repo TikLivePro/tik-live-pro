@@ -117,6 +117,7 @@ The **API Gateway** at `http://localhost:3000/docs` is the single external-facin
 | analytics | 3008 | http://localhost:3008/docs |
 | stream-orchestrator | 3009 | http://localhost:3009/docs |
 | web (Next.js) | 3010 | http://localhost:3010 |
+| status page | 3011 | http://localhost:3011 |
 
 ### Adding Swagger to a new route
 

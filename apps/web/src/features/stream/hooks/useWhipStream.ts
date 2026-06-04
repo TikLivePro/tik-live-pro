@@ -33,7 +33,9 @@ export function useWhipStream(): WhipStreamResult {
       pcRef.current = pc;
 
       for (const track of stream.getTracks()) {
-        const transceiver = pc.addTransceiver(track, { streams: [stream] });
+        const sendEncodings: RTCRtpEncodingParameters[] =
+          track.kind === 'video' ? [{ maxBitrate: 1_500_000 }] : [];
+        const transceiver = pc.addTransceiver(track, { streams: [stream], sendEncodings });
         if (track.kind === 'video') {
           // MediaMTX can only remux H.264 to HLS — VP8/VP9 would produce a 404 HLS response.
           const caps = RTCRtpSender.getCapabilities('video');
@@ -63,8 +65,9 @@ export function useWhipStream(): WhipStreamResult {
             resolve();
           }
         });
-        // Fallback timeout — some networks are slow with ICE gathering.
-        setTimeout(resolve, 4000);
+        // Mobile networks are slow to gather STUN candidates; 1.5 s covers most
+        // cases without blocking the offer on every mobile connection.
+        setTimeout(resolve, 1500);
       });
 
       const sdpOffer = pc.localDescription?.sdp ?? '';

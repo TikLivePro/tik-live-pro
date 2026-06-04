@@ -1,6 +1,6 @@
 # TikLivePro — Setup Guide
 
-> **Last updated:** 2026-06-02 (add STREAM_ORCHESTRATOR_SERVICE_URL to API Gateway; fix ingest route prefix to /stream-orchestrator/sessions/:id/ingest)
+> **Last updated:** 2026-06-03 (add RECORDING_STORAGE_* env vars for stream-orchestrator recording upload)
 > Update this file whenever prerequisites, ports, environment variables, or workflow steps change.
 
 ## Prerequisites
@@ -102,7 +102,15 @@ Update values as needed — critical variables:
 | `MEDIAMTX_RTMP_URL` | stream-orchestrator | Internal RTMP push URL for ffmpeg workers. Default: `rtmp://localhost:1936` (dev) · `rtmp://mediamtx:1936` (Docker/prod) |
 | `MEDIAMTX_HLS_URL` | stream-orchestrator | **Public** HLS base URL returned to viewers. Default: `http://localhost:8888` (dev) · `https://hls.tiklivepro.me` (prod) |
 | `MEDIAMTX_WEBRTC_URL` | stream-orchestrator | **Public** WebRTC/WHIP base URL. Returned to the broadcaster's browser via the ingest API (`GET /stream-orchestrator/sessions/:id/ingest` → `whipUrl`). Default: `http://localhost:8889` (dev) · `https://webrtc.tiklivepro.me` (prod). Must be HTTPS in production for browser camera access. |
-| `MEDIAMTX_API_URL` | stream-orchestrator | Internal MediaMTX REST API URL used by stream-orchestrator to detect live streams. Default: `http://localhost:9997` (dev) · **hardcoded** to `http://mediamtx:9997` in prod compose (do not override). |
+| `MEDIAMTX_API_URL` | stream-orchestrator | Internal MediaMTX REST API URL used by stream-orchestrator to detect live streams and control per-session recording. Default: `http://localhost:9997` (dev) · **hardcoded** to `http://mediamtx:9997` in prod compose (do not override). |
+| `MEDIAMTX_API_USER` / `MEDIAMTX_API_PASS` | stream-orchestrator | Basic-auth credentials for the MediaMTX REST API. Leave empty for local dev (open auth). |
+| `RECORDINGS_DIR` | stream-orchestrator | Local path where MediaMTX writes `.fmp4` segments. Default: `/recordings`. Dev override: `/tmp/tiklive-recordings`. |
+| `RECORDING_STORAGE_PROVIDER` | stream-orchestrator | `do-spaces` \| `r2` \| `minio`. Leave unset to disable recording upload entirely. Use `minio` for local dev only. |
+| `RECORDING_STORAGE_BUCKET` | stream-orchestrator | S3-compatible bucket name, e.g. `tiklivepro-recordings`. |
+| `RECORDING_STORAGE_REGION` | stream-orchestrator | Storage region. R2 → `auto`; DO Spaces → e.g. `fra1`. Default: `auto`. |
+| `RECORDING_STORAGE_ENDPOINT` | stream-orchestrator | Full S3 endpoint URL. R2: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`. DO Spaces: `https://fra1.digitaloceanspaces.com`. MinIO (dev): `http://localhost:9000`. |
+| `RECORDING_STORAGE_ACCESS_KEY_ID` / `SECRET_ACCESS_KEY` | stream-orchestrator | S3 access credentials for the chosen provider. |
+| `RECORDING_STORAGE_CDN_URL` | stream-orchestrator | Optional CDN base URL prepended to the stored file key (e.g. `https://recordings.tiklivepro.me`). If omitted, the raw endpoint URL is used. |
 | `SERVER_PUBLIC_IP` | mediamtx (prod only) | The server's public IPv4 address (`curl -s ifconfig.me`). Passed to MediaMTX as `MTX_WEBRTCADDITIONALHOSTS` so ICE candidates advertise the public IP and browsers can reach UDP port 8189. In the deploy workflow this is set to `DROPLET_IP` — no separate secret needed if deploying via GitHub Actions. |
 | `NEXTAUTH_SECRET` | apps/web | Generate: `openssl rand -base64 32` |
 | `GOOGLE_CLIENT_ID` / `SECRET` | apps/web | From Google Cloud Console → Credentials |
@@ -111,6 +119,10 @@ Update values as needed — critical variables:
 | `NEXT_PUBLIC_API_URL` | apps/web | **Build-time** — public URL of the API gateway. See note below. |
 | `NEXT_PUBLIC_COMMENTS_WS_URL` | apps/web | **Build-time** — base URL for the comments socket.io WebSocket. In prod: `https://api.tiklivepro.me` (Caddy routes `/socket.io/*` to the comments service). See note below. |
 | `NEXT_PUBLIC_GIPHY_API_KEY` | apps/web | **Build-time** — optional; from developers.giphy.com |
+| `API_GATEWAY_URL` | apps/status | Internal URL to check API Gateway health. Default: `http://api-gateway:3000` |
+| `AUTH_SERVICE_URL` … `STREAM_ORCHESTRATOR_URL` | apps/status | Internal health-check URLs for each backend service. All default to `http://<service>:<port>` (Docker bridge hostnames). Only override in unusual topologies. |
+| `MEDIAMTX_API_URL` | apps/status | MediaMTX REST API for stream count check. Default: `http://mediamtx:9997` |
+| `NATS_MONITORING_URL` | apps/status | NATS monitoring endpoint. Default: `http://nats:8222` |
 | `SMTP_PROVIDER` | auth | `gmail` \| `sendgrid` \| `custom` (default: `gmail`) |
 | `SMTP_USER` | auth | SMTP login. Leave blank to disable welcome emails. |
 | `SMTP_PASS` | auth | SMTP password / app-password |
@@ -148,6 +160,7 @@ Service ports:
 | Analytics | 3008 | http://localhost:3008/docs |
 | Stream Orchestrator | 3009 | http://localhost:3009/docs |
 | Web App (Next.js) | 3010 | http://localhost:3010 |
+| Status Page | 3011 | http://localhost:3011 |
 
 > **RTMP & HLS ports (Docker — `make infra-up`):**
 > - `stream-orchestrator` ingest: `rtmp://localhost:1935/live/<ingestKey>` — push your video here (OBS, ffmpeg CLI, etc.)

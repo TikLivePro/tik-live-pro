@@ -36,6 +36,13 @@
       "when": 1780198123744,
       "tag": "0004_fancy_doctor_strange",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1780457593149,
+      "tag": "0005_wise_nomad",
+      "breakpoints": true
     }
   ]
 }

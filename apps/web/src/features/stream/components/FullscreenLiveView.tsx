@@ -11,11 +11,13 @@ import { useCameraStream } from '../hooks/useCameraStream';
 import { useWhipStream } from '../hooks/useWhipStream';
 import { useStreamStore } from '../store/stream.store';
 import { useComments } from '@/features/comments/hooks/useComments';
+import { useRecording } from '../hooks/useRecording';
 import type { LiveSessionId } from '@tik-live-pro/shared-types';
 import { LiveCommentFloat } from './LiveCommentFloat';
 import { LiveReactionFloat } from './LiveReactionFloat';
 import { MinimizedPlayer } from './MinimizedPlayer';
 import { LiveCommentPanel } from './LiveCommentPanel';
+import { ViewersPanel } from './ViewersPanel';
 
 const REACTION_EMOJIS = ['❤️', '🔥', '😍', '👏', '💯', '🎉'];
 
@@ -45,6 +47,9 @@ export function FullscreenLiveView(): React.ReactElement {
 
   const { sendComment, replyToComment, isSending } = useComments(currentSession?.id ?? null);
   const { state: whipState, connect: connectWhip, disconnect: disconnectWhip } = useWhipStream();
+  const { isRecording, isToggling: isTogglingRecording, toggle: toggleRecording } = useRecording(
+    (currentSession?.id as LiveSessionId) ?? null,
+  );
 
   const isLive = currentSession?.status === 'live';
   const isStarting = currentSession?.status === 'starting';
@@ -156,6 +161,9 @@ export function FullscreenLiveView(): React.ReactElement {
   const [whepCopied, setWhepCopied] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [viewersPanelOpen, setViewersPanelOpen] = useState(false);
+  const [viewersVisible, setViewersVisible] = useState(false);
+  const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
 
   const handleShare = useCallback(async () => {
     const url = `${window.location.origin}/watch/${currentSession?.id ?? ''}`;
@@ -182,6 +190,26 @@ export function FullscreenLiveView(): React.ReactElement {
     const emoji = REACTION_EMOJIS[Math.floor(Math.random() * REACTION_EMOJIS.length)] ?? '❤️';
     addReaction({ id: crypto.randomUUID(), emoji, left: Math.floor(Math.random() * 36) });
   }, [addReaction]);
+
+  const updateViewersVisibility = useCallback(
+    async (visible: boolean): Promise<void> => {
+      if (!currentSession?.id) return;
+      setIsTogglingVisibility(true);
+      try {
+        await apiFetch(`${API_BASE}/sessions/${currentSession.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ viewersVisible: visible }),
+        });
+      } catch {
+        // silent fail — update local state regardless
+      } finally {
+        setViewersVisible(visible);
+        setIsTogglingVisibility(false);
+      }
+    },
+    [currentSession?.id],
+  );
 
   function handleMinimize(): void {
     setIsMinimized(true);
@@ -424,6 +452,20 @@ export function FullscreenLiveView(): React.ReactElement {
           />
         )}
 
+        {/* ── Viewers panel (sharer view with audience toggle) ── */}
+        {viewersPanelOpen && currentSession && (
+          <ViewersPanel
+            sessionId={currentSession.id}
+            apiBase={API_BASE}
+            onClose={() => setViewersPanelOpen(false)}
+            showAudienceToggle
+            viewersVisible={viewersVisible}
+            onToggleViewersVisible={(v) => void updateViewersVisibility(v)}
+            isTogglingVisibility={isTogglingVisibility}
+            className="absolute left-0 top-14 bottom-24 z-40 w-full border-r sm:w-80"
+          />
+        )}
+
         {/* ── Right side: action buttons + floating reactions ── */}
         <div className="absolute bottom-28 right-3 flex flex-col items-center gap-3">
           <div className="pointer-events-none relative h-44 w-12 overflow-visible">
@@ -441,7 +483,7 @@ export function FullscreenLiveView(): React.ReactElement {
           {/* Chat toggle */}
           <button
             type="button"
-            onClick={() => setCommentsOpen((o) => !o)}
+            onClick={() => { setCommentsOpen((o) => !o); setViewersPanelOpen(false); }}
             className={cn(
               'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
               commentsOpen
@@ -609,6 +651,83 @@ export function FullscreenLiveView(): React.ReactElement {
               </span>
             </button>
           )}
+
+          {/* Recording toggle — visible only when live */}
+          {isLive && (
+            <button
+              type="button"
+              aria-label={isRecording ? t('recording.stop') : t('recording.start')}
+              onClick={() => currentSession && void toggleRecording(currentSession.id)}
+              disabled={isTogglingRecording}
+              className={cn(
+                'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+                isRecording
+                  ? 'border-red-500/60 bg-red-950/70 text-red-300 shadow-red-900/30'
+                  : 'border-white/20 bg-black/45 text-white shadow-black/20',
+                'disabled:cursor-not-allowed disabled:opacity-50',
+              )}
+            >
+              {isRecording ? (
+                <svg
+                  className="h-5 w-5 animate-pulse"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="8" />
+                </svg>
+              ) : (
+                <svg
+                  className="h-5 w-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="8" />
+                </svg>
+              )}
+              <span className={cn('text-[9px] font-semibold leading-none', isRecording && 'text-red-300')}>
+                {isRecording ? t('recording.active') : t('recording.start')}
+              </span>
+            </button>
+          )}
+
+          {/* Viewers panel toggle */}
+          <button
+            type="button"
+            onClick={() => { setViewersPanelOpen((o) => !o); setCommentsOpen(false); }}
+            aria-label={viewersPanelOpen ? t('viewers.hideAudience') : t('viewers.showAudience')}
+            className={cn(
+              'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+              viewersPanelOpen
+                ? 'border-blue-400/40 bg-blue-900/50 text-blue-300 shadow-blue-900/20'
+                : 'border-white/20 bg-black/45 text-white shadow-black/20',
+            )}
+          >
+            <svg
+              className="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+            </svg>
+            {/* Audience-visibility dot */}
+            <span className="relative flex items-center gap-0.5">
+              <span className={cn('h-1.5 w-1.5 rounded-full', viewersVisible ? 'bg-green-400' : 'bg-white/30')} />
+              <span className="text-[9px] font-semibold leading-none">{t('viewers.panel')}</span>
+            </span>
+          </button>
         </div>
 
         {/* ── Floating comment bubbles — hidden when panel is open ── */}

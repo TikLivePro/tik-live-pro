@@ -121,6 +121,33 @@ build_web() {
   fi
 }
 
+build_status() {
+  local image_tag="${REGISTRY}/status:${TAG}"
+  local dockerfile="${DOCKERFILE_DIR}/Dockerfile.status"
+
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Building: ${image_tag}  (Next.js standalone — status page)"
+  echo "  Dockerfile: ${dockerfile}"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  local cache_args=()
+  if [[ -n "${CACHE_FROM:-}" ]]; then
+    cache_args=(--cache-from "${CACHE_FROM}")
+  fi
+
+  docker build \
+    -f "${dockerfile}" \
+    -t "${image_tag}" \
+    "${cache_args[@]+"${cache_args[@]}"}" \
+    "${REPO_ROOT}"
+
+  if [[ "${PUSH:-0}" == "1" ]]; then
+    echo "  Pushing ${image_tag}…"
+    docker push "${image_tag}"
+  fi
+}
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 TARGET="${1:-}"
 
@@ -130,8 +157,11 @@ if [[ -z "${TARGET}" || "${TARGET}" == "all" ]]; then
     build_service "${entry}"
   done
   build_web
+  build_status
 elif [[ "${TARGET}" == "web" ]]; then
   build_web
+elif [[ "${TARGET}" == "status" ]]; then
+  build_status
 else
   # Find the matching entry
   matched=false
@@ -152,6 +182,7 @@ else
       echo "  ${entry%%:*}"
     done
     echo "  web"
+    echo "  status"
     exit 1
   fi
 fi

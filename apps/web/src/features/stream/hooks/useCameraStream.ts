@@ -90,7 +90,16 @@ export function useCameraStream(autoStart = false): CameraStreamResult {
     acquiringRef.current = true;
     setState('requesting');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          // Cap at 720p/30fps — keeps bitrate in range for mobile networks
+          // while maintaining acceptable quality for live streaming.
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          frameRate: { ideal: 30, max: 30 },
+        },
+        audio: true,
+      });
       streamRef.current = stream;
       useStreamStore.getState().setActiveStream(stream);
       if (videoRef.current) videoRef.current.srcObject = stream;

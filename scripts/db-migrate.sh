@@ -17,7 +17,7 @@ run_migrate auth                tiklivepro_auth
 run_migrate users               tiklivepro_users
 run_migrate integrations        tiklivepro_integrations
 run_migrate live-session        tiklivepro_sessions
-run_migrate stream-orchestrator tiklivepro_sessions
+run_migrate stream-orchestrator tiklivepro_stream
 run_migrate comments            tiklivepro_comments
 run_migrate billing             tiklivepro_billing
 run_migrate notifications       tiklivepro_notifications
