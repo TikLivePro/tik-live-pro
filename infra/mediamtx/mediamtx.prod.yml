@@ -55,8 +55,14 @@ apiAddress: :9997
 # The RecordingUploader in stream-orchestrator watches /recordings, uploads
 # completed .mp4 files to object storage, then deletes them locally.
 # recordDeleteAfter: 0s disables MediaMTX's own auto-delete; the uploader owns
-# the file lifecycle. Global record:no means paths don't record by default —
-# recording is enabled per-path via the API (PATCH /v3/config/paths/patch/:name).
+# the file lifecycle.
+#
+# IMPORTANT: recording is enabled at path-config level (see paths below), NOT via
+# the API after a WHIP stream arrives. MediaMTX applies the path config when the
+# path instance is CREATED (publisher connects); a PATCH call made after the
+# connection is established cannot enable recording for that instance — it only
+# takes effect on the next reconnect. Putting record:yes in the config file
+# ensures recording starts from the very first WHIP frame.
 record: no
 recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
 recordFormat: fmp4
@@ -64,8 +70,13 @@ recordSegmentDuration: 1h
 recordDeleteAfter: 0s
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-# Allow any dynamically-created path (browser WHIP publisher, RTMP relay, etc.)
-# Without this block every WHIP/RTMP/HLS request returns "path not configured".
 paths:
+  # Record all browser WHIP streams from frame 1. The stream-orchestrator can
+  # override per-path via the REST API to implement Stop/Pause:
+  #   PATCH /v3/config/paths/patch/live%2F{uuid}  { "record": false }  → stop
+  #   PATCH /v3/config/paths/patch/live%2F{uuid}  { "record": true  }  → resume
+  "~^live/":
+    source: publisher
+    record: yes
   all_others:
     source: publisher

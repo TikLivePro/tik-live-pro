@@ -167,47 +167,21 @@ async function main(): Promise<void> {
     async (ingestKey) => {
       await streamArrivalHandler.execute(ingestKey);
 
-      // Auto-start or re-enable recording whenever a stream arrives, but only
-      // when recording storage is configured. Covers three cases:
-      //   NONE      → auto-start: record the full live from the first WHIP frame
-      //   RECORDING → re-enable: MediaMTX lost its in-memory config on restart
-      //   PAUSED    → skip: user explicitly paused, respect that intent
+      // Update DB recording status to RECORDING on first connection.
+      // MediaMTX handles the actual recording via the path config (record:yes
+      // for live/* in mediamtx.prod.yml) — no API call required here. Doing it
+      // in the config file is the only way to capture frame 1: a PATCH call made
+      // after the WHIP connection is established applies to the NEXT reconnect,
+      // not the current path instance.
       if (!env.RECORDING_STORAGE_PROVIDER) return;
       try {
         const session = await sessionRepo.findByIngestKey(ingestKey);
-        if (
-          !session ||
-          session.recordingStatus === RecordingStatus.PAUSED
-        ) return;
-
-        const pathName = encodeURIComponent(`live/${ingestKey}`);
-        const authHdrs: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (mediaMtxApiAuthHeader) authHdrs['Authorization'] = mediaMtxApiAuthHeader;
-        let res = await fetch(`${env.MEDIAMTX_API_URL}/v3/config/paths/patch/${pathName}`, {
-          method: 'PATCH',
-          headers: authHdrs,
-          body: JSON.stringify({ record: true }),
-        });
-        if (res.status === 404) {
-          res = await fetch(`${env.MEDIAMTX_API_URL}/v3/config/paths/add/${pathName}`, {
-            method: 'POST',
-            headers: authHdrs,
-            body: JSON.stringify({ record: true }),
-          });
-        }
-        if (res.ok) {
-          if (session.recordingStatus === RecordingStatus.NONE) {
-            session.startRecording();
-            await sessionRepo.update(session);
-            logger.info({ ingestKey }, 'Recording auto-started for new stream');
-          } else {
-            logger.info({ ingestKey }, 'Recording re-enabled after stream reconnect');
-          }
-        } else {
-          logger.warn({ ingestKey, status: res.status }, 'Failed to enable recording on stream arrival');
-        }
+        if (!session || session.recordingStatus !== RecordingStatus.NONE) return;
+        session.startRecording();
+        await sessionRepo.update(session);
+        logger.info({ ingestKey }, 'Recording auto-started via MediaMTX path config');
       } catch (err) {
-        logger.warn({ err, ingestKey }, 'Failed to enable recording on stream arrival');
+        logger.warn({ err, ingestKey }, 'Failed to update recording status on stream arrival');
       }
     },
     (ingestKey) => void streamArrivalHandler.stopWorker(ingestKey),
