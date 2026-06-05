@@ -392,8 +392,9 @@ rtmp://<host>:<port>/live/<ingestKey>
         summary: 'Start recording',
         description: `
 Starts recording the live stream for a session to the shared recordings volume.
-MediaMTX writes segments as \`.fmp4\` files; the RecordingUploader in this service
-uploads them to object storage (DO Spaces or Cloudflare R2) after each segment completes.
+MediaMTX writes segments as \`.mp4\` files (fragmented MP4 format); the RecordingUploader
+in this service uploads them to object storage (DO Spaces or Cloudflare R2) after each
+segment is finalised.
 
 Only valid when the session status is \`live\`.
         `.trim(),
@@ -465,7 +466,7 @@ Only valid when the session status is \`live\`.
       schema: {
         tags: ['Streaming'],
         summary: 'Stop recording',
-        description: 'Stops the active recording for a session. The current segment is finalised and queued for upload.',
+        description: 'Stops the active recording for a session. Sets record:false on the MediaMTX path, which immediately finalises the current segment and queues it for upload.',
         security: bearerAuth,
         params: {
           type: 'object',
@@ -502,14 +503,16 @@ Only valid when the session status is \`live\`.
         ? { Authorization: deps.mediaMtxApiAuthHeader }
         : {};
 
-      // DELETE the explicit path config entry so the path falls back to all_others
-      // (record: false). A plain PATCH { record: false } leaves a stale config entry
-      // that MediaMTX keeps in its recordings list as long as segment files exist on disk.
-      const res = await fetch(`${deps.mediaMtxApiUrl}/v3/config/paths/delete/${pathName}`, {
-        method: 'DELETE',
-        headers: authHeaders,
+      // PATCH record:false so MediaMTX immediately flushes and renames the current
+      // .mp4.part segment to .mp4. Using DELETE here removes the config entry but
+      // does NOT guarantee immediate finalization — the file can stay as .mp4.part
+      // until the publisher disconnects, causing the uploader to miss it entirely.
+      const res = await fetch(`${deps.mediaMtxApiUrl}/v3/config/paths/patch/${pathName}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ record: false }),
       });
-      // 404 means path config was never created → recording wasn't active, treat as success
+      // 404 means no path config exists → recording wasn't active, treat as success
       if (!res.ok && res.status !== 404) {
         const body = await res.text().catch(() => '');
         await reply.status(502).send({ code: 'MEDIAMTX_ERROR', message: `Failed to stop recording (MediaMTX ${res.status}: ${body})` });

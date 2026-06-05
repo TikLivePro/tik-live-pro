@@ -50,11 +50,13 @@ api: true
 apiAddress: :9997
 
 # ── Record ───────────────────────────────────────────────────────────────────
-# MediaMTX writes .fmp4.part while the stream is live, then renames to .fmp4
-# at end-of-segment or stream stop. The RecordingUploader in stream-orchestrator
-# watches /recordings, uploads completed .fmp4 files to object storage, then
-# deletes them locally. recordDeleteAfter: 0s disables auto-delete so the uploader
-# controls the lifecycle.
+# MediaMTX writes .mp4.part while recording is active (even with fmp4 format),
+# then renames to .mp4 when record:false is PATCHed or the publisher disconnects.
+# The RecordingUploader in stream-orchestrator watches /recordings, uploads
+# completed .mp4 files to object storage, then deletes them locally.
+# recordDeleteAfter: 0s disables MediaMTX's own auto-delete; the uploader owns
+# the file lifecycle. Global record:no means paths don't record by default —
+# recording is enabled per-path via the API (PATCH /v3/config/paths/patch/:name).
 record: no
 recordPath: /recordings/%path/%Y-%m-%d_%H-%M-%S-%f
 recordFormat: fmp4

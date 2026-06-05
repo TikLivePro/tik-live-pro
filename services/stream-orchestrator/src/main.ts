@@ -23,6 +23,7 @@ import { RegisterSessionUseCase } from './application/use-cases/register-session
 import { StartBroadcastUseCase } from './application/use-cases/start-broadcast.use-case.js';
 import { StopBroadcastUseCase } from './application/use-cases/stop-broadcast.use-case.js';
 import { HandleStreamArrivedUseCase } from './application/use-cases/handle-stream-arrived.use-case.js';
+import { RecordingStatus } from './domain/entities/stream-session.entity.js';
 import { registerRoutes } from './interfaces/http/routes.js';
 import { RecordingUploader } from './infrastructure/storage/recording-uploader.js';
 
@@ -163,7 +164,38 @@ async function main(): Promise<void> {
   // MediaMTX watcher — detects WebRTC/WHIP browser streams arriving on MediaMTX.
   const mediaMtxWatcher = new MediaMtxStreamWatcher(
     env.MEDIAMTX_API_URL,
-    (ingestKey) => streamArrivalHandler.execute(ingestKey),
+    async (ingestKey) => {
+      await streamArrivalHandler.execute(ingestKey);
+      // Re-apply record:true when a stream arrives (reconnect or service restart).
+      // MediaMTX loses in-memory path configs on restart, so a session that was
+      // actively recording when the service restarted would silently lose its config.
+      // This is a no-op if the path config already has record:true.
+      try {
+        const session = await sessionRepo.findByIngestKey(ingestKey);
+        if (session?.recordingStatus === RecordingStatus.RECORDING) {
+          const pathName = encodeURIComponent(`live/${ingestKey}`);
+          const authHdrs: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (mediaMtxApiAuthHeader) authHdrs['Authorization'] = mediaMtxApiAuthHeader;
+          let res = await fetch(`${env.MEDIAMTX_API_URL}/v3/config/paths/patch/${pathName}`, {
+            method: 'PATCH',
+            headers: authHdrs,
+            body: JSON.stringify({ record: true }),
+          });
+          if (res.status === 404) {
+            res = await fetch(`${env.MEDIAMTX_API_URL}/v3/config/paths/add/${pathName}`, {
+              method: 'POST',
+              headers: authHdrs,
+              body: JSON.stringify({ record: true }),
+            });
+          }
+          if (res.ok) {
+            logger.info({ ingestKey }, 'Recording re-enabled after stream reconnect');
+          }
+        }
+      } catch (err) {
+        logger.warn({ err, ingestKey }, 'Failed to re-enable recording after reconnect');
+      }
+    },
     (ingestKey) => void streamArrivalHandler.stopWorker(ingestKey),
     logger,
     env.MEDIAMTX_API_USER,

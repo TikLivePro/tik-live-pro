@@ -104,13 +104,19 @@ export class StopBroadcastUseCase {
 
   private async stopMediaMtxRecording(ingestKey: string): Promise<void> {
     const pathName = encodeURIComponent(`live/${ingestKey}`);
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.mediaMtxApiAuthHeader) headers['Authorization'] = this.mediaMtxApiAuthHeader;
     try {
-      await fetch(`${this.mediaMtxApiUrl}/v3/config/paths/delete/${pathName}`, {
-        method: 'DELETE',
+      // PATCH record:false triggers immediate .mp4.part → .mp4 finalization.
+      // DELETE would remove the config but not guarantee the file is flushed before disconnect.
+      const res = await fetch(`${this.mediaMtxApiUrl}/v3/config/paths/patch/${pathName}`, {
+        method: 'PATCH',
         headers,
+        body: JSON.stringify({ record: false }),
       });
+      if (!res.ok && res.status !== 404) {
+        this.logger.warn({ ingestKey, status: res.status }, 'Failed to stop MediaMTX recording on session end');
+      }
     } catch (err) {
       this.logger.warn({ err, ingestKey }, 'Failed to stop MediaMTX recording on session end');
     }

@@ -114,7 +114,7 @@ export class RecordingUploader {
     await upload.done();
 
     const publicUrl = this.config.cdnUrl
-      ? `${this.config.cdnUrl}/${key}`
+      ? `${this.config.cdnUrl}/${this.config.bucket}/${key}`
       : `${this.config.endpoint}/${this.config.bucket}/${key}`;
 
     // Persist the DB record before attempting unlink so the upload is never lost
