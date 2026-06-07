@@ -47,7 +47,9 @@ export class StopBroadcastUseCase {
       await this.streamArrivalHandler.stopWorker(session.ingestKey);
       await this.stopMediaMtxRecording(session.ingestKey);
     }
-    session.stopRecording();
+    // Finalize: if the user was recording, move to STOPPED so the uploader uploads the files.
+    // If the user never started recording (NONE), leave the status as-is — no upload should happen.
+    session.finalizeRecording();
 
     session.beginEnding();
 

@@ -6,6 +6,7 @@ import { Upload } from '@aws-sdk/lib-storage';
 import type { Logger } from '@tik-live-pro/logger';
 import type { IRecordingRepository } from '../db/recording.repo.impl.js';
 import type { IStreamSessionRepository } from '../../domain/repositories/stream-session.repository.js';
+import { RecordingStatus } from '../../domain/entities/stream-session.entity.js';
 
 function slugify(title: string): string {
   return (
@@ -105,6 +106,46 @@ export class RecordingUploader {
 
       if (!entry.endsWith('.mp4')) continue;
       if (this.uploading.has(fullPath) || this.uploaded.has(fullPath)) continue;
+
+      // Gate upload on explicit user intent.
+      // MediaMTX records to disk from the first frame (path config has record:yes),
+      // but we only upload when the user has explicitly stopped recording by
+      // clicking "Stop Recording" or ending the live session. Files for sessions
+      // that were never recorded (NONE) are deleted to reclaim disk space.
+      if (this.sessionRepo) {
+        // Path structure: live/{ingestKey}/{timestamp}.mp4
+        const pathParts = entry.split('/');
+        const ingestKey = pathParts[1];
+        if (ingestKey) {
+          let shouldUpload = false;
+          try {
+            const session = await this.sessionRepo.findByIngestKey(ingestKey);
+            if (!session) {
+              // No session found for this file — clean up
+              await unlink(fullPath).catch(() => {});
+              continue;
+            }
+            if (session.recordingStatus === RecordingStatus.NONE) {
+              // User never started recording — delete the file (produced by MediaMTX
+              // path config, not by user intent)
+              await unlink(fullPath).catch((err: unknown) => {
+                this.logger.warn({ err, fullPath }, 'Could not delete unused recording file');
+              });
+              continue;
+            }
+            if (session.recordingStatus !== RecordingStatus.STOPPED) {
+              // Recording is still active or paused — not ready for upload yet
+              continue;
+            }
+            shouldUpload = true;
+          } catch (err) {
+            this.logger.warn({ err, ingestKey }, 'Could not look up session for recording — skipping until next scan');
+            continue;
+          }
+          if (!shouldUpload) continue;
+        }
+      }
+
       this.uploading.add(fullPath);
       void this.uploadFile(fullPath, entry).catch((err: unknown) => {
         this.logger.error({ err, fullPath }, 'Recording upload failed — will retry next scan');

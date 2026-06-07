@@ -18,7 +18,7 @@ export function useRecording(sessionId: LiveSessionId | null) {
       try {
         const res = await apiFetch(`${API_BASE}/stream-orchestrator/sessions/${sessionId}/recording/status`);
         if (!res.ok) return;
-        const data = (await res.json()) as { status: 'none' | 'recording' | 'paused' };
+        const data = (await res.json()) as { status: 'none' | 'recording' | 'paused' | 'stopped' };
         setIsRecording(data.status === 'recording');
         setIsPaused(data.status === 'paused');
       } catch {

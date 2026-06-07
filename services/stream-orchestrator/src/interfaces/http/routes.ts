@@ -503,6 +503,15 @@ Only valid when the session status is \`live\`.
         ? { Authorization: deps.mediaMtxApiAuthHeader }
         : {};
 
+      // Guard: can only stop recording if it was started by the user
+      if (
+        session.recordingStatus !== RecordingStatus.RECORDING &&
+        session.recordingStatus !== RecordingStatus.PAUSED
+      ) {
+        await reply.status(409).send({ code: 'NOT_RECORDING', message: 'No active recording to stop' });
+        return;
+      }
+
       // PATCH record:false so MediaMTX immediately flushes and renames the current
       // .mp4.part segment to .mp4. Using DELETE here removes the config entry but
       // does NOT guarantee immediate finalization — the file can stay as .mp4.part
@@ -518,7 +527,9 @@ Only valid when the session status is \`live\`.
         await reply.status(502).send({ code: 'MEDIAMTX_ERROR', message: `Failed to stop recording (MediaMTX ${res.status}: ${body})` });
         return;
       }
-      session.stopRecording();
+      // Move to STOPPED — the uploader will pick up all .mp4 files for this session
+      // on its next scan and upload them to object storage.
+      session.finalizeRecording();
       await deps.sessionRepo.update(session);
       await reply.status(200).send({ recording: false });
     },
@@ -668,7 +679,7 @@ Only valid when the session status is \`live\`.
             description: 'Recording status.',
             type: 'object',
             properties: {
-              status: { type: 'string', enum: ['none', 'recording', 'paused'], description: 'Current recording state.' },
+              status: { type: 'string', enum: ['none', 'recording', 'paused', 'stopped'], description: 'Current recording state. `stopped` means the user has stopped recording and files are being uploaded to storage.' },
             },
           },
           404: errorSchema('Session not found.'),

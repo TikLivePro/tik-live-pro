@@ -19,6 +19,9 @@ export const RecordingStatus = {
   NONE: 'none',
   RECORDING: 'recording',
   PAUSED: 'paused',
+  // User has explicitly stopped recording; files are ready for upload to storage.
+  // The uploader only uploads files for sessions in this state.
+  STOPPED: 'stopped',
 } as const;
 export type RecordingStatus = (typeof RecordingStatus)[keyof typeof RecordingStatus];
 
@@ -186,6 +189,17 @@ export class StreamSession {
 
   stopRecording(): void {
     this._recordingStatus = RecordingStatus.NONE;
+  }
+
+  // Marks the recording as ready for upload. Only transitions from RECORDING or PAUSED.
+  // Sessions that were never started (NONE) are not affected — their files are not uploaded.
+  finalizeRecording(): void {
+    if (
+      this._recordingStatus === RecordingStatus.RECORDING ||
+      this._recordingStatus === RecordingStatus.PAUSED
+    ) {
+      this._recordingStatus = RecordingStatus.STOPPED;
+    }
   }
 
   get sessionId(): LiveSessionId { return this._sessionId; }

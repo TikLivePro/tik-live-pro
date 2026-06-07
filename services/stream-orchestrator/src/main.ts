@@ -23,7 +23,6 @@ import { RegisterSessionUseCase } from './application/use-cases/register-session
 import { StartBroadcastUseCase } from './application/use-cases/start-broadcast.use-case.js';
 import { StopBroadcastUseCase } from './application/use-cases/stop-broadcast.use-case.js';
 import { HandleStreamArrivedUseCase } from './application/use-cases/handle-stream-arrived.use-case.js';
-import { RecordingStatus } from './domain/entities/stream-session.entity.js';
 import { registerRoutes } from './interfaces/http/routes.js';
 import { RecordingUploader } from './infrastructure/storage/recording-uploader.js';
 
@@ -166,23 +165,6 @@ async function main(): Promise<void> {
     env.MEDIAMTX_API_URL,
     async (ingestKey) => {
       await streamArrivalHandler.execute(ingestKey);
-
-      // Update DB recording status to RECORDING on first connection.
-      // MediaMTX handles the actual recording via the path config (record:yes
-      // for live/* in mediamtx.prod.yml) — no API call required here. Doing it
-      // in the config file is the only way to capture frame 1: a PATCH call made
-      // after the WHIP connection is established applies to the NEXT reconnect,
-      // not the current path instance.
-      if (!env.RECORDING_STORAGE_PROVIDER) return;
-      try {
-        const session = await sessionRepo.findByIngestKey(ingestKey);
-        if (!session || session.recordingStatus !== RecordingStatus.NONE) return;
-        session.startRecording();
-        await sessionRepo.update(session);
-        logger.info({ ingestKey }, 'Recording auto-started via MediaMTX path config');
-      } catch (err) {
-        logger.warn({ err, ingestKey }, 'Failed to update recording status on stream arrival');
-      }
     },
     (ingestKey) => void streamArrivalHandler.stopWorker(ingestKey),
     logger,
