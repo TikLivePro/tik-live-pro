@@ -1,6 +1,6 @@
 # TikLivePro — Enregistrement vidéo
 
-> **Dernière mise à jour :** 2026-06-03 (recording now controlled per-session via MediaMTX config API; recordings DB table persists completed files; list/download routes added)
+> **Dernière mise à jour :** 2026-06-06 (S3 key now includes live title slug for human-readable paths)
 
 Ce guide explique comment enregistrer les streams en live et stocker les vidéos dans le cloud.
 
@@ -10,15 +10,17 @@ Ce guide explique comment enregistrer les streams en live et stocker les vidéos
 Broadcaster (WHIP/RTMP)
         │
         ▼
-    MediaMTX ──── record ──► /recordings/<ingestKey>/<timestamp>.fmp4
+    MediaMTX ──── record ──► /recordings/live/<ingestKey>/<timestamp>.mp4
         │
         ▼                          ▼
 HLS / WebRTC viewers     RecordingUploader (stream-orchestrator)
+                                   │  slugify(session.title)
                                    │
                     ┌──────────────┴──────────────┐
                     ▼                             ▼
           DigitalOcean Spaces           Cloudflare R2
-          (s3-compat, $5/mois)         (gratuit 10 GB/mois)
+          recordings/<title-slug>/     recordings/<title-slug>/
+          <ingestKey>/<timestamp>.mp4  <ingestKey>/<timestamp>.mp4
 ```
 
 **Principe** :
@@ -150,7 +152,7 @@ CREATE TABLE "recordings" (
   "id"          uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "session_id"  uuid NOT NULL REFERENCES "stream_sessions"("session_id") ON DELETE cascade,
   "ingest_key"  text NOT NULL,
-  "file_key"    text NOT NULL,      -- clé S3 (ex: recordings/live/abc123/2026-06-03_10-00-00.fmp4)
+  "file_key"    text NOT NULL,      -- clé S3 (ex: recordings/mon-premier-live/abc123/2026-06-03_10-00-00.mp4)
   "public_url"  text NOT NULL,      -- URL CDN ou endpoint S3
   "file_name"   text NOT NULL,      -- basename du fichier
   "size_bytes"  bigint DEFAULT 0 NOT NULL,
@@ -160,14 +162,20 @@ CREATE TABLE "recordings" (
 
 ### Flux RecordingUploader
 
-1. Au démarrage : upload des fichiers `.fmp4` déjà présents (crash recovery)
-2. Watcher `fs.watch` : détecte les renommages `.fmp4.part` → `.fmp4` (segment terminé par MediaMTX)
-3. Pour chaque fichier :
-   - Stat du fichier (taille) **avant** `unlink`
-   - Upload S3 multipart (~8 MB/part)
-   - `unlink` du fichier local
-   - Lookup session par `ingestKey` via `IStreamSessionRepository.findByIngestKey()`
-   - `IRecordingRepository.save()` → insère une ligne dans `recordings`
+1. Au démarrage + scan périodique toutes les **15 s** :
+   - **Fichiers `.mp4`** (segment finalisé par MediaMTX) :
+     1. Lookup session par `ingestKey` → slugification du titre → `slugify(session.title)` (ex. `mon-premier-live`)
+     2. Construction de la clé S3 : `recordings/{title-slug}/{ingestKey}/{timestamp}.mp4`
+     3. Upload S3 multipart (~8 MB/part)
+     4. `IRecordingRepository.save()` → insère une ligne dans `recordings`
+     5. `unlink` du fichier local
+   - **Fichiers `.mp4.part`** (segment en cours ou orphelin) :
+     - Si le `mtime` du fichier est **< 5 minutes** → fichier actif, ignoré
+     - Si le `mtime` est **≥ 5 minutes** → fichier orphelin : MediaMTX n'a pas reçu de déconnexion propre (WHIP DELETE manquant, crash réseau, SIGKILL). L'uploader **renomme** le `.mp4.part` en `.mp4` ; le prochain scan l'uploade normalement.
+
+### Pourquoi les `.mp4.part` peuvent rester orphelins
+
+MediaMTX applique les changements de config de path (ex. `PATCH record: false`) **uniquement à la prochaine connexion du publisher**, pas au segment en cours. Le segment actif n'est finalisé que quand le publisher se déconnecte proprement (WHIP DELETE) ou que la durée max du segment est atteinte. Si la connexion WebRTC est coupée sans WHIP DELETE (onglet fermé brutalement, panne réseau, crash du processus), le `.mp4.part` reste sur disque indéfiniment — la logique de rescue ci-dessus s'en occupe.
 
 ### Dépendances à installer (déjà présentes)
 
@@ -245,11 +253,11 @@ pnpm --filter @tik-live-pro/stream-orchestrator add @aws-sdk/client-s3 @aws-sdk/
 
 ## 7. Accès aux enregistrements
 
-Les enregistrements sont stockés sous la clé `recordings/<ingestKey>/<date>.fmp4`.
+Les enregistrements sont stockés sous la clé `recordings/<title-slug>/<ingestKey>/<date>.mp4`, où `<title-slug>` est le titre du live converti en minuscules avec les espaces remplacés par des tirets (ex : `"Mon Premier Live"` → `mon-premier-live`).
 
 URL d'accès directe (stockage) :
-- DO Spaces CDN : `https://tiklivepro-recordings.fra1.cdn.digitaloceanspaces.com/recordings/<ingestKey>/<date>.fmp4`
-- R2 domaine custom : `https://recordings.tiklivepro.me/recordings/<ingestKey>/<date>.fmp4`
+- DO Spaces CDN : `https://tiklivepro-recordings.fra1.cdn.digitaloceanspaces.com/recordings/<title-slug>/<ingestKey>/<date>.mp4`
+- R2 domaine custom : `https://recordings.tiklivepro.me/recordings/<title-slug>/<ingestKey>/<date>.mp4`
 
 ### API
 

@@ -61,6 +61,7 @@ export const useAuthStore = create<AuthState>()(
       name: 'tik-live-pro-auth',
       partialize: (state) => ({
         userId: state.userId,
+        isAuthenticated: state.isAuthenticated,
         refreshToken: state.refreshToken,
         subscriptionTier: state.subscriptionTier,
         displayName: state.displayName,

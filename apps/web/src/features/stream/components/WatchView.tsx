@@ -316,6 +316,22 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const mountedAtRef = useRef(Date.now());
   const socketRef = useRef<Socket | null>(null);
 
+  const [unreadCount, setUnreadCount] = useState(0);
+  const prevCommentLenRef = useRef(0);
+
+  useEffect(() => {
+    const curr = comments.length;
+    const prev = prevCommentLenRef.current;
+    prevCommentLenRef.current = curr;
+    if (commentsOpen) {
+      setUnreadCount(0);
+      return;
+    }
+    if (curr > prev) {
+      setUnreadCount((n) => n + curr - prev);
+    }
+  }, [comments, commentsOpen]);
+
   const isLive = session.status === 'live';
   const isPaused = session.status === 'paused';
   const isEnded = ['ended', 'error', 'ending'].includes(session.status);
@@ -341,12 +357,31 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     return () => clearInterval(interval);
   }, [session.id, isEnded, apiBase]);
 
-  // Comments socket — read-only if unauthenticated, send-capable if authenticated
+  // Load historical comments when the session goes live (or on first render if already live).
+  // GET /comments is publicly readable so this works for unauthenticated viewers too.
+  useEffect(() => {
+    if (!isLive) return;
+    void fetch(`${API_BASE}/comments?sessionId=${session.id}&pageSize=50`)
+      .then(async (res) => {
+        if (!res.ok) return;
+        const body = (await res.json()) as { data: { items: Comment[] } };
+        const items = body.data.items;
+        if (items.length > 0) setComments(items);
+      })
+      .catch(() => {});
+  }, [isLive, session.id]);
+
+  // Comments socket — read-only if unauthenticated, send-capable if authenticated.
+  // accessToken is intentionally excluded from deps: we don't want to reconnect on every
+  // token refresh and lose events. The initial token value is captured at connect time,
+  // which is sufficient because the comments service does not re-verify the token after
+  // the handshake.
   useEffect(() => {
     if (!isLive) return;
 
+    const token = useAuthStore.getState().accessToken;
     const socket = socketIo(COMMENTS_WS_URL, {
-      ...(accessToken ? { auth: { token: accessToken } } : {}),
+      ...(token ? { auth: { token } } : {}),
       query: { sessionId: session.id },
       transports: ['websocket'],
       reconnectionAttempts: 5,
@@ -371,7 +406,8 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [session.id, isLive, accessToken]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.id, isLive]);
 
   const removeReaction = useCallback((id: string) => {
     setLiveReactions((prev) => prev.filter((r) => r.id !== id));
@@ -387,12 +423,14 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     setLikeCount((prev) => prev + (wasLiked ? -1 : 1));
     if (!wasLiked) {
       const emoji = REACTION_EMOJIS[Math.floor(Math.random() * REACTION_EMOJIS.length)] ?? '❤️';
+      // Show local animation immediately; broadcast to all other viewers via socket
       setLiveReactions((prev) =>
         [
           ...prev,
           { id: crypto.randomUUID(), emoji, left: Math.floor(Math.random() * 36) },
         ].slice(-MAX_REACTIONS),
       );
+      socketRef.current?.emit('emit_reaction', { emoji });
     }
   }, [isAuthenticated, localLiked]);
 
@@ -437,7 +475,11 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       await apiFetch(`${API_BASE}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: session.id, content: trimmed }),
+        body: JSON.stringify({
+          sessionId: session.id,
+          content: trimmed,
+          ...(displayName ? { authorName: displayName } : {}),
+        }),
       });
       setCommentText('');
     } catch {
@@ -445,7 +487,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     } finally {
       setIsSending(false);
     }
-  }, [commentText, isSending, isAuthenticated, session.id]);
+  }, [commentText, isSending, isAuthenticated, session.id, displayName]);
 
   // Auto-scroll comment list to top when new comment arrives
   useEffect(() => {
@@ -729,7 +771,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                 onClick={handleCommentToggle}
                 aria-label={t('comment')}
                 className={cn(
-                  'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+                  'relative flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
                   commentsOpen
                     ? 'border-brand/50 bg-brand/60 text-white'
                     : 'border-white/20 bg-black/45 text-white shadow-black/20',
@@ -750,6 +792,11 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                 <span className="text-[9px] font-semibold leading-none">
                   {comments.length > 0 ? comments.length.toLocaleString() : t('comment')}
                 </span>
+                {unreadCount > 0 && !commentsOpen && (
+                  <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[8px] font-bold leading-none text-white">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
               </button>
 
               {/* Share */}

@@ -4,6 +4,7 @@ import type { RegisterUseCase } from '../../application/use-cases/register.use-c
 import type { LoginUseCase } from '../../application/use-cases/login.use-case.js';
 import type { RefreshTokenUseCase } from '../../application/use-cases/refresh-token.use-case.js';
 import type { OAuthSocialLoginUseCase } from '../../application/use-cases/oauth-social-login.use-case.js';
+import type { IAuthUserRepository } from '../../domain/repositories/auth-user.repository.js';
 import { DomainError, UnauthorizedError } from '@tik-live-pro/domain';
 import { emailSchema, passwordSchema, displayNameSchema } from '@tik-live-pro/validation';
 
@@ -111,9 +112,10 @@ export function registerAuthRoutes(
     loginUseCase: LoginUseCase;
     refreshTokenUseCase: RefreshTokenUseCase;
     oauthSocialLoginUseCase: OAuthSocialLoginUseCase;
+    userRepo: IAuthUserRepository;
   },
 ): void {
-  const { registerUseCase, loginUseCase, refreshTokenUseCase, oauthSocialLoginUseCase } = deps;
+  const { registerUseCase, loginUseCase, refreshTokenUseCase, oauthSocialLoginUseCase, userRepo } = deps;
 
   // POST /auth/register -------------------------------------------------------
   fastify.post(
@@ -410,6 +412,56 @@ Always store and use the newly issued tokens — replaying an old refresh token 
         }
         throw err;
       }
+    },
+  );
+
+  // POST /auth/oauth/deletion ------------------------------------------------
+  // Internal endpoint — called by the Next.js data-deletion callback route after
+  // verifying the Facebook signed_request. Removes the OAuth link for the given
+  // provider user; the user record itself is unaffected (they may have other
+  // login methods).
+  fastify.post(
+    '/auth/oauth/deletion',
+    {
+      schema: {
+        tags: ['Authentication'],
+        summary: 'Remove an OAuth account link (internal)',
+        description: `
+Internal endpoint called by the web app's Facebook data-deletion callback after the signed_request has been verified.
+
+Deletes the \`oauth_accounts\` row for the given provider + providerUserId. The \`auth_users\` record is left intact — the user may have other login methods.
+
+> **No authorization required.** This endpoint is internal and must not be exposed through the API Gateway.
+        `.trim(),
+        body: {
+          type: 'object',
+          required: ['provider', 'providerUserId'],
+          additionalProperties: false,
+          properties: {
+            provider: {
+              type: 'string',
+              description: 'OAuth provider name.',
+              example: 'facebook',
+            },
+            providerUserId: {
+              type: 'string',
+              description: "The user's ID on the provider platform.",
+              example: '1234567890',
+            },
+          },
+        },
+        response: {
+          204: { description: 'OAuth link deleted (or was already absent).', type: 'null' },
+          422: errorResponse('Validation error — request body failed schema checks.'),
+        },
+      },
+    },
+    async (request, reply) => {
+      const { provider, providerUserId } = z
+        .object({ provider: z.string().min(1), providerUserId: z.string().min(1) })
+        .parse(request.body);
+      await userRepo.deleteOAuthAccount(provider, providerUserId);
+      return reply.status(204).send();
     },
   );
 }

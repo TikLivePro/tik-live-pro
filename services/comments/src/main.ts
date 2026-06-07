@@ -7,6 +7,7 @@ import fastifySwaggerUi from '@fastify/swagger-ui';
 import { Server as SocketIOServer } from 'socket.io';
 import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { parseEnv, baseEnvSchema } from '@tik-live-pro/config';
 import { createLogger } from '@tik-live-pro/logger';
@@ -15,6 +16,7 @@ import type { SessionCreatedPayload, CommentReceivedPayload } from '@tik-live-pr
 import { StringCodec, consumerOpts, createInbox } from 'nats';
 import { AdapterRegistry, TikTokAdapter, FacebookAdapter } from '@tik-live-pro/platform-adapters';
 import { registerCommentsRoutes, broadcastComment, setIo } from './interfaces/http/comments.routes.js';
+import { reactions } from './infrastructure/db/schema.js';
 import { CommentPoller } from './application/comment-poller.js';
 import { CommentPoster } from './application/comment-poster.js';
 import { SessionRegistry } from './application/session-registry.js';
@@ -248,6 +250,19 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
     if (!sessionId) { socket.disconnect(); return; }
     void socket.join(sessionId);
     logger.info({ sessionId }, 'Comment client connected via Socket.io');
+
+    socket.on('emit_reaction', (data: { emoji?: string }) => {
+      const emoji = (data?.emoji ?? '❤️').slice(0, 10);
+      void (async () => {
+        try {
+          await db.insert(reactions).values({ id: randomUUID(), sessionId, emoji });
+          // Broadcast to all other clients in the session; sender already has local animation
+          socket.to(sessionId).emit('reaction', { emoji });
+        } catch (err) {
+          logger.error({ err, sessionId }, 'Failed to save reaction');
+        }
+      })();
+    });
   });
 
   setIo(io);

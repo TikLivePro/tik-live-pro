@@ -4,22 +4,22 @@ import { useRef, useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { useStreamStore } from '../store/stream.store';
 import { LiveCommentRow } from './LiveCommentRow';
+import { CommentInput } from '@/features/comments/components/CommentInput';
 import type { Comment } from '@tik-live-pro/shared-types';
 
 interface Props {
-  sendComment: (content: string) => Promise<void>;
-  replyToComment: (commentId: string, content: string) => Promise<void>;
+  sendComment: (content: string, mediaUrls?: string[]) => Promise<void>;
+  replyToComment: (commentId: string, content: string, mediaUrls?: string[]) => Promise<void>;
+  emitReaction: (emoji: string) => void;
   isSending: boolean;
   onClose: () => void;
 }
 
-export function LiveCommentPanel({ sendComment, replyToComment, isSending, onClose }: Props): React.ReactElement {
+export function LiveCommentPanel({ sendComment, replyToComment, emitReaction, isSending, onClose }: Props): React.ReactElement {
   const t = useTranslations('comments');
   const { comments, removeComment, addReaction } = useStreamStore();
-  const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState<Comment | null>(null);
   const [reactingId, setReactingId] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -29,32 +29,33 @@ export function LiveCommentPanel({ sendComment, replyToComment, isSending, onClo
     return () => document.removeEventListener('mousedown', onMouseDown);
   }, [reactingId]);
 
-  async function handleSend(): Promise<void> {
-    const trimmed = text.trim();
-    if (!trimmed || isSending) return;
+  async function handleSend(text: string, mediaUrls?: string[]): Promise<void> {
+    if (!text.trim() && !mediaUrls?.length) return;
     if (replyTo) {
-      await replyToComment(replyTo.id, trimmed);
+      await replyToComment(replyTo.id, text.trim(), mediaUrls);
       setReplyTo(null);
     } else {
-      await sendComment(trimmed);
+      await sendComment(text.trim(), mediaUrls);
     }
-    setText('');
   }
 
   function handleReply(comment: Comment): void {
     setReplyTo(comment);
-    setText('');
-    inputRef.current?.focus();
   }
 
   function handleReactEmoji(emoji: string): void {
     addReaction({ id: crypto.randomUUID(), emoji, left: Math.floor(Math.random() * 36) });
+    emitReaction(emoji);
     setReactingId(null);
   }
 
   function toggleReacting(commentId: string): void {
     setReactingId((prev) => (prev === commentId ? null : commentId));
   }
+
+  const placeholder = replyTo
+    ? t('replyPlaceholder', { name: replyTo.authorName })
+    : t('inputPlaceholder');
 
   return (
     <div className="absolute left-0 top-14 bottom-24 z-40 flex w-full flex-col border-r border-white/20 bg-black/55 backdrop-blur-2xl sm:w-80">
@@ -103,7 +104,7 @@ export function LiveCommentPanel({ sendComment, replyToComment, isSending, onClo
         )}
       </div>
 
-      {/* Reply indicator */}
+      {/* Reply context bar */}
       {replyTo && (
         <div className="flex items-center gap-2 border-t border-white/20 bg-white/[0.06] px-4 py-2">
           <span className="flex-1 truncate text-xs text-white/50">
@@ -111,7 +112,7 @@ export function LiveCommentPanel({ sendComment, replyToComment, isSending, onClo
           </span>
           <button
             type="button"
-            onClick={() => { setReplyTo(null); setText(''); }}
+            onClick={() => setReplyTo(null)}
             aria-label={t('cancelReply')}
             className="text-white/30 transition-colors hover:text-white/70"
           >
@@ -123,38 +124,13 @@ export function LiveCommentPanel({ sendComment, replyToComment, isSending, onClo
         </div>
       )}
 
-      {/* Input row */}
-      <div className="border-t border-white/20 px-3 py-3">
-        <div className="flex items-center gap-2">
-          <input
-            ref={inputRef}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void handleSend(); }
-            }}
-            placeholder={replyTo ? t('replyPlaceholder', { name: replyTo.authorName }) : t('inputPlaceholder')}
-            className="flex-1 rounded-xl border border-white/25 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/35 outline-none backdrop-blur-sm transition-colors focus:border-white/40 focus:bg-white/15"
-          />
-          <button
-            type="button"
-            onClick={() => void handleSend()}
-            disabled={!text.trim() || isSending}
-            aria-label={t('send')}
-            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-brand/40 bg-brand/70 text-white backdrop-blur-xl transition-opacity disabled:opacity-40"
-          >
-            {isSending ? (
-              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-              </svg>
-            ) : (
-              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-            )}
-          </button>
-        </div>
+      {/* Rich comment input */}
+      <div className="border-t border-white/20 p-3">
+        <CommentInput
+          placeholder={placeholder}
+          isSending={isSending}
+          onSend={handleSend}
+        />
       </div>
     </div>
   );

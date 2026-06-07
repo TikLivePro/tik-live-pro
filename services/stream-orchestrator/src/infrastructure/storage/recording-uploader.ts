@@ -1,11 +1,23 @@
 import { createReadStream } from 'node:fs';
-import { unlink, readdir, stat } from 'node:fs/promises';
+import { unlink, readdir, rename, stat } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import { S3Client } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import type { Logger } from '@tik-live-pro/logger';
 import type { IRecordingRepository } from '../db/recording.repo.impl.js';
 import type { IStreamSessionRepository } from '../../domain/repositories/stream-session.repository.js';
+
+function slugify(title: string): string {
+  return (
+    title
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') || 'untitled'
+  );
+}
 
 export interface StorageConfig {
   bucket: string;
@@ -19,13 +31,21 @@ export interface StorageConfig {
   forcePathStyle?: boolean;
 }
 
+// A .mp4.part file whose mtime hasn't changed for this long is considered orphaned:
+// either the publisher disconnected without a clean WHIP teardown (network drop, crash)
+// or the PATCH record:false path-config call didn't finalize it (MediaMTX only applies
+// path-config changes on the NEXT publisher connection, not the current one).
+const ORPHAN_THRESHOLD_MS = 5 * 60 * 1_000; // 5 minutes
+
 /**
  * Polls a directory for completed MediaMTX recordings (.mp4) and uploads them
  * to S3-compatible object storage (DigitalOcean Spaces or Cloudflare R2).
  *
  * MediaMTX writes <timestamp>.mp4.part while the segment is live, then renames
- * to <timestamp>.mp4 when the segment is closed. Polling for .mp4 files
- * (never .mp4.part) ensures we only upload complete segments.
+ * to <timestamp>.mp4 when the segment is closed (publisher disconnect or segment
+ * duration reached). If the publisher never disconnects cleanly, the .mp4.part
+ * file is orphaned. tryRescueOrphan() detects these files (mtime stale for
+ * ORPHAN_THRESHOLD_MS) and renames them so the next scan picks them up.
  */
 export class RecordingUploader {
   private readonly s3: S3Client;
@@ -74,15 +94,44 @@ export class RecordingUploader {
       return;
     }
 
+    const now = Date.now();
     for (const entry of entries) {
-      if (!entry.endsWith('.mp4')) continue;
       const fullPath = join(this.recordingsDir, entry);
+
+      if (entry.endsWith('.mp4.part')) {
+        void this.tryRescueOrphan(fullPath, now);
+        continue;
+      }
+
+      if (!entry.endsWith('.mp4')) continue;
       if (this.uploading.has(fullPath) || this.uploaded.has(fullPath)) continue;
       this.uploading.add(fullPath);
       void this.uploadFile(fullPath, entry).catch((err: unknown) => {
         this.logger.error({ err, fullPath }, 'Recording upload failed — will retry next scan');
         this.uploading.delete(fullPath);
       });
+    }
+  }
+
+  // Renames a stale .mp4.part to .mp4 so the next scan uploads it.
+  // Active segments are always being written, so their mtime will be recent;
+  // only genuinely abandoned files pass the ORPHAN_THRESHOLD_MS guard.
+  private async tryRescueOrphan(fullPath: string, now: number): Promise<void> {
+    try {
+      const { mtimeMs } = await stat(fullPath);
+      if (now - mtimeMs < ORPHAN_THRESHOLD_MS) return;
+    } catch {
+      return;
+    }
+    const completePath = fullPath.slice(0, -'.part'.length);
+    try {
+      await rename(fullPath, completePath);
+      this.logger.warn(
+        { fullPath, completePath },
+        'Rescued orphaned .mp4.part — publisher never sent a clean disconnect. Will upload on next scan.',
+      );
+    } catch (err) {
+      this.logger.warn({ err, fullPath }, 'Could not rescue orphaned .mp4.part');
     }
   }
 
@@ -96,7 +145,28 @@ export class RecordingUploader {
       return;
     }
 
-    const key = `recordings/${relativePath}`;
+    // Derive ingestKey from MediaMTX path: live/{ingestKey}/{timestamp}.mp4
+    const pathParts = relativePath.split('/');
+    const ingestKey = pathParts[1] ?? relativePath;
+    const fileName = basename(relativePath);
+
+    // Look up session title to embed in the S3 key for human-readable paths.
+    // Falls back to the ingestKey if the session cannot be found.
+    let titleSlug = ingestKey;
+    let sessionId: string | undefined;
+    if (this.sessionRepo) {
+      try {
+        const session = await this.sessionRepo.findByIngestKey(ingestKey);
+        if (session) {
+          titleSlug = slugify(session.title);
+          sessionId = session.sessionId;
+        }
+      } catch (err) {
+        this.logger.warn({ err, ingestKey }, 'Could not resolve session title for recording path — using ingestKey');
+      }
+    }
+
+    const key = `recordings/${titleSlug}/${ingestKey}/${fileName}`;
     this.logger.info({ localPath, key, bucket: this.config.bucket }, 'Uploading recording');
 
     const upload = new Upload({
@@ -119,22 +189,16 @@ export class RecordingUploader {
 
     // Persist the DB record before attempting unlink so the upload is never lost
     // even if the local file cannot be deleted (e.g. root-owned Docker bind-mount).
-    if (this.recordingRepo && this.sessionRepo) {
+    if (this.recordingRepo && sessionId) {
       try {
-        // Derive ingestKey from path: recordings/live/{ingestKey}/file.mp4
-        const pathParts = relativePath.split('/');
-        const ingestKey = pathParts[1] ?? relativePath;
-        const session = await this.sessionRepo.findByIngestKey(ingestKey);
-        if (session) {
-          await this.recordingRepo.save({
-            sessionId: session.sessionId,
-            ingestKey,
-            fileKey: key,
-            publicUrl,
-            fileName: basename(relativePath),
-            sizeBytes: fileSizeBytes,
-          });
-        }
+        await this.recordingRepo.save({
+          sessionId,
+          ingestKey,
+          fileKey: key,
+          publicUrl,
+          fileName,
+          sizeBytes: fileSizeBytes,
+        });
       } catch (err) {
         this.logger.warn({ err }, 'Failed to persist recording record — file still uploaded');
       }

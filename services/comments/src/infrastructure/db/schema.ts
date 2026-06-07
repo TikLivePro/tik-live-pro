@@ -1,5 +1,18 @@
 import { pgTable, text, timestamp, varchar, uuid, unique, index } from 'drizzle-orm/pg-core';
 
+export const reactions = pgTable(
+  'reactions',
+  {
+    id: uuid('id').primaryKey(),
+    sessionId: uuid('session_id').notNull(),
+    emoji: varchar('emoji', { length: 10 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    sessionIdx: index('reactions_session_id_idx').on(t.sessionId),
+  }),
+);
+
 export const comments = pgTable(
   'comments',
   {

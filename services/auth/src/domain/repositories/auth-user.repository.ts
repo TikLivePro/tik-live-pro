@@ -17,4 +17,5 @@ export interface IAuthUserRepository {
   update(user: AuthUser): Promise<void>;
   delete(id: UserId): Promise<void>;
   saveOAuthAccount(account: OAuthAccountData): Promise<void>;
+  deleteOAuthAccount(provider: string, providerUserId: string): Promise<void>;
 }

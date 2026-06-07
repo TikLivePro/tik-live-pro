@@ -37,8 +37,8 @@ const commentSchema = {
     sessionId: { type: 'string', format: 'uuid', description: 'ID of the live session this comment belongs to.' },
     platform: {
       type: 'string',
-      enum: ['tiktok', 'facebook'],
-      description: 'Platform the comment originated from.',
+      enum: ['tiktok', 'facebook', 'local'],
+      description: 'Platform the comment originated from. "local" means posted without a linked platform account.',
       example: 'tiktok',
     },
     platformCommentId: {
@@ -93,6 +93,10 @@ export function setIo(socketIo: SocketIOServer): void {
 
 export function broadcastComment(sessionId: string, comment: Comment): void {
   io?.to(sessionId).emit('comment', comment);
+}
+
+export function broadcastReaction(sessionId: string, emoji: string): void {
+  io?.to(sessionId).emit('reaction', { emoji });
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +182,7 @@ Comments are collected by the \`CommentPoller\` which calls each platform's comm
   );
 
   // POST /comments -----------------------------------------------------------
-  fastify.post<{ Body: { sessionId: string; content: string; mediaUrls?: string[] } }>(
+  fastify.post<{ Body: { sessionId: string; content: string; authorName?: string; mediaUrls?: string[] } }>(
     '/comments',
     {
       schema: {
@@ -199,6 +203,7 @@ Supports an optional \`mediaUrl\` field to attach an image, GIF, or file URL alo
           properties: {
             sessionId: { type: 'string', format: 'uuid', description: 'ID of the active live session.' },
             content: { type: 'string', minLength: 0, maxLength: 1000, description: 'Comment text to post.' },
+            authorName: { type: 'string', maxLength: 255, nullable: true, description: 'Display name to use for local comments (when no platform account is linked).' },
             mediaUrls: {
               type: 'array',
               items: { type: 'string', format: 'uri' },
@@ -222,17 +227,59 @@ Supports an optional \`mediaUrl\` field to attach an image, GIF, or file URL alo
       },
     },
     async (request, reply) => {
-      const { sessionId, content } = request.body;
+      const { sessionId, content, authorName: bodyAuthorName } = request.body;
       const posted = await deps.poster.postToAllPlatforms(
         sessionId as Comment['sessionId'],
         content,
       );
 
-      for (const comment of posted) {
-        broadcastComment(sessionId, comment);
+      if (posted.length > 0) {
+        for (const comment of posted) {
+          broadcastComment(sessionId, comment);
+        }
+        return reply.status(201).send({ data: posted });
       }
 
-      return reply.status(201).send({ data: posted });
+      // No linked platform accounts — persist and broadcast a local comment so it
+      // appears instantly in the live dashboard.
+      let authorName = bodyAuthorName ?? 'Streamer';
+      let authorPlatformUserId = 'local';
+      try {
+        await request.jwtVerify();
+        const user = request.user as { sub: string };
+        authorPlatformUserId = user.sub;
+      } catch {
+        // No valid JWT — use defaults
+      }
+
+      const id = randomUUID();
+      const now = new Date();
+      await deps.db.insert(comments).values({
+        id,
+        sessionId,
+        platform: 'local',
+        platformCommentId: id,
+        authorName,
+        authorPlatformUserId,
+        authorAvatarUrl: null,
+        content,
+        receivedAt: now,
+      }).onConflictDoNothing();
+
+      const localComment: Comment = {
+        id: id as Comment['id'],
+        sessionId: sessionId as Comment['sessionId'],
+        platform: 'local',
+        platformCommentId: id,
+        authorName,
+        authorPlatformUserId,
+        authorAvatarUrl: null,
+        content,
+        receivedAt: now,
+      };
+
+      broadcastComment(sessionId, localComment);
+      return reply.status(201).send({ data: [localComment] });
     },
   );
 
@@ -304,7 +351,7 @@ Replies to a specific comment. The reply is sent to the platform where the origi
 
       const replyComment = await deps.poster.replyToPlatformComment(
         parentComment.sessionId as Comment['sessionId'],
-        parentComment.platform as Comment['platform'],
+        parentComment.platform as import('@tik-live-pro/shared-types').SocialPlatform,
         commentId,
         parentComment.platformCommentId,
         parentComment.authorPlatformUserId,

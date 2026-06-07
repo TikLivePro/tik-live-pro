@@ -103,6 +103,14 @@ export class PgAuthUserRepository implements IAuthUserRepository {
     this.logger.debug({ provider: account.provider }, 'PgAuthUserRepository: saveOAuthAccount done');
   }
 
+  async deleteOAuthAccount(provider: string, providerUserId: string): Promise<void> {
+    this.logger.debug({ provider, providerUserId }, 'PgAuthUserRepository: deleteOAuthAccount');
+    await this.db
+      .delete(oauthAccounts)
+      .where(and(eq(oauthAccounts.provider, provider), eq(oauthAccounts.providerUserId, providerUserId)));
+    this.logger.debug({ provider, providerUserId }, 'PgAuthUserRepository: deleteOAuthAccount done');
+  }
+
   private toEntity(row: typeof authUsers.$inferSelect): AuthUser {
     return AuthUser.create({
       id: row.id as UserId,

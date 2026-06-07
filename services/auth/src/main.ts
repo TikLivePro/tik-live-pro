@@ -181,6 +181,7 @@ Authorization: Bearer <accessToken>
     loginUseCase,
     refreshTokenUseCase,
     oauthSocialLoginUseCase,
+    userRepo,
   });
 
   // ---------------------------------------------------------------------------

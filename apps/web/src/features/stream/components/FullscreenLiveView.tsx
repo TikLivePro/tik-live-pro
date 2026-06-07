@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { API_BASE, apiFetch } from '@/lib/api';
@@ -46,7 +47,7 @@ export function FullscreenLiveView(): React.ReactElement {
     getStream,
   } = useCameraStream(true);
 
-  const { sendComment, replyToComment, isSending } = useComments(currentSession?.id ?? null);
+  const { sendComment, replyToComment, emitReaction, isSending } = useComments(currentSession?.id ?? null);
   const { state: whipState, connect: connectWhip, disconnect: disconnectWhip } = useWhipStream();
   const { isRecording, isToggling: isTogglingRecording, toggle: toggleRecording } = useRecording(
     (currentSession?.id as LiveSessionId) ?? null,
@@ -164,6 +165,27 @@ export function FullscreenLiveView(): React.ReactElement {
   const [isMinimized, setIsMinimized] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [viewersPanelOpen, setViewersPanelOpen] = useState(false);
+
+  // ── Unread comment tracking ──────────────────────────────────
+  const [unreadCount, setUnreadCount] = useState(0);
+  const prevCommentLenRef = useRef(0);
+
+  useEffect(() => {
+    const curr = comments.length;
+    const prev = prevCommentLenRef.current;
+    prevCommentLenRef.current = curr;
+    if (commentsOpen) {
+      setUnreadCount(0);
+      return;
+    }
+    if (curr > prev && comments[0]) {
+      setUnreadCount((n) => n + curr - prev);
+      toast(comments[0].content?.slice(0, 72) ?? '…', {
+        description: comments[0].authorName,
+        duration: 3500,
+      });
+    }
+  }, [comments, commentsOpen]);
   const [viewersVisible, setViewersVisible] = useState(false);
   const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
 
@@ -449,6 +471,7 @@ export function FullscreenLiveView(): React.ReactElement {
           <LiveCommentPanel
             sendComment={sendComment}
             replyToComment={replyToComment}
+            emitReaction={emitReaction}
             isSending={isSending}
             onClose={() => setCommentsOpen(false)}
           />
@@ -487,7 +510,7 @@ export function FullscreenLiveView(): React.ReactElement {
             type="button"
             onClick={() => { setCommentsOpen((o) => !o); setViewersPanelOpen(false); }}
             className={cn(
-              'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+              'relative flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
               commentsOpen
                 ? 'bg-brand/60 border-brand/70 text-white shadow-brand/20'
                 : 'bg-black/45 border-white/20 text-white shadow-black/20',
@@ -506,6 +529,11 @@ export function FullscreenLiveView(): React.ReactElement {
               <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
             </svg>
             <span className="text-[9px] font-semibold leading-none">Chat</span>
+            {unreadCount > 0 && !commentsOpen && (
+              <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[8px] font-bold leading-none text-white">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
           </button>
 
           {/* Like */}

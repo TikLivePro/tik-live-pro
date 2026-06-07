@@ -52,6 +52,9 @@ const PUBLIC_PATH_PATTERNS = [
   /^\/sessions\/[^/]+\/public$/,
   /^\/sessions\/[^/]+\/viewers$/,
 ];
+// GET-only paths that are publicly readable (no auth required for safe read operations).
+// POST/PATCH/DELETE to the same paths still require auth (enforced below).
+const PUBLIC_GET_PATHS = new Set(['/comments']);
 
 async function bootstrap(): Promise<void> {
   const fastify = Fastify({
@@ -87,6 +90,8 @@ The gateway authenticates requests using JWT Bearer tokens and forwards them to 
 | \`/sessions/*\` | Live Session Service | Yes |
 | \`/integrations/*\` | Integrations Service | Yes |
 | \`/billing/*\` | Billing Service | Yes |
+| \`GET /comments\` | Comments Service | No — public read for live viewers |
+| \`POST /comments\` | Comments Service | Yes |
 | \`/comments/*\` | Comments Service | Yes |
 | \`/notifications/*\` | Notifications Service | Yes |
 | \`/analytics/*\` | Analytics Service | Yes |
@@ -1129,7 +1134,8 @@ All error responses follow a consistent envelope:
 
     const handler = async (request: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => {
       const requestPath = request.url.split('?')[0]!;
-      if (!isPublic && !PUBLIC_PATHS.has(requestPath) && !PUBLIC_PATH_PATTERNS.some((p) => p.test(requestPath))) {
+      const isPublicGet = request.method === 'GET' && PUBLIC_GET_PATHS.has(requestPath);
+      if (!isPublic && !isPublicGet && !PUBLIC_PATHS.has(requestPath) && !PUBLIC_PATH_PATTERNS.some((p) => p.test(requestPath))) {
         await request.jwtVerify();
       }
 

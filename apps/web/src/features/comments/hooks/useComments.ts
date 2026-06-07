@@ -4,21 +4,21 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { io as socketIo, type Socket } from 'socket.io-client';
 import { useStreamStore } from '@/features/stream/store/stream.store';
 import { useAuthStore } from '@/features/auth/store/auth.store';
-import { COMMENTS_WS_URL, apiFetch } from '@/lib/api';
+import { API_BASE, COMMENTS_WS_URL, apiFetch } from '@/lib/api';
 import type { Comment, LiveSessionId } from '@tik-live-pro/shared-types';
 
 export function useComments(sessionId: LiveSessionId | null) {
   const socketRef = useRef<Socket | null>(null);
-  const { accessToken } = useAuthStore();
+  const { accessToken, displayName } = useAuthStore();
   const { comments, addComment, addReaction, replyingTo, setReplyingTo } = useStreamStore();
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!sessionId || !accessToken) return;
+    if (!sessionId) return;
 
     const socket = socketIo(COMMENTS_WS_URL, {
-      auth: { token: accessToken },
+      ...(accessToken ? { auth: { token: accessToken } } : {}),
       query: { sessionId },
       transports: ['websocket'],
       reconnectionAttempts: 10,
@@ -47,7 +47,13 @@ export function useComments(sessionId: LiveSessionId | null) {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [sessionId, accessToken, addComment, addReaction]);
+  // accessToken intentionally excluded: reconnect only when session changes, not on every token refresh
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, addComment, addReaction]);
+
+  const emitReaction = useCallback((emoji: string) => {
+    socketRef.current?.emit('emit_reaction', { emoji });
+  }, []);
 
   const sendComment = useCallback(
     async (content: string, mediaUrls?: string[]): Promise<void> => {
@@ -55,12 +61,13 @@ export function useComments(sessionId: LiveSessionId | null) {
       setIsSending(true);
       setSendError(null);
       try {
-        await apiFetch('/comments', {
+        await apiFetch(`${API_BASE}/comments`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sessionId,
             content: content.trim(),
+            ...(displayName ? { authorName: displayName } : {}),
             ...(mediaUrls?.length ? { mediaUrls } : {}),
           }),
         });
@@ -70,7 +77,7 @@ export function useComments(sessionId: LiveSessionId | null) {
         setIsSending(false);
       }
     },
-    [sessionId],
+    [sessionId, displayName],
   );
 
   const replyToComment = useCallback(
@@ -79,7 +86,7 @@ export function useComments(sessionId: LiveSessionId | null) {
       setIsSending(true);
       setSendError(null);
       try {
-        await apiFetch(`/comments/${commentId}/reply`, {
+        await apiFetch(`${API_BASE}/comments/${commentId}/reply`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -97,5 +104,5 @@ export function useComments(sessionId: LiveSessionId | null) {
     [setReplyingTo],
   );
 
-  return { comments, replyingTo, setReplyingTo, sendComment, replyToComment, isSending, sendError };
+  return { comments, replyingTo, setReplyingTo, sendComment, replyToComment, emitReaction, isSending, sendError };
 }
