@@ -1,6 +1,11 @@
 import { createHmac, timingSafeEqual } from 'crypto';
+import { redirect } from 'next/navigation';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
+
+export function GET(): never {
+  redirect('/data-deletion');
+}
 
 function base64urlDecode(s: string): Buffer {
   return Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64');

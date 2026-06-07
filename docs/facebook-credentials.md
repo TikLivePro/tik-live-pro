@@ -134,8 +134,21 @@ Meta requires that apps accessing user data provide a way for users to request d
 
 ### Register the callback URL in the portal
 
-1. In the Meta Developer Portal, go to **App settings → Basic** (or **Use cases → Customize**).
-2. Find the **Data Deletion Instructions URL** field.
+**Step 1 — Add the domain to App Domains (required first)**
+
+Facebook rejects any URL whose domain is not registered. Before saving the callback URL:
+
+1. Go to **App settings → Basic** in the left sidebar.
+2. Find the **App Domains** field.
+3. Add `tiklivepro.me` (without protocol or path).
+4. Click **Save changes**.
+
+Without this step, saving any URL on `tiklivepro.me` will produce the error *"name_placeholder should represent a valid URL"*.
+
+**Step 2 — Register the data deletion callback URL**
+
+1. Stay on **App settings → Basic**.
+2. Scroll down to find **Data Deletion Instructions URL**.
 3. Enter: `https://tiklivepro.me/api/auth/facebook/deletion`
 4. Click **Save changes**.
 
