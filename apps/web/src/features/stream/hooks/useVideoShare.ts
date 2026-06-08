@@ -71,7 +71,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   const audioDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   // GainNode for local monitoring — controls how much the streamer hears
   const monitorGainRef = useRef<GainNode | null>(null);
-  const videoVolumeRef = useRef(0);
+  const videoVolumeRef = useRef(50);
 
   // Set true in loadLocalFile/loadOnlineUrl; cleared by onLoadedData after play() fires.
   // Intentionally NOT reset in cleanup so the flag survives React Strict Mode's remount.
@@ -85,7 +85,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [recentSources, setRecentSources] = useState<RecentSource[]>(loadSavedUrls);
-  const [videoVolume, setVideoVolumeState] = useState(0);
+  const [videoVolume, setVideoVolumeState] = useState(50);
 
   const allowViewerControlRef = useRef(false);
   const sourceTypeRef = useRef<VideoSourceType>('camera');
@@ -104,12 +104,8 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     const video = videoRef.current;
     if (!video) return;
 
-    // Ensure `muted` is set as both the IDL property AND the HTML content attribute.
-    // React's JSX `muted` prop only sets the IDL property; some browsers require the
-    // HTML content attribute for autoplay policy to recognize the video as muted.
-    video.muted = true;
-    video.setAttribute('muted', '');
-
+    // captureStream() for the video track only — called while the element may still be
+    // muted by JSX, which is fine because we use the Web Audio API for the audio track.
     try {
       capturedStreamRef.current = (video as CaptureableVideo).captureStream();
     } catch {
@@ -129,10 +125,10 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
       // "play() interrupted by new load request" AbortError on source changes.
       if (pendingPlayRef.current) {
         pendingPlayRef.current = false;
-        // Play immediately — the element is muted so autoplay is always allowed.
-        // Do NOT gate play() on ctx.resume(): AudioContext.resume() requires a user
-        // gesture and may never resolve when called from an async chain (e.g. after
-        // WHIP connects), causing the video to stay permanently black.
+        // play() is called from loadeddata which fires after the user picked a file or
+        // typed a URL (sticky user activation), so it succeeds without muted.
+        // Do NOT gate play() on ctx.resume() — AudioContext.resume() requires a user
+        // gesture and may never resolve in an async chain, causing permanent black screen.
         // Resume the AudioContext separately (fire-and-forget) for audio routing.
         void video.play().catch((err) => {
           console.warn('[useVideoShare] video.play() failed:', err);
@@ -190,11 +186,19 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
         monitorGainRef.current = monitorGain;
         monitorGain.gain.value = videoVolumeRef.current / 100;
 
+        // Per the Web Audio spec, a muted element causes MediaElementAudioSourceNode
+        // to produce silence — neither the WebRTC track nor local monitoring would have
+        // any audio. Unmute before connecting so the node captures actual audio data.
+        // Once createMediaElementSource() is called, Web Audio takes over the element's
+        // audio routing entirely; the element no longer drives speakers directly, so
+        // local playback volume is controlled solely by monitorGain below.
+        video.muted = false;
+        video.removeAttribute('muted');
+
         const src = ctx.createMediaElementSource(video);
-        // Split audio: send to both WebRTC and local speakers
-        src.connect(dest); // For viewers via WebRTC
-        src.connect(monitorGain); // For streamer local monitoring
-        monitorGain.connect(ctx.destination); // To speakers, controlled by gain
+        src.connect(dest);         // → WebRTC (viewers)
+        src.connect(monitorGain);  // → streamer local monitoring
+        monitorGain.connect(ctx.destination);
         mediaSourcedElements.add(video);
       } catch {
         // AudioContext unavailable (SSR, sandboxed iframe, etc.)

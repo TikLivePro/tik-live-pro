@@ -437,10 +437,11 @@ export function FullscreenLiveView(): React.ReactElement {
           )}
         />
         {/* Video share element — always in DOM so captureStream() works; shown when active */}
+        {/* Not muted: Web Audio (createMediaElementSource) has taken over audio routing,
+            so local volume is controlled by monitorGain, not the element's muted attr. */}
         <video
           ref={videoShare.videoRef}
           autoPlay
-          muted
           playsInline
           onClick={() => {
             if (videoShare.sourceType !== 'camera') {

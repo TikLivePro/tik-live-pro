@@ -808,6 +808,31 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
         </div>
       )}
 
+      {/* ── Unmute CTA — visible when video is muted (browser autoplay policy) ── */}
+      {isLive && hasVideo && isMuted && !anyPanelOpen && (
+        <button
+          type="button"
+          onClick={() => { setIsMuted(false); showControls(); }}
+          className="absolute bottom-32 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/25 bg-black/60 px-4 py-2.5 text-xs font-semibold text-white backdrop-blur-xl transition-colors hover:bg-black/80"
+        >
+          <svg
+            className="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+            <line x1="23" y1="9" x2="17" y2="15" />
+            <line x1="17" y1="9" x2="23" y2="15" />
+          </svg>
+          {t('volume.unmute')}
+        </button>
+      )}
+
       {/* ── Live interaction layer ── */}
       {isLive && (
         <>
