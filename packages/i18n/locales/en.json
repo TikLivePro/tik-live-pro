@@ -192,6 +192,7 @@
       "play": "Play",
       "pause": "Pause",
       "seek": "Seek",
+      "volume": "Volume",
       "allowViewerControl": "Allow viewer control",
       "viewerControlEnabled": "Viewers can control",
       "viewerControlDisabled": "Only you control",

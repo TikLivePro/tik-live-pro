@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 
 export interface ViewerVideoState {
+  sourceType?: 'camera' | 'local-file' | 'online-url';
   playing: boolean;
   currentTime: number;
   duration: number;

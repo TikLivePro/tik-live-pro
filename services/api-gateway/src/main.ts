@@ -750,6 +750,28 @@ All error responses follow a consistent envelope:
             },
           },
         },
+        '/stream-orchestrator/sessions/{sessionId}/video-push': {
+          post: {
+            tags: ['Streaming'],
+            summary: 'Push a remote video URL into the RTMP stream',
+            description: 'Accepts an HTTP or HTTPS URL of a video file and starts an ffmpeg process that fetches and pushes it into the session RTMP ingest key. The file loops until the session ends or a new video-push replaces it. Only valid when session status is `live`.',
+            security: [{ BearerAuth: [] }],
+            parameters: [
+              { in: 'path', name: 'sessionId', required: true, schema: { type: 'string', format: 'uuid' }, description: 'Live session ID.' },
+            ],
+            requestBody: {
+              required: true,
+              content: { 'application/json': { schema: { type: 'object', required: ['videoUri'], properties: { videoUri: { type: 'string', description: 'HTTP or HTTPS URL of the video to stream.', example: 'https://cdn.example.com/streams/intro.mp4' } } } } },
+            },
+            responses: {
+              200: { description: 'Video push started.', content: { 'application/json': { schema: { type: 'object', properties: { status: { type: 'string', enum: ['started'] } } } } } },
+              400: { description: 'videoUri missing or not a valid HTTP/HTTPS URL.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              401: { description: 'Unauthorized.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              404: { description: 'Session not found.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              409: { description: 'Session is not live.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            },
+          },
+        },
 
         // -----------------------------------------------------------------------
         // BILLING

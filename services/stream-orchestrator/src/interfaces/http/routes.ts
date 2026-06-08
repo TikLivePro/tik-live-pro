@@ -4,6 +4,12 @@ import type { IRecordingRepository } from '../../infrastructure/db/recording.rep
 import type { HandleStreamArrivedUseCase } from '../../application/use-cases/handle-stream-arrived.use-case.js';
 import type { LiveSessionId } from '@tik-live-pro/shared-types';
 import { StreamSessionStatus, RecordingStatus } from '../../domain/entities/stream-session.entity.js';
+import ffmpeg from 'fluent-ffmpeg';
+import type { FfmpegCommand } from 'fluent-ffmpeg';
+
+// Map of sessionId → active video-push ffmpeg process.
+// Ensures only one push process runs per session at a time.
+const videoPushProcesses = new Map<string, FfmpegCommand>();
 
 // ---------------------------------------------------------------------------
 // Reusable schema fragments
@@ -798,6 +804,154 @@ Only valid when the session status is \`live\`.
         .header('Content-Disposition', `attachment; filename="${recording.fileName}"`)
         .header('Content-Type', 'video/mp4')
         .send(upstream.body);
+    },
+  );
+
+  // POST /sessions/:sessionId/video-push ----------------------------------------
+  // Accepts an HTTP/HTTPS URL of a video file and uses ffmpeg to push it into
+  // the RTMP ingest pipeline for this session.
+  //
+  // NOTE: The videoUri MUST be an HTTP or HTTPS URL accessible by the server.
+  //       Mobile device local paths (file://, /storage/...) cannot be used here
+  //       because the server has no access to the mobile device filesystem.
+  //       Host your video on a reachable server (LAN, CDN, etc.) and pass the URL.
+  app.post<{ Params: { sessionId: string }; Body: { videoUri?: string } }>(
+    '/sessions/:sessionId/video-push',
+    {
+      schema: {
+        tags: ['Streaming'],
+        summary: 'Push a remote video URL into the RTMP stream',
+        description:
+          'Accepts an **HTTP or HTTPS URL** of a video file and starts an ffmpeg process that ' +
+          'fetches and pushes it directly into the session RTMP ingest key. ' +
+          'The file loops until the session ends or a new video-push replaces it. ' +
+          'Only valid when session status is `live`.\n\n' +
+          '> **Important:** The URL must be reachable by the orchestrator server. ' +
+          'Mobile device local paths (`file://`, `/storage/...`) are **not** supported — ' +
+          'host your video on a CDN, LAN HTTP server, or similar.',
+        security: bearerAuth,
+        params: {
+          type: 'object',
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'string', format: 'uuid', description: 'UUID of the live session.' },
+          },
+        },
+        body: {
+          type: 'object',
+          required: ['videoUri'],
+          properties: {
+            videoUri: {
+              type: 'string',
+              description:
+                'HTTP or HTTPS URL of the video to stream. ' +
+                'Must be accessible by the orchestrator server (not a device-local path).',
+              example: 'https://cdn.example.com/streams/intro.mp4',
+            },
+          },
+        },
+        response: {
+          200: {
+            description: 'Video push started.',
+            type: 'object',
+            properties: {
+              status: { type: 'string', enum: ['started'], example: 'started' },
+            },
+          },
+          400: errorSchema('videoUri is missing or not a valid HTTP/HTTPS URL.'),
+          404: errorSchema('Session not found.'),
+          409: errorSchema('Session is not live — cannot push video.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const session = await deps.sessionRepo.findBySessionId(
+        req.params.sessionId as LiveSessionId,
+      );
+
+      if (!session) {
+        await reply.status(404).send({ code: 'NOT_FOUND', message: 'Session not found' });
+        return;
+      }
+
+      if (session.status !== StreamSessionStatus.LIVE || !session.ingestKey) {
+        await reply.status(409).send({ code: 'NOT_LIVE', message: 'Session is not live' });
+        return;
+      }
+
+      const rawUri = req.body.videoUri;
+      if (!rawUri) {
+        await reply.status(400).send({ code: 'MISSING_URI', message: 'videoUri is required' });
+        return;
+      }
+
+      // Only HTTP/HTTPS URLs are supported. Local device paths (file://, /storage/...)
+      // are rejected because the server has no access to the mobile device filesystem.
+      const isHttpUrl = rawUri.startsWith('http://') || rawUri.startsWith('https://');
+      if (!isHttpUrl) {
+        await reply.status(400).send({
+          code: 'INVALID_URI',
+          message:
+            'videoUri must be an HTTP or HTTPS URL accessible by the server. ' +
+            'Local device paths (file://, /storage/, etc.) are not supported — ' +
+            'host the video on a reachable server and pass the HTTP URL.',
+        });
+        return;
+      }
+
+      // Kill any existing video-push process for this session before starting a new one.
+      const existing = videoPushProcesses.get(session.sessionId);
+      if (existing) {
+        req.log.info({ sessionId: session.sessionId }, 'video-push: killing previous ffmpeg process');
+        existing.kill('SIGKILL');
+        videoPushProcesses.delete(session.sessionId);
+      }
+
+      // The RTMP ingest URL for this session — same as what GET /ingest returns
+      const rtmpIngestUrl = `rtmp://${deps.rtmpIngestHost}:${deps.rtmpIngestPort}/live/${session.ingestKey}`;
+      const sessionId = session.sessionId;
+
+      // Run ffmpeg: pull the remote HTTP video URL and push into the RTMP ingest.
+      // -stream_loop -1  → loop the file indefinitely until killed
+      // -re              → read at native frame rate (real-time, not full-speed)
+      // -c:v libx264     → re-encode to H.264 — FLV/RTMP ONLY supports H.264.
+      //                    Using "-c:v copy" fails silently when the source is H.265,
+      //                    VP9, AV1, etc., producing a black stream or ffmpeg error.
+      // -preset veryfast → fast encode with acceptable quality for live streaming
+      // -tune zerolatency→ minimise encoder buffering / latency
+      // -c:a aac         → re-encode audio to AAC (RTMP standard)
+      const proc = ffmpeg(rawUri)
+        .inputOptions(['-stream_loop -1', '-re'])
+        .outputOptions([
+          '-map 0:v:0',
+          '-map 0:a:0?',
+          '-c:v libx264',
+          '-preset veryfast',
+          '-tune zerolatency',
+          '-crf 23',
+          '-c:a aac',
+          '-b:a 128k',
+          '-ar 44100',
+          '-ac 2',
+          '-f flv',
+        ])
+        .output(rtmpIngestUrl)
+        .on('start', (cmd) => {
+          req.log.info({ cmd, sessionId }, 'video-push ffmpeg started');
+        })
+        .on('error', (err: Error) => {
+          req.log.error({ err, sessionId }, 'video-push ffmpeg error');
+          videoPushProcesses.delete(sessionId);
+        })
+        .on('end', () => {
+          req.log.info({ sessionId }, 'video-push ffmpeg ended');
+          videoPushProcesses.delete(sessionId);
+        });
+
+      proc.run();
+      videoPushProcesses.set(sessionId, proc);
+
+      await reply.status(200).send({ status: 'started' });
     },
   );
 }

@@ -35,7 +35,16 @@ export function FullscreenLiveView(): React.ReactElement {
   const router = useRouter();
   const { currentSession, isEnding, isPausing, endSession, pauseSession, resumeSession } =
     useStream();
-  const { comments, liveReactions, addReaction, removeReaction, videoQualityId, setVideoQualityId, preSource, setPreSource } = useStreamStore();
+  const {
+    comments,
+    liveReactions,
+    addReaction,
+    removeReaction,
+    videoQualityId,
+    setVideoQualityId,
+    preSource,
+    setPreSource,
+  } = useStreamStore();
   const isPaused = currentSession?.status === 'paused';
   const {
     videoRef,
@@ -50,17 +59,30 @@ export function FullscreenLiveView(): React.ReactElement {
     getStream,
   } = useCameraStream(true);
 
-  const { sendComment, replyToComment, emitReaction, isSending, socketRef } = useComments(currentSession?.id ?? null);
-  const videoShare = useVideoShare({ socketRef, sessionId: currentSession?.id ?? null });
-  const { state: whipState, connect: connectWhip, disconnect: disconnectWhip, replaceVideoTrack, replaceAudioTrack, setVideoBitrate } = useWhipStream();
-  const { isRecording, isToggling: isTogglingRecording, toggle: toggleRecording } = useRecording(
-    (currentSession?.id as LiveSessionId) ?? null,
+  const { sendComment, replyToComment, emitReaction, isSending, socketRef } = useComments(
+    currentSession?.id ?? null,
   );
+  const videoShare = useVideoShare({ socketRef, sessionId: currentSession?.id ?? null });
+  const {
+    state: whipState,
+    connect: connectWhip,
+    disconnect: disconnectWhip,
+    replaceVideoTrack,
+    replaceAudioTrack,
+    setVideoBitrate,
+  } = useWhipStream();
+  const {
+    isRecording,
+    isToggling: isTogglingRecording,
+    toggle: toggleRecording,
+  } = useRecording((currentSession?.id as LiveSessionId) ?? null);
 
   const isLive = currentSession?.status === 'live';
   const isStarting = currentSession?.status === 'starting';
   const elapsed = useElapsedTime(isLive ? (currentSession?.startedAt ?? null) : null);
-  const destinations = (currentSession?.destinations ?? []).filter((d) => d.platform !== 'platform');
+  const destinations = (currentSession?.destinations ?? []).filter(
+    (d) => d.platform !== 'platform',
+  );
   const liveCount = destinations.filter((d) => d.status === 'live').length;
   const platformHlsUrl = currentSession?.platformHlsUrl ?? null;
   const platformWhepUrl = (() => {
@@ -71,7 +93,9 @@ export function FullscreenLiveView(): React.ReactElement {
       if (!key) return null;
       const base = process.env.NEXT_PUBLIC_MEDIAMTX_WEBRTC_URL ?? 'http://localhost:8889';
       return `${base}/live/${key}/whep`;
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   })();
 
   // Poll session status while starting — backend only transitions to 'live' after
@@ -85,7 +109,9 @@ export function FullscreenLiveView(): React.ReactElement {
       try {
         const res = await apiFetch(`${API_BASE}/sessions/${currentSession.id}`);
         if (!res.ok) return;
-        const { data } = (await res.json()) as { data: import('@tik-live-pro/shared-types').LiveSession };
+        const { data } = (await res.json()) as {
+          data: import('@tik-live-pro/shared-types').LiveSession;
+        };
         if (data.status !== currentSession.status) {
           setSessionInStore(data);
         }
@@ -112,7 +138,9 @@ export function FullscreenLiveView(): React.ReactElement {
       let whipUrl: string | null = null;
       while (!cancelled && !whipUrl) {
         try {
-          const res = await apiFetch(`${API_BASE}/stream-orchestrator/sessions/${sessionId}/ingest`);
+          const res = await apiFetch(
+            `${API_BASE}/stream-orchestrator/sessions/${sessionId}/ingest`,
+          );
           if (res.ok) {
             const data = (await res.json()) as { ingestKey: string; whipUrl: string };
             whipUrl = data.whipUrl;
@@ -149,8 +177,10 @@ export function FullscreenLiveView(): React.ReactElement {
     }
 
     void tryStartWhip();
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSession?.id, currentSession?.status]);
 
   // Reset WHIP tracking when session ends so it can restart on re-use.
@@ -166,9 +196,10 @@ export function FullscreenLiveView(): React.ReactElement {
   useEffect(() => {
     if (!preSource) return;
     if (preSource.type === 'local-file' && preSource.file) videoShare.loadLocalFile(preSource.file);
-    else if (preSource.type === 'online-url' && preSource.url) videoShare.loadOnlineUrl(preSource.url);
+    else if (preSource.type === 'online-url' && preSource.url)
+      videoShare.loadOnlineUrl(preSource.url);
     setPreSource(null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Mid-stream video source switching: replace the WHIP video track when the source changes.
@@ -195,7 +226,35 @@ export function FullscreenLiveView(): React.ReactElement {
       }
       appliedSourceRef.current = shareSourceType;
     })();
-  }, [shareSourceType, whipState, getStream, replaceVideoTrack, replaceAudioTrack, getVideoTrack, getAudioTrack]);
+  }, [
+    shareSourceType,
+    whipState,
+    getStream,
+    replaceVideoTrack,
+    replaceAudioTrack,
+    getVideoTrack,
+    getAudioTrack,
+  ]);
+
+  // Auto-play pre-selected video when stream starts.
+  // When a video is selected before going live, it loads but can't autoplay due to
+  // browser policies (no user interaction yet). Once the stream starts (whipState = 'connected'),
+  // we have user interaction context (from the "Go Live" button), so we can play the video.
+  useEffect(() => {
+    if (whipState !== 'connected') return;
+    if (videoShare.sourceType === 'camera') return;
+    if (!videoShare.isVideoLoaded) return;
+    if (videoShare.isPlaying) return;
+
+    // Video is loaded but not playing — start it now that stream has started
+    videoShare.play();
+  }, [
+    whipState,
+    videoShare.sourceType,
+    videoShare.isVideoLoaded,
+    videoShare.isPlaying,
+    videoShare.play,
+  ]);
 
   // Persist viewer video control setting on toggle
   const updateAllowViewerVideoControl = useCallback(
@@ -380,6 +439,7 @@ export function FullscreenLiveView(): React.ReactElement {
         {/* Video share element — always in DOM so captureStream() works; shown when active */}
         <video
           ref={videoShare.videoRef}
+          autoPlay
           muted
           playsInline
           onClick={() => {
@@ -393,7 +453,30 @@ export function FullscreenLiveView(): React.ReactElement {
             videoShare.sourceType === 'camera' ? 'opacity-0 pointer-events-none' : 'cursor-pointer',
           )}
         />
-        {isCameraOff && videoShare.sourceType === 'camera' && <div className="absolute inset-0 bg-[#0f1117]" />}
+        {/* Play-button overlay: visible when video is loaded but paused and panel is closed */}
+        {videoShare.sourceType !== 'camera' &&
+          videoShare.isVideoLoaded &&
+          !videoShare.isPlaying &&
+          !videoSourceOpen && (
+            <button
+              type="button"
+              aria-label="Lire la vidéo"
+              onClick={() => videoShare.play()}
+              className="absolute left-1/2 top-1/2 z-10 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-black/60 text-white backdrop-blur-sm transition-opacity hover:bg-black/80"
+            >
+              <svg
+                className="h-7 w-7 translate-x-0.5"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
+            </button>
+          )}
+        {isCameraOff && videoShare.sourceType === 'camera' && (
+          <div className="absolute inset-0 bg-[#0f1117]" />
+        )}
 
         {/* ── Top overlay ── */}
         <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/40 to-transparent pb-14 px-4 pt-4">
@@ -599,10 +682,26 @@ export function FullscreenLiveView(): React.ReactElement {
         {videoSourceOpen && (
           <div className="absolute inset-x-3 bottom-28 z-40 flex flex-col gap-3 rounded-2xl border border-white/15 bg-black/85 p-4 backdrop-blur-2xl sm:left-auto sm:right-16 sm:w-80">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-white">{t('videoShare.sourceLabel')}</span>
-              <button type="button" onClick={() => setVideoSourceOpen(false)} className="flex h-6 w-6 items-center justify-center rounded-full text-white/40 hover:bg-white/10 hover:text-white">
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              <span className="text-xs font-semibold text-white">
+                {t('videoShare.sourceLabel')}
+              </span>
+              <button
+                type="button"
+                onClick={() => setVideoSourceOpen(false)}
+                className="flex h-6 w-6 items-center justify-center rounded-full text-white/40 hover:bg-white/10 hover:text-white"
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
             </div>
@@ -620,11 +719,14 @@ export function FullscreenLiveView(): React.ReactElement {
                 duration={videoShare.duration}
                 allowViewerControl={videoShare.allowViewerControl}
                 isVideoLoaded={videoShare.isVideoLoaded}
+                loadError={videoShare.loadError}
+                videoVolume={videoShare.videoVolume}
                 onPlay={() => videoShare.play()}
                 onPause={() => videoShare.pause()}
                 onSeek={(time) => videoShare.seek(time)}
                 onSetSpeed={(r) => videoShare.setSpeed(r)}
                 onToggleViewerControl={(allow) => void updateAllowViewerVideoControl(allow)}
+                onSetVideoVolume={(vol) => videoShare.setVideoVolume(vol)}
               />
             )}
 
@@ -678,7 +780,10 @@ export function FullscreenLiveView(): React.ReactElement {
           {/* Chat toggle */}
           <button
             type="button"
-            onClick={() => { setCommentsOpen((o) => !o); setViewersPanelOpen(false); }}
+            onClick={() => {
+              setCommentsOpen((o) => !o);
+              setViewersPanelOpen(false);
+            }}
             className={cn(
               'relative flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
               commentsOpen
@@ -846,7 +951,12 @@ export function FullscreenLiveView(): React.ReactElement {
                   <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
                 </svg>
               )}
-              <span className={cn('text-[9px] font-semibold leading-none', whepCopied && 'text-green-300')}>
+              <span
+                className={cn(
+                  'text-[9px] font-semibold leading-none',
+                  whepCopied && 'text-green-300',
+                )}
+              >
                 {whepCopied ? 'Copied' : 'RTC'}
               </span>
             </button>
@@ -890,7 +1000,12 @@ export function FullscreenLiveView(): React.ReactElement {
                   <circle cx="12" cy="12" r="8" />
                 </svg>
               )}
-              <span className={cn('text-[9px] font-semibold leading-none', isRecording && 'text-red-300')}>
+              <span
+                className={cn(
+                  'text-[9px] font-semibold leading-none',
+                  isRecording && 'text-red-300',
+                )}
+              >
                 {isRecording ? t('recording.active') : t('recording.start')}
               </span>
             </button>
@@ -899,7 +1014,11 @@ export function FullscreenLiveView(): React.ReactElement {
           {/* Video source toggle */}
           <button
             type="button"
-            onClick={() => { setVideoSourceOpen((o) => !o); setCommentsOpen(false); setViewersPanelOpen(false); }}
+            onClick={() => {
+              setVideoSourceOpen((o) => !o);
+              setCommentsOpen(false);
+              setViewersPanelOpen(false);
+            }}
             aria-label={t('videoShare.sourceLabel')}
             className={cn(
               'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
@@ -908,18 +1027,32 @@ export function FullscreenLiveView(): React.ReactElement {
                 : 'border-white/20 bg-black/45 text-white shadow-black/20',
             )}
           >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg
+              className="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
               <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
               <line x1="8" y1="21" x2="16" y2="21" />
               <line x1="12" y1="17" x2="12" y2="21" />
             </svg>
-            <span className="text-[9px] font-semibold leading-none">{t('videoShare.sourceLabel')}</span>
+            <span className="text-[9px] font-semibold leading-none">
+              {t('videoShare.sourceLabel')}
+            </span>
           </button>
 
           {/* Viewers panel toggle */}
           <button
             type="button"
-            onClick={() => { setViewersPanelOpen((o) => !o); setCommentsOpen(false); }}
+            onClick={() => {
+              setViewersPanelOpen((o) => !o);
+              setCommentsOpen(false);
+            }}
             aria-label={viewersPanelOpen ? t('viewers.hideAudience') : t('viewers.showAudience')}
             className={cn(
               'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
@@ -944,7 +1077,12 @@ export function FullscreenLiveView(): React.ReactElement {
             </svg>
             {/* Audience-visibility dot */}
             <span className="relative flex items-center gap-0.5">
-              <span className={cn('h-1.5 w-1.5 rounded-full', viewersVisible ? 'bg-green-400' : 'bg-white/30')} />
+              <span
+                className={cn(
+                  'h-1.5 w-1.5 rounded-full',
+                  viewersVisible ? 'bg-green-400' : 'bg-white/30',
+                )}
+              />
               <span className="text-[9px] font-semibold leading-none">{t('viewers.panel')}</span>
             </span>
           </button>
@@ -961,10 +1099,12 @@ export function FullscreenLiveView(): React.ReactElement {
 
         {/* ── Bottom controls ── */}
         {/* pointer-events-none on the gradient so right-side buttons remain clickable through the transparent region */}
-        <div className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/50 to-transparent px-4 pb-6 pt-24 sm:px-6 transition-all duration-300',
-          bottomControlsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3',
-        )}>
+        <div
+          className={cn(
+            'pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/50 to-transparent px-4 pb-6 pt-24 sm:px-6 transition-all duration-300',
+            bottomControlsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3',
+          )}
+        >
           {/* Volume sliders — glass pill */}
           <div className="pointer-events-auto mb-5 flex justify-center">
             <div className="flex items-center gap-6 rounded-2xl border border-white/20 bg-black/40 px-5 py-3 backdrop-blur-xl sm:gap-10">

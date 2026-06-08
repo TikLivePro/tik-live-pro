@@ -43,7 +43,24 @@ export class FfmpegStreamWorker implements IStreamWorker {
     for (const dest of destinations) {
       cmd
         .output(dest.rtmpDestination)
-        .outputOptions(['-c copy', '-f flv']);
+        .outputOptions([
+          // Map video stream (required) and audio stream (optional – `?` prevents
+          // ffmpeg from erroring if the source has no audio track, e.g. when the
+          // streamer denied microphone permission in the browser).
+          '-map 0:v:0',
+          '-map 0:a:0?',
+          // Copy video without re-encoding (saves CPU).
+          '-c:v copy',
+          // Re-encode audio to AAC 128 kbps — the universal format accepted by
+          // TikTok, Facebook, YouTube, and every other RTMP platform.  Using
+          // `-c copy` for audio caused silent streams when the browser sent Opus
+          // (WebRTC default) because most RTMP platforms do not support Opus.
+          '-c:a aac',
+          '-b:a 128k',
+          '-ar 44100',
+          '-ac 2',
+          '-f flv',
+        ]);
     }
 
     this.command = cmd;

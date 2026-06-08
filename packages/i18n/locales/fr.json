@@ -192,6 +192,7 @@
       "play": "Lire",
       "pause": "Pause",
       "seek": "Avancer",
+      "volume": "Volume",
       "allowViewerControl": "Autoriser le contrôle",
       "viewerControlEnabled": "Les spectateurs contrôlent",
       "viewerControlDisabled": "Vous seul contrôlez",

@@ -440,7 +440,8 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     });
 
     socket.on('video_state', (data: ViewerVideoState) => {
-      setVideoState(data);
+      if (data.sourceType === 'camera') setVideoState(null);
+      else setVideoState(data);
     });
 
     socketRef.current = socket;

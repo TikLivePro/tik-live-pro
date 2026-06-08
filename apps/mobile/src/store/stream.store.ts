@@ -8,12 +8,14 @@ interface StreamState {
   comments: Comment[];
   isStarting: boolean;
   isEnding: boolean;
+  selectedVideoUri: string | null;
   setSession: (session: LiveSession | null) => void;
   updateSessionStatus: (status: LiveSessionStatus) => void;
   addComment: (comment: Comment) => void;
   clearComments: () => void;
   setStarting: (v: boolean) => void;
   setEnding: (v: boolean) => void;
+  setSelectedVideoUri: (uri: string | null) => void;
 }
 
 export const useStreamStore = create<StreamState>()((set) => ({
@@ -21,6 +23,7 @@ export const useStreamStore = create<StreamState>()((set) => ({
   comments: [],
   isStarting: false,
   isEnding: false,
+  selectedVideoUri: null,
   setSession: (session) => set({ currentSession: session }),
   updateSessionStatus: (status) =>
     set((s) => ({ currentSession: s.currentSession ? { ...s.currentSession, status } : null })),
@@ -29,4 +32,5 @@ export const useStreamStore = create<StreamState>()((set) => ({
   clearComments: () => set({ comments: [] }),
   setStarting: (isStarting) => set({ isStarting }),
   setEnding: (isEnding) => set({ isEnding }),
+  setSelectedVideoUri: (selectedVideoUri) => set({ selectedVideoUri }),
 }));

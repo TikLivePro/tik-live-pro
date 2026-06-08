@@ -15,6 +15,11 @@ type CaptureableVideo = HTMLVideoElement & { captureStream(): MediaStream };
 const RECENT_URL_KEY = 'tiklivepro:video:recentUrls';
 const MAX_RECENT = 50;
 
+// Prevent createMediaElementSource from being called twice on the same element
+// (React Strict Mode double-invokes effects; the second call throws).
+// Using a WeakSet so elements are GC-eligible after unmount.
+const mediaSourcedElements = new WeakSet<HTMLVideoElement>();
+
 function loadSavedUrls(): RecentSource[] {
   if (typeof window === 'undefined') return [];
   try {
@@ -46,6 +51,16 @@ interface UseVideoShareOptions {
 
 export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): VideoShareResult {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // captureStream() is called once at mount and stays bound to the element for its
+  // lifetime. The stream automatically reflects whichever file is currently playing —
+  // WHIP only needs a single replaceTrack() per source-type switch, not per file.
+  //
+  // The <video> element carries the `muted` attribute to suppress local speaker output.
+  // However, captureStream() on a muted element does NOT capture audio tracks. To work
+  // around this, we use Web Audio API: createMediaElementSource() routes the video audio
+  // to a MediaStreamAudioDestinationNode, giving us an audio track for WebRTC while
+  // keeping the video silent locally (by not connecting to audioContext.destination).
   const capturedStreamRef = useRef<MediaStream | null>(null);
 
   // Web Audio API nodes for audio capture — lets us send video audio to WebRTC
@@ -54,6 +69,13 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   // so we create it once on mount and reuse it across source changes.
   const audioCtxRef = useRef<AudioContext | null>(null);
   const audioDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  // GainNode for local monitoring — controls how much the streamer hears
+  const monitorGainRef = useRef<GainNode | null>(null);
+  const videoVolumeRef = useRef(0);
+
+  // Set true in loadLocalFile/loadOnlineUrl; cleared by onLoadedData after play() fires.
+  // Intentionally NOT reset in cleanup so the flag survives React Strict Mode's remount.
+  const pendingPlayRef = useRef(false);
 
   const [sourceType, setSourceType] = useState<VideoSourceType>('camera');
   const [isPlaying, setIsPlaying] = useState(false);
@@ -61,18 +83,38 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   const [duration, setDuration] = useState(0);
   const [allowViewerControl, setAllowViewerControlState] = useState(false);
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [recentSources, setRecentSources] = useState<RecentSource[]>(loadSavedUrls);
+  const [videoVolume, setVideoVolumeState] = useState(0);
 
   const allowViewerControlRef = useRef(false);
   const sourceTypeRef = useRef<VideoSourceType>('camera');
 
-  useEffect(() => { sourceTypeRef.current = sourceType; }, [sourceType]);
-  useEffect(() => { allowViewerControlRef.current = allowViewerControl; }, [allowViewerControl]);
+  useEffect(() => {
+    sourceTypeRef.current = sourceType;
+  }, [sourceType]);
+  useEffect(() => {
+    allowViewerControlRef.current = allowViewerControl;
+  }, [allowViewerControl]);
 
-  // Wire up video element events and Web Audio API
+  // Attach event listeners and capture the element's output stream at mount.
+  // captureStream() must run before any src is loaded so the track identity is stable
+  // for WHIP — the same track object carries frames from every subsequent file change.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+
+    // Ensure `muted` is set as both the IDL property AND the HTML content attribute.
+    // React's JSX `muted` prop only sets the IDL property; some browsers require the
+    // HTML content attribute for autoplay policy to recognize the video as muted.
+    video.muted = true;
+    video.setAttribute('muted', '');
+
+    try {
+      capturedStreamRef.current = (video as CaptureableVideo).captureStream();
+    } catch {
+      capturedStreamRef.current = null;
+    }
 
     const onTimeUpdate = (): void => setCurrentTime(video.currentTime);
     const onDurationChange = (): void => setDuration(isFinite(video.duration) ? video.duration : 0);
@@ -81,10 +123,49 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     const onEnded = (): void => setIsPlaying(false);
     const onLoadedData = (): void => {
       setIsVideoLoaded(true);
+      setLoadError(null);
       setDuration(isFinite(video.duration) ? video.duration : 0);
-      // Auto-play so the captureStream() track immediately produces frames for viewers.
-      // captureStream() sends 0 fps while the video is paused — viewers see black until playback starts.
-      void video.play().catch(() => {});
+      // Defer play() to here instead of calling it right after load() — avoids the
+      // "play() interrupted by new load request" AbortError on source changes.
+      if (pendingPlayRef.current) {
+        pendingPlayRef.current = false;
+        // Play immediately — the element is muted so autoplay is always allowed.
+        // Do NOT gate play() on ctx.resume(): AudioContext.resume() requires a user
+        // gesture and may never resolve when called from an async chain (e.g. after
+        // WHIP connects), causing the video to stay permanently black.
+        // Resume the AudioContext separately (fire-and-forget) for audio routing.
+        void video.play().catch((err) => {
+          console.warn('[useVideoShare] video.play() failed:', err);
+        });
+        audioCtxRef.current?.resume().catch(() => {});
+      }
+    };
+    const onError = (): void => {
+      const err = video.error;
+      let msg = 'Impossible de charger la vidéo.';
+      if (err) {
+        switch (err.code) {
+          case MediaError.MEDIA_ERR_NETWORK:
+            msg =
+              video.crossOrigin === 'anonymous'
+                ? 'Erreur réseau — le serveur ne renvoie pas les en-têtes CORS requis. Utilisez une URL hébergée avec CORS activé.'
+                : 'Erreur réseau — vérifiez que l\'URL est accessible.';
+            break;
+          case MediaError.MEDIA_ERR_DECODE:
+            msg = 'Format non supporté ou fichier corrompu.';
+            break;
+          case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+            msg =
+              video.crossOrigin === 'anonymous'
+                ? 'URL inaccessible ou CORS non autorisé. Le serveur doit envoyer "Access-Control-Allow-Origin: *".'
+                : 'Format vidéo non supporté par le navigateur.';
+            break;
+          default:
+            msg = `Erreur de lecture (code ${err.code}).`;
+        }
+      }
+      setLoadError(msg);
+      setIsVideoLoaded(false);
     };
 
     video.addEventListener('timeupdate', onTimeUpdate);
@@ -93,21 +174,31 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     video.addEventListener('pause', onPause);
     video.addEventListener('ended', onEnded);
     video.addEventListener('loadeddata', onLoadedData);
+    video.addEventListener('error', onError);
 
-    // Set up Web Audio API for audio capture.
-    // By routing video audio through a MediaStreamDestinationNode (without connecting
-    // to AudioContext.destination), we capture audio for WebRTC while keeping the
-    // video element silent locally — regardless of the `muted` HTML attribute.
-    try {
-      const ctx = new AudioContext();
-      audioCtxRef.current = ctx;
-      const dest = ctx.createMediaStreamDestination();
-      audioDestRef.current = dest;
-      const src = ctx.createMediaElementSource(video);
-      src.connect(dest);
-      // Intentionally NOT connecting src → ctx.destination: no local playback
-    } catch {
-      // AudioContext unavailable (SSR, sandboxed iframe, etc.)
+    // Set up Web Audio API for audio capture — only once per video element.
+    // mediaSourcedElements guards against React Strict Mode double-invocation where
+    // the second createMediaElementSource() call would throw because the element is
+    // already connected to the (now-closed) AudioContext from the first run.
+    if (!mediaSourcedElements.has(video)) {
+      try {
+        const ctx = new AudioContext();
+        audioCtxRef.current = ctx;
+        const dest = ctx.createMediaStreamDestination();
+        audioDestRef.current = dest;
+        const monitorGain = ctx.createGain();
+        monitorGainRef.current = monitorGain;
+        monitorGain.gain.value = videoVolumeRef.current / 100;
+
+        const src = ctx.createMediaElementSource(video);
+        // Split audio: send to both WebRTC and local speakers
+        src.connect(dest); // For viewers via WebRTC
+        src.connect(monitorGain); // For streamer local monitoring
+        monitorGain.connect(ctx.destination); // To speakers, controlled by gain
+        mediaSourcedElements.add(video);
+      } catch {
+        // AudioContext unavailable (SSR, sandboxed iframe, etc.)
+      }
     }
 
     return () => {
@@ -117,9 +208,10 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
       video.removeEventListener('pause', onPause);
       video.removeEventListener('ended', onEnded);
       video.removeEventListener('loadeddata', onLoadedData);
-      audioCtxRef.current?.close().catch(() => {});
-      audioCtxRef.current = null;
-      audioDestRef.current = null;
+      video.removeEventListener('error', onError);
+      // Do not close the AudioContext here — the mediaSourcedElements guard ensures
+      // createMediaElementSource is only called once, so we keep the context alive
+      // across Strict Mode's fake unmount/remount cycle. True cleanup happens on GC.
     };
   }, []);
 
@@ -130,6 +222,8 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
 
   const getAudioTrack = useCallback((): MediaStreamTrack | null => {
     if (sourceTypeRef.current === 'camera') return null;
+    // Audio comes from the Web Audio API destination node, not from captureStream().
+    // The muted video element prevents captureStream() from including audio tracks.
     return audioDestRef.current?.stream.getAudioTracks()[0] ?? null;
   }, []);
 
@@ -139,21 +233,25 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     if (video.src?.startsWith('blob:')) URL.revokeObjectURL(video.src);
     video.removeAttribute('crossorigin');
     video.src = URL.createObjectURL(file);
+    pendingPlayRef.current = true;
     video.load();
-    try {
-      capturedStreamRef.current = (video as CaptureableVideo).captureStream();
-    } catch {
-      capturedStreamRef.current = null;
-    }
+
     // Resume AudioContext — user just interacted (file picker), so the browser allows it
     void audioCtxRef.current?.resume();
+
+    setLoadError(null);
     setSourceType('local-file');
     setIsVideoLoaded(false);
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
 
-    const entry: RecentSource = { id: crypto.randomUUID(), type: 'local-file', name: file.name, file };
+    const entry: RecentSource = {
+      id: crypto.randomUUID(),
+      type: 'local-file',
+      name: file.name,
+      file,
+    };
     setRecentSources((prev) => {
       const deduped = prev.filter((s) => s.type !== 'local-file' || s.name !== file.name);
       return [entry, ...deduped].slice(0, MAX_RECENT);
@@ -164,17 +262,15 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     const video = videoRef.current;
     if (!video) return;
     if (video.src?.startsWith('blob:')) URL.revokeObjectURL(video.src);
-    // crossOrigin required for captureStream() on external URLs (avoids canvas taint).
-    // The server must respond with CORS headers; if not, captureStream() will throw SecurityError.
+    // crossOrigin required so captureStream() can read cross-origin frames without taint.
     video.crossOrigin = 'anonymous';
     video.src = url;
+    pendingPlayRef.current = true;
     video.load();
-    try {
-      capturedStreamRef.current = (video as CaptureableVideo).captureStream();
-    } catch {
-      capturedStreamRef.current = null;
-    }
+
     void audioCtxRef.current?.resume();
+
+    setLoadError(null);
     setSourceType('online-url');
     setIsVideoLoaded(false);
     setIsPlaying(false);
@@ -191,6 +287,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   }, []);
 
   const switchToCamera = useCallback((): void => {
+    pendingPlayRef.current = false;
     const video = videoRef.current;
     if (video) {
       video.pause();
@@ -198,7 +295,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
       video.removeAttribute('src');
       video.load();
     }
-    capturedStreamRef.current = null;
+    setLoadError(null);
     setSourceType('camera');
     setIsVideoLoaded(false);
     setIsPlaying(false);
@@ -207,7 +304,15 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   }, []);
 
   const play = useCallback((): void => {
-    videoRef.current?.play().catch(() => {});
+    const video = videoRef.current;
+    if (!video) return;
+    // Play immediately — the element is muted so no user gesture is required.
+    // Resume the AudioContext separately; gating play() on ctx.resume() causes
+    // permanent black screen when the AudioContext hasn't been resumed yet.
+    void video.play().catch((err) => {
+      console.warn('[useVideoShare] video.play() failed:', err);
+    });
+    audioCtxRef.current?.resume().catch(() => {});
   }, []);
 
   const pause = useCallback((): void => {
@@ -229,7 +334,16 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     setAllowViewerControlState(allow);
   }, []);
 
-  // Register as streamer and handle incoming viewer control commands
+  const setVideoVolume = useCallback((volume: number): void => {
+    const clamped = Math.max(0, Math.min(100, volume));
+    videoVolumeRef.current = clamped;
+    setVideoVolumeState(clamped);
+    if (monitorGainRef.current) {
+      monitorGainRef.current.gain.value = clamped / 100;
+    }
+  }, []);
+
+  // Register as streamer and handle incoming viewer control commands.
   useEffect(() => {
     const socket = socketRef.current;
     if (!socket || !sessionId || sourceType === 'camera') return;
@@ -245,13 +359,20 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     };
 
     socket.on('video_control_command', handleCommand);
-    return () => { socket.off('video_control_command', handleCommand); };
+    return () => {
+      socket.off('video_control_command', handleCommand);
+    };
   }, [socketRef, sessionId, sourceType, play, pause, seek, setSpeed]);
 
-  // Broadcast video state to viewers (on change and on interval)
+  // Broadcast video state to viewers on change and on a 2 s heartbeat.
   useEffect(() => {
     const socket = socketRef.current;
-    if (!socket || !sessionId || sourceType === 'camera') return;
+    if (!socket || !sessionId) return;
+
+    if (sourceType === 'camera') {
+      socket.emit('video_state', { sourceType: 'camera' });
+      return;
+    }
 
     socket.emit('video_state', { playing: isPlaying, currentTime, duration, allowViewerControl });
 
@@ -265,7 +386,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     }, 2000);
 
     return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, sourceType, isPlaying, duration, allowViewerControl]);
 
   return {
@@ -276,7 +397,9 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     duration,
     allowViewerControl,
     isVideoLoaded,
+    loadError,
     recentSources,
+    videoVolume,
     loadLocalFile,
     loadOnlineUrl,
     switchToCamera,
@@ -285,6 +408,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     seek,
     setSpeed,
     setAllowViewerControl,
+    setVideoVolume,
     getVideoTrack,
     getAudioTrack,
   };

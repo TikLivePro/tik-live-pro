@@ -20,7 +20,9 @@ export interface VideoShareResult {
   duration: number;
   allowViewerControl: boolean;
   isVideoLoaded: boolean;
+  loadError: string | null;
   recentSources: RecentSource[];
+  videoVolume: number;
   loadLocalFile: (file: File) => void;
   loadOnlineUrl: (url: string) => void;
   switchToCamera: () => void;
@@ -29,6 +31,7 @@ export interface VideoShareResult {
   seek: (time: number) => void;
   setSpeed: (rate: number) => void;
   setAllowViewerControl: (allow: boolean) => void;
+  setVideoVolume: (volume: number) => void;
   getVideoTrack: () => MediaStreamTrack | null;
   getAudioTrack: () => MediaStreamTrack | null;
 }
