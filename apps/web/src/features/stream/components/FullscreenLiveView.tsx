@@ -52,7 +52,7 @@ export function FullscreenLiveView(): React.ReactElement {
 
   const { sendComment, replyToComment, emitReaction, isSending, socketRef } = useComments(currentSession?.id ?? null);
   const videoShare = useVideoShare({ socketRef, sessionId: currentSession?.id ?? null });
-  const { state: whipState, connect: connectWhip, disconnect: disconnectWhip, replaceVideoTrack, setVideoBitrate } = useWhipStream();
+  const { state: whipState, connect: connectWhip, disconnect: disconnectWhip, replaceVideoTrack, replaceAudioTrack, setVideoBitrate } = useWhipStream();
   const { isRecording, isToggling: isTogglingRecording, toggle: toggleRecording } = useRecording(
     (currentSession?.id as LiveSessionId) ?? null,
   );
@@ -138,9 +138,11 @@ export function FullscreenLiveView(): React.ReactElement {
       try {
         const bitrate = getVideoQualityPreset(useStreamStore.getState().videoQualityId).bitrate;
         await connectWhip(whipUrl, stream, bitrate);
-        // If a video share source was already selected before the WHIP connected, switch the video track.
-        const shareTrack = videoShare.getVideoTrack();
-        if (shareTrack) await replaceVideoTrack(shareTrack);
+        // If a video share source was already selected before the WHIP connected, switch both tracks.
+        const shareVideoTrack = videoShare.getVideoTrack();
+        if (shareVideoTrack) await replaceVideoTrack(shareVideoTrack);
+        const shareAudioTrack = videoShare.getAudioTrack();
+        if (shareAudioTrack) await replaceAudioTrack(shareAudioTrack);
       } catch {
         whipStartedRef.current = false;
       }
@@ -174,22 +176,26 @@ export function FullscreenLiveView(): React.ReactElement {
   // It is only updated when WHIP is connected, so if the source changes while WHIP is still
   // connecting, the replacement runs as soon as whipState becomes 'connected'.
   const appliedSourceRef = useRef<typeof videoShare.sourceType | null>(null);
-  const { sourceType: shareSourceType, getVideoTrack } = videoShare;
+  const { sourceType: shareSourceType, getVideoTrack, getAudioTrack } = videoShare;
   useEffect(() => {
     if (whipState !== 'connected') return;
     if (appliedSourceRef.current === shareSourceType) return;
 
     void (async () => {
       if (shareSourceType === 'camera') {
-        const cameraTrack = getStream()?.getVideoTracks()[0];
-        if (cameraTrack) await replaceVideoTrack(cameraTrack);
+        const cameraVideoTrack = getStream()?.getVideoTracks()[0];
+        if (cameraVideoTrack) await replaceVideoTrack(cameraVideoTrack);
+        const micAudioTrack = getStream()?.getAudioTracks()[0];
+        if (micAudioTrack) await replaceAudioTrack(micAudioTrack);
       } else {
-        const track = getVideoTrack();
-        if (track) await replaceVideoTrack(track);
+        const videoTrack = getVideoTrack();
+        if (videoTrack) await replaceVideoTrack(videoTrack);
+        const audioTrack = getAudioTrack();
+        if (audioTrack) await replaceAudioTrack(audioTrack);
       }
       appliedSourceRef.current = shareSourceType;
     })();
-  }, [shareSourceType, whipState, getStream, replaceVideoTrack, getVideoTrack]);
+  }, [shareSourceType, whipState, getStream, replaceVideoTrack, replaceAudioTrack, getVideoTrack, getAudioTrack]);
 
   // Persist viewer video control setting on toggle
   const updateAllowViewerVideoControl = useCallback(
@@ -223,6 +229,26 @@ export function FullscreenLiveView(): React.ReactElement {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [viewersPanelOpen, setViewersPanelOpen] = useState(false);
   const [videoSourceOpen, setVideoSourceOpen] = useState(false);
+  const [bottomControlsVisible, setBottomControlsVisible] = useState(true);
+  const bottomHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function showBottomControls(): void {
+    setBottomControlsVisible(true);
+    if (bottomHideTimerRef.current) clearTimeout(bottomHideTimerRef.current);
+    bottomHideTimerRef.current = setTimeout(() => setBottomControlsVisible(false), 4000);
+  }
+
+  function handleStreamerMouseMove(): void {
+    showBottomControls();
+  }
+
+  // Keep bottom controls visible whenever a panel is open
+  useEffect(() => {
+    if (commentsOpen || viewersPanelOpen || videoSourceOpen) {
+      if (bottomHideTimerRef.current) clearTimeout(bottomHideTimerRef.current);
+      setBottomControlsVisible(true);
+    }
+  }, [commentsOpen, viewersPanelOpen, videoSourceOpen]);
 
   // ── Unread comment tracking ──────────────────────────────────
   const [unreadCount, setUnreadCount] = useState(0);
@@ -338,6 +364,7 @@ export function FullscreenLiveView(): React.ReactElement {
 
       <div
         className={cn('fixed inset-0 z-50 overflow-hidden bg-black', isMinimized && 'invisible')}
+        onMouseMove={handleStreamerMouseMove}
       >
         {/* Camera feed — always mounted for mic track; hidden when video share is active */}
         <video
@@ -355,9 +382,15 @@ export function FullscreenLiveView(): React.ReactElement {
           ref={videoShare.videoRef}
           muted
           playsInline
+          onClick={() => {
+            if (videoShare.sourceType !== 'camera') {
+              if (videoShare.isPlaying) videoShare.pause();
+              else videoShare.play();
+            }
+          }}
           className={cn(
             'absolute inset-0 h-full w-full object-contain bg-black',
-            videoShare.sourceType === 'camera' && 'opacity-0 pointer-events-none',
+            videoShare.sourceType === 'camera' ? 'opacity-0 pointer-events-none' : 'cursor-pointer',
           )}
         />
         {isCameraOff && videoShare.sourceType === 'camera' && <div className="absolute inset-0 bg-[#0f1117]" />}
@@ -575,6 +608,7 @@ export function FullscreenLiveView(): React.ReactElement {
             </div>
             <VideoSourcePicker
               sourceType={videoShare.sourceType}
+              recentSources={videoShare.recentSources}
               onSelectCamera={() => videoShare.switchToCamera()}
               onSelectLocalFile={(file) => videoShare.loadLocalFile(file)}
               onSelectOnlineUrl={(url) => videoShare.loadOnlineUrl(url)}
@@ -927,7 +961,10 @@ export function FullscreenLiveView(): React.ReactElement {
 
         {/* ── Bottom controls ── */}
         {/* pointer-events-none on the gradient so right-side buttons remain clickable through the transparent region */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/50 to-transparent px-4 pb-6 pt-24 sm:px-6">
+        <div className={cn(
+          'pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/50 to-transparent px-4 pb-6 pt-24 sm:px-6 transition-all duration-300',
+          bottomControlsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3',
+        )}>
           {/* Volume sliders — glass pill */}
           <div className="pointer-events-auto mb-5 flex justify-center">
             <div className="flex items-center gap-6 rounded-2xl border border-white/20 bg-black/40 px-5 py-3 backdrop-blur-xl sm:gap-10">

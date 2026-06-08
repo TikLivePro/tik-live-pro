@@ -196,7 +196,15 @@
       "viewerControlEnabled": "Les spectateurs contrôlent",
       "viewerControlDisabled": "Vous seul contrôlez",
       "noVideoLoaded": "Aucune vidéo chargée",
-      "pausedViewersBlack": "En pause — les spectateurs voient un écran noir"
+      "pausedViewersBlack": "En pause — les spectateurs voient un écran noir",
+      "recent": "Récent",
+      "total": "au total",
+      "loadMore": "+ {count} de plus",
+      "historyTitle": "Historique des sources",
+      "historyClose": "Fermer",
+      "historyPrev": "Préc.",
+      "historyNext": "Suiv.",
+      "historyPage": "{current} sur {total}"
     },
     "errors": {
       "noDestinations": "Veuillez ajouter au moins une destination",
@@ -518,6 +526,11 @@
       "pause": "Pause",
       "seek": "Avancer",
       "controlDisabled": "En attente du streamer…"
+    },
+    "volume": {
+      "mute": "Couper",
+      "unmute": "Activer",
+      "label": "Volume"
     }
   },
   "notFound": {

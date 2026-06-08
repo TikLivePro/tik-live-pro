@@ -8,6 +8,10 @@ export interface VideoControlCommand {
   speed?: number;
 }
 
+export type RecentSource =
+  | { id: string; type: 'local-file'; name: string; file: File }
+  | { id: string; type: 'online-url'; name: string; url: string };
+
 export interface VideoShareResult {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   sourceType: VideoSourceType;
@@ -16,6 +20,7 @@ export interface VideoShareResult {
   duration: number;
   allowViewerControl: boolean;
   isVideoLoaded: boolean;
+  recentSources: RecentSource[];
   loadLocalFile: (file: File) => void;
   loadOnlineUrl: (url: string) => void;
   switchToCamera: () => void;
@@ -25,4 +30,5 @@ export interface VideoShareResult {
   setSpeed: (rate: number) => void;
   setAllowViewerControl: (allow: boolean) => void;
   getVideoTrack: () => MediaStreamTrack | null;
+  getAudioTrack: () => MediaStreamTrack | null;
 }

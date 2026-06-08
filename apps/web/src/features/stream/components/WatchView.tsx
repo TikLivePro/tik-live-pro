@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import Link from 'next/link';
 import Hls from 'hls.js';
 import { useTranslations } from 'next-intl';
@@ -56,7 +56,17 @@ export interface PublicSession {
 
 // ── Video players ─────────────────────────────────────────────
 
-function HlsPlayer({ src, title }: { src: string; title: string }): React.ReactElement {
+function HlsPlayer({
+  src,
+  title,
+  volume,
+  isMuted,
+}: {
+  src: string;
+  title: string;
+  volume: number;
+  isMuted: boolean;
+}): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -79,6 +89,13 @@ function HlsPlayer({ src, title }: { src: string; title: string }): React.ReactE
     return () => hls.destroy();
   }, [src]);
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.volume = volume;
+    video.muted = isMuted;
+  }, [volume, isMuted]);
+
   return (
     <video
       ref={videoRef}
@@ -95,14 +112,25 @@ function WhepPlayer({
   src,
   title,
   onError,
+  volume,
+  isMuted,
 }: {
   src: string;
   title: string;
   onError: () => void;
+  volume: number;
+  isMuted: boolean;
 }): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null);
   const onErrorRef = useRef(onError);
   useEffect(() => { onErrorRef.current = onError; });
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.volume = volume;
+    video.muted = isMuted;
+  }, [volume, isMuted]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -323,6 +351,12 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const prevCommentLenRef = useRef(0);
   const [videoState, setVideoState] = useState<ViewerVideoState | null>(null);
 
+  // Volume and controls visibility
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(true);
+  const [controlsVisible, setControlsVisible] = useState(false);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     const curr = comments.length;
     const prev = prevCommentLenRef.current;
@@ -471,6 +505,57 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     }
   }, [session.id, session.title]);
 
+  const scheduleHide = useCallback((): void => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setControlsVisible(false), 3500);
+  }, []);
+
+  const showControls = useCallback((): void => {
+    setControlsVisible(true);
+    scheduleHide();
+  }, [scheduleHide]);
+
+  // Keep controls visible while a panel is open
+  useEffect(() => {
+    if (commentsOpen || viewersOpen) {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      setControlsVisible(true);
+    }
+  }, [commentsOpen, viewersOpen]);
+
+  function handleControlAreaMouseMove(): void {
+    if (isLive) showControls();
+  }
+
+  function handleControlAreaMouseLeave(): void {
+    if (isLive && !anyPanelOpen) scheduleHide();
+  }
+
+  function handleVideoAreaClick(e: ReactMouseEvent<HTMLDivElement>): void {
+    if (!isLive) return;
+    if ((e.target as HTMLElement).closest('button, a, input, [role=button]')) return;
+    setControlsVisible((v) => {
+      if (v && !anyPanelOpen) {
+        if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+        return false;
+      }
+      scheduleHide();
+      return true;
+    });
+  }
+
+  function handleVolumeChange(val: number): void {
+    setVolume(val);
+    if (val === 0) setIsMuted(true);
+    else setIsMuted(false);
+    showControls();
+  }
+
+  function toggleMute(): void {
+    setIsMuted((m) => !m);
+    showControls();
+  }
+
   const handleSendComment = useCallback(async () => {
     const trimmed = commentText.trim();
     if (!trimmed || isSending) return;
@@ -530,16 +615,23 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
         src={whepUrl}
         title={session.title}
         onError={() => setWhepFailed(true)}
+        volume={volume}
+        isMuted={isMuted}
       />
     ) : (
-      <HlsPlayer src={session.platformHlsUrl} title={session.title} />
+      <HlsPlayer src={session.platformHlsUrl} title={session.title} volume={volume} isMuted={isMuted} />
     );
   };
 
   const hasVideo = (isLive || isPaused) && !!session.platformHlsUrl;
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-black">
+    <div
+      className="fixed inset-0 overflow-hidden bg-black"
+      onMouseMove={handleControlAreaMouseMove}
+      onMouseLeave={handleControlAreaMouseLeave}
+      onClick={handleVideoAreaClick}
+    >
       {/* ── Video background ── */}
       {hasVideo && renderVideo()}
       {!hasVideo && <div className="absolute inset-0 bg-[#0a0b0f]" />}
@@ -728,18 +820,25 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
             />
           )}
 
-          {/* Floating comments — hidden when any panel is open */}
+          {/* Floating comments — always visible */}
           {!anyPanelOpen && (
-            <div className="absolute bottom-28 left-3 z-20 flex flex-col-reverse gap-1.5">
+            <div className="absolute bottom-36 left-3 z-20 flex flex-col-reverse gap-1.5">
               {recentFloating.map((c) => (
                 <CommentBubble key={c.id} comment={c} animate={isNewComment(c)} />
               ))}
             </div>
           )}
 
-          {/* Right action rail — hidden when any panel is open */}
+          {/* ── Right action rail — hover/tap to show ── */}
           {!anyPanelOpen && (
-            <div className="absolute bottom-24 right-3 z-20 flex flex-col items-center gap-3">
+            <div
+              className={cn(
+                'absolute bottom-32 right-3 z-20 flex flex-col items-center gap-2.5 transition-all duration-300 ease-out',
+                controlsVisible
+                  ? 'opacity-100 translate-x-0 pointer-events-auto'
+                  : 'opacity-0 translate-x-4 pointer-events-none',
+              )}
+            >
               {/* Reaction floats */}
               <div className="pointer-events-none relative h-44 w-12 overflow-visible">
                 {liveReactions.map((r) => (
@@ -759,14 +858,14 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                 onClick={handleLike}
                 aria-label={t('like')}
                 className={cn(
-                  'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+                  'group flex h-13 w-13 flex-col items-center justify-center gap-1 rounded-2xl border shadow-xl backdrop-blur-xl transition-all duration-200 active:scale-90',
                   localLiked
-                    ? 'border-pink-400/40 bg-pink-900/50 text-pink-400 shadow-pink-900/20'
-                    : 'border-white/20 bg-black/45 text-white shadow-black/20',
+                    ? 'border-pink-400/50 bg-gradient-to-b from-pink-900/70 to-pink-950/70 text-pink-300 shadow-pink-900/30'
+                    : 'border-white/15 bg-gradient-to-b from-black/50 to-black/60 text-white shadow-black/30 hover:border-white/25 hover:from-white/10 hover:to-white/5',
                 )}
               >
                 <svg
-                  className={cn('h-5 w-5 transition-transform', localLiked && 'scale-110')}
+                  className={cn('h-[22px] w-[22px] transition-transform duration-200', localLiked && 'scale-110')}
                   viewBox="0 0 24 24"
                   fill={localLiked ? 'currentColor' : 'none'}
                   stroke="currentColor"
@@ -777,12 +876,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                 >
                   <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
                 </svg>
-                <span
-                  className={cn(
-                    'text-[9px] font-semibold leading-none',
-                    localLiked && 'text-pink-400',
-                  )}
-                >
+                <span className={cn('text-[10px] font-bold leading-none tracking-tight', localLiked ? 'text-pink-300' : 'text-white/70')}>
                   {likeCount > 0 ? likeCount.toLocaleString() : t('like')}
                 </span>
               </button>
@@ -793,80 +887,23 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                 onClick={handleCommentToggle}
                 aria-label={t('comment')}
                 className={cn(
-                  'relative flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+                  'relative flex h-13 w-13 flex-col items-center justify-center gap-1 rounded-2xl border shadow-xl backdrop-blur-xl transition-all duration-200 active:scale-90',
                   commentsOpen
-                    ? 'border-brand/50 bg-brand/60 text-white'
-                    : 'border-white/20 bg-black/45 text-white shadow-black/20',
+                    ? 'border-brand/50 bg-gradient-to-b from-brand/60 to-brand/40 text-white shadow-brand/20'
+                    : 'border-white/15 bg-gradient-to-b from-black/50 to-black/60 text-white shadow-black/30 hover:border-white/25 hover:from-white/10 hover:to-white/5',
                 )}
               >
-                <svg
-                  className="h-5 w-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
+                <svg className="h-[22px] w-[22px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
                 </svg>
-                <span className="text-[9px] font-semibold leading-none">
+                <span className="text-[10px] font-bold leading-none tracking-tight text-white/70">
                   {comments.length > 0 ? comments.length.toLocaleString() : t('comment')}
                 </span>
                 {unreadCount > 0 && !commentsOpen && (
-                  <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[8px] font-bold leading-none text-white">
+                  <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[8px] font-bold leading-none text-white shadow-md">
                     {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
                 )}
-              </button>
-
-              {/* Share */}
-              <button
-                type="button"
-                onClick={() => void handleShare()}
-                aria-label={t('share')}
-                className="flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border border-white/20 bg-black/45 text-white shadow-lg shadow-black/20 backdrop-blur-xl transition-all active:scale-90"
-              >
-                {shareCopied ? (
-                  <svg
-                    className="h-5 w-5 text-green-400"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                ) : (
-                  <svg
-                    className="h-5 w-5"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <circle cx="18" cy="5" r="3" />
-                    <circle cx="6" cy="12" r="3" />
-                    <circle cx="18" cy="19" r="3" />
-                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                  </svg>
-                )}
-                <span
-                  className={cn(
-                    'text-[9px] font-semibold leading-none',
-                    shareCopied && 'text-green-400',
-                  )}
-                >
-                  {shareCopied ? '✓' : t('share')}
-                </span>
               </button>
 
               {/* Viewers — only if sharer allows */}
@@ -876,31 +913,103 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                   onClick={handleViewersToggle}
                   aria-label={t('viewers')}
                   className={cn(
-                    'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+                    'flex h-13 w-13 flex-col items-center justify-center gap-1 rounded-2xl border shadow-xl backdrop-blur-xl transition-all duration-200 active:scale-90',
                     viewersOpen
-                      ? 'border-blue-400/40 bg-blue-900/50 text-blue-300'
-                      : 'border-white/20 bg-black/45 text-white shadow-black/20',
+                      ? 'border-blue-400/40 bg-gradient-to-b from-blue-900/60 to-blue-950/60 text-blue-300 shadow-blue-900/20'
+                      : 'border-white/15 bg-gradient-to-b from-black/50 to-black/60 text-white shadow-black/30 hover:border-white/25 hover:from-white/10 hover:to-white/5',
                   )}
                 >
-                  <svg
-                    className="h-5 w-5"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
+                  <svg className="h-[22px] w-[22px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
                     <circle cx="9" cy="7" r="4" />
                     <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
                   </svg>
-                  <span className="text-[9px] font-semibold leading-none">
-                    {t('viewers')}
-                  </span>
+                  <span className="text-[10px] font-bold leading-none tracking-tight text-white/70">{t('viewers')}</span>
                 </button>
               )}
+            </div>
+          )}
+
+          {/* ── Bottom control bar — volume + share, hover/tap to show ── */}
+          {!anyPanelOpen && (
+            <div
+              className={cn(
+                'absolute inset-x-0 bottom-0 z-20 transition-all duration-300 ease-out',
+                controlsVisible
+                  ? 'opacity-100 translate-y-0 pointer-events-auto'
+                  : 'opacity-0 translate-y-3 pointer-events-none',
+              )}
+              style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}
+            >
+              <div className="mx-4 mb-2 flex items-center gap-3 rounded-2xl border border-white/12 bg-black/65 px-4 py-3 shadow-2xl shadow-black/60 backdrop-blur-2xl">
+                {/* Mute / unmute toggle */}
+                <button
+                  type="button"
+                  onClick={toggleMute}
+                  aria-label={isMuted ? t('volume.unmute') : t('volume.mute')}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white/70 transition-all hover:bg-white/10 hover:text-white active:scale-90"
+                >
+                  {isMuted || volume === 0 ? (
+                    <svg className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      <line x1="23" y1="9" x2="17" y2="15" />
+                      <line x1="17" y1="9" x2="23" y2="15" />
+                    </svg>
+                  ) : (
+                    <svg className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      <path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07" />
+                    </svg>
+                  )}
+                </button>
+
+                {/* Volume slider */}
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.02}
+                  value={isMuted ? 0 : volume}
+                  onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                  onPointerDown={() => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }}
+                  onPointerUp={scheduleHide}
+                  aria-label={t('volume.label')}
+                  className="h-1 flex-1 cursor-pointer accent-white"
+                />
+
+                {/* Volume percentage */}
+                <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-white/40">
+                  {Math.round((isMuted ? 0 : volume) * 100)}%
+                </span>
+
+                {/* Separator */}
+                <div className="h-5 w-px shrink-0 rounded-full bg-white/15" />
+
+                {/* Share */}
+                <button
+                  type="button"
+                  onClick={() => { void handleShare(); showControls(); }}
+                  aria-label={t('share')}
+                  className={cn(
+                    'flex shrink-0 items-center gap-2 rounded-xl border px-3.5 py-1.5 text-xs font-semibold transition-all duration-200 active:scale-95',
+                    shareCopied
+                      ? 'border-green-400/30 bg-green-900/40 text-green-300'
+                      : 'border-white/18 bg-white/8 text-white/80 hover:border-white/25 hover:bg-white/15 hover:text-white',
+                  )}
+                >
+                  {shareCopied ? (
+                    <svg className="h-3.5 w-3.5 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  ) : (
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                    </svg>
+                  )}
+                  {shareCopied ? t('share') : t('share')}
+                </button>
+              </div>
             </div>
           )}
 

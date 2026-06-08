@@ -196,7 +196,15 @@
       "viewerControlEnabled": "Viewers can control",
       "viewerControlDisabled": "Only you control",
       "noVideoLoaded": "No video loaded",
-      "pausedViewersBlack": "Paused — viewers see a black screen"
+      "pausedViewersBlack": "Paused — viewers see a black screen",
+      "recent": "Recent",
+      "total": "total",
+      "loadMore": "+ {count} more",
+      "historyTitle": "Source history",
+      "historyClose": "Close",
+      "historyPrev": "Prev",
+      "historyNext": "Next",
+      "historyPage": "{current} of {total}"
     },
     "errors": {
       "noDestinations": "Please add at least one destination",
@@ -518,6 +526,11 @@
       "pause": "Pause",
       "seek": "Seek",
       "controlDisabled": "Waiting for streamer…"
+    },
+    "volume": {
+      "mute": "Mute",
+      "unmute": "Unmute",
+      "label": "Volume"
     }
   },
   "notFound": {
