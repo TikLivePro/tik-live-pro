@@ -808,12 +808,12 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
         </div>
       )}
 
-      {/* ── Unmute CTA — visible when video is muted (browser autoplay policy) ── */}
-      {isLive && hasVideo && isMuted && !anyPanelOpen && (
+      {/* ── Unmute CTA — pops above the combined pill when autoplay is muted ── */}
+      {isLive && hasVideo && isMuted && !anyPanelOpen && !controlsVisible && (
         <button
           type="button"
           onClick={() => { setIsMuted(false); showControls(); }}
-          className="absolute bottom-32 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/25 bg-black/60 px-4 py-2.5 text-xs font-semibold text-white backdrop-blur-xl transition-colors hover:bg-black/80"
+          className="absolute bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/25 bg-black/60 px-4 py-2.5 text-xs font-semibold text-white backdrop-blur-xl transition-all hover:bg-black/80 animate-pulse"
         >
           <svg
             className="h-4 w-4"
@@ -836,14 +836,102 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       {/* ── Live interaction layer ── */}
       {isLive && (
         <>
-          {/* Viewer video controls — shown when streamer is sharing a video and allows control */}
-          {session.allowViewerVideoControl && videoState && !anyPanelOpen && (
+          {/* Combined video + volume + share controls pill — centred, slides left to hide */}
+          {videoState && !anyPanelOpen && (
             <ViewerVideoControls
               videoState={videoState}
+              volume={volume}
+              isMuted={isMuted}
+              visible={controlsVisible}
               onPlay={() => sendVideoControl('play')}
               onPause={() => sendVideoControl('pause')}
               onSeek={(time) => sendVideoControl('seek', time)}
+              onVolumeChange={handleVolumeChange}
+              onToggleMute={toggleMute}
+              onShare={() => { void handleShare(); showControls(); }}
+              shareCopied={shareCopied}
             />
+          )}
+
+          {/* Standalone volume + share pill when no video is shared */}
+          {!videoState && !anyPanelOpen && (
+            <div
+              className={cn(
+                'absolute bottom-8 left-1/2 z-20 w-[min(360px,90vw)]',
+                'transition-all duration-300 ease-out',
+                controlsVisible
+                  ? '-translate-x-1/2 opacity-100 pointer-events-auto'
+                  : '-translate-x-[calc(50%+60vw)] opacity-0 pointer-events-none',
+              )}
+            >
+              <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-black/72 px-4 py-3 shadow-2xl shadow-black/50 backdrop-blur-2xl">
+                {/* Mute toggle */}
+                <button
+                  type="button"
+                  onClick={toggleMute}
+                  aria-label={isMuted ? t('volume.unmute') : t('volume.mute')}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/60 transition-all duration-150 hover:bg-white/10 hover:text-white active:scale-90"
+                >
+                  {isMuted || volume === 0 ? (
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      <line x1="23" y1="9" x2="17" y2="15" />
+                      <line x1="17" y1="9" x2="23" y2="15" />
+                    </svg>
+                  ) : (
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                      <path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07" />
+                    </svg>
+                  )}
+                </button>
+
+                {/* Volume slider */}
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.02}
+                  value={isMuted ? 0 : volume}
+                  onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                  onPointerDown={() => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }}
+                  onPointerUp={scheduleHide}
+                  aria-label={t('volume.label')}
+                  className="h-1 flex-1 cursor-pointer accent-white"
+                />
+
+                <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-white/40">
+                  {Math.round((isMuted ? 0 : volume) * 100)}%
+                </span>
+
+                <div className="h-4 w-px shrink-0 rounded-full bg-white/15" />
+
+                {/* Share */}
+                <button
+                  type="button"
+                  onClick={() => { void handleShare(); showControls(); }}
+                  aria-label={t('share')}
+                  className={cn(
+                    'flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[10px] font-semibold transition-all duration-200 active:scale-95',
+                    shareCopied
+                      ? 'border-green-400/30 bg-green-900/40 text-green-300'
+                      : 'border-white/18 bg-white/8 text-white/75 hover:border-white/30 hover:bg-white/15 hover:text-white',
+                  )}
+                >
+                  {shareCopied ? (
+                    <svg className="h-3 w-3 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  ) : (
+                    <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                    </svg>
+                  )}
+                  {t('share')}
+                </button>
+              </div>
+            </div>
           )}
 
           {/* Floating comments — always visible */}
@@ -956,88 +1044,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
             </div>
           )}
 
-          {/* ── Bottom control bar — volume + share, hover/tap to show ── */}
-          {!anyPanelOpen && (
-            <div
-              className={cn(
-                'absolute inset-x-0 bottom-0 z-20 transition-all duration-300 ease-out',
-                controlsVisible
-                  ? 'opacity-100 translate-y-0 pointer-events-auto'
-                  : 'opacity-0 translate-y-3 pointer-events-none',
-              )}
-              style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}
-            >
-              <div className="mx-4 mb-2 flex items-center gap-3 rounded-2xl border border-white/12 bg-black/65 px-4 py-3 shadow-2xl shadow-black/60 backdrop-blur-2xl">
-                {/* Mute / unmute toggle */}
-                <button
-                  type="button"
-                  onClick={toggleMute}
-                  aria-label={isMuted ? t('volume.unmute') : t('volume.mute')}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white/70 transition-all hover:bg-white/10 hover:text-white active:scale-90"
-                >
-                  {isMuted || volume === 0 ? (
-                    <svg className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                      <line x1="23" y1="9" x2="17" y2="15" />
-                      <line x1="17" y1="9" x2="23" y2="15" />
-                    </svg>
-                  ) : (
-                    <svg className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                      <path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07" />
-                    </svg>
-                  )}
-                </button>
 
-                {/* Volume slider */}
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.02}
-                  value={isMuted ? 0 : volume}
-                  onChange={(e) => handleVolumeChange(Number(e.target.value))}
-                  onPointerDown={() => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }}
-                  onPointerUp={scheduleHide}
-                  aria-label={t('volume.label')}
-                  className="h-1 flex-1 cursor-pointer accent-white"
-                />
-
-                {/* Volume percentage */}
-                <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-white/40">
-                  {Math.round((isMuted ? 0 : volume) * 100)}%
-                </span>
-
-                {/* Separator */}
-                <div className="h-5 w-px shrink-0 rounded-full bg-white/15" />
-
-                {/* Share */}
-                <button
-                  type="button"
-                  onClick={() => { void handleShare(); showControls(); }}
-                  aria-label={t('share')}
-                  className={cn(
-                    'flex shrink-0 items-center gap-2 rounded-xl border px-3.5 py-1.5 text-xs font-semibold transition-all duration-200 active:scale-95',
-                    shareCopied
-                      ? 'border-green-400/30 bg-green-900/40 text-green-300'
-                      : 'border-white/18 bg-white/8 text-white/80 hover:border-white/25 hover:bg-white/15 hover:text-white',
-                  )}
-                >
-                  {shareCopied ? (
-                    <svg className="h-3.5 w-3.5 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  ) : (
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                    </svg>
-                  )}
-                  {shareCopied ? t('share') : t('share')}
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* ── Comment bottom sheet ── */}
           {commentsOpen && (
