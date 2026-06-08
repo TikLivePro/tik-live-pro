@@ -43,6 +43,13 @@
       "when": 1780457593149,
       "tag": "0005_wise_nomad",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780881966978,
+      "tag": "0006_gifted_starfox",
+      "breakpoints": true
     }
   ]
 }

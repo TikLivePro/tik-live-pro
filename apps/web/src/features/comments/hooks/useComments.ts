@@ -1,13 +1,26 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { type MutableRefObject } from 'react';
 import { io as socketIo, type Socket } from 'socket.io-client';
 import { useStreamStore } from '@/features/stream/store/stream.store';
 import { useAuthStore } from '@/features/auth/store/auth.store';
 import { API_BASE, COMMENTS_WS_URL, apiFetch } from '@/lib/api';
 import type { Comment, LiveSessionId } from '@tik-live-pro/shared-types';
 
-export function useComments(sessionId: LiveSessionId | null) {
+interface UseCommentsResult {
+  comments: Comment[];
+  replyingTo: Comment | null;
+  setReplyingTo: (comment: Comment | null) => void;
+  sendComment: (content: string, mediaUrls?: string[]) => Promise<void>;
+  replyToComment: (commentId: string, content: string, mediaUrls?: string[]) => Promise<void>;
+  emitReaction: (emoji: string) => void;
+  isSending: boolean;
+  sendError: string | null;
+  socketRef: MutableRefObject<Socket | null>;
+}
+
+export function useComments(sessionId: LiveSessionId | null): UseCommentsResult {
   const socketRef = useRef<Socket | null>(null);
   const { accessToken, displayName } = useAuthStore();
   const { comments, addComment, addReaction, replyingTo, setReplyingTo } = useStreamStore();
@@ -104,5 +117,5 @@ export function useComments(sessionId: LiveSessionId | null) {
     [setReplyingTo],
   );
 
-  return { comments, replyingTo, setReplyingTo, sendComment, replyToComment, emitReaction, isSending, sendError };
+  return { comments, replyingTo, setReplyingTo, sendComment, replyToComment, emitReaction, isSending, sendError, socketRef };
 }

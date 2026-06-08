@@ -15,6 +15,13 @@
       "when": 1779593348836,
       "tag": "0001_windy_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780881969351,
+      "tag": "0002_aspiring_cannonball",
+      "breakpoints": true
     }
   ]
 }

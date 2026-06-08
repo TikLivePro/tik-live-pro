@@ -95,6 +95,7 @@ const createSessionBody = z.object({
 
 const patchSessionBody = z.object({
   viewersVisible: z.boolean().optional(),
+  allowViewerVideoControl: z.boolean().optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -136,6 +137,7 @@ export function registerLiveSessionRoutes(
                   endedAt: { type: 'string', format: 'date-time', nullable: true },
                   viewersVisible: { type: 'boolean', description: 'Whether the broadcaster allows viewers to see the audience list.' },
                   viewerCount: { type: 'integer', description: 'Current number of viewers.' },
+                  allowViewerVideoControl: { type: 'boolean', description: 'Whether viewers are allowed to send video playback control commands.' },
                 },
               },
             },
@@ -162,6 +164,7 @@ export function registerLiveSessionRoutes(
           endedAt: session.endedAt?.toISOString() ?? null,
           viewersVisible: session.viewersVisible,
           viewerCount: 0,
+          allowViewerVideoControl: session.allowViewerVideoControl,
         },
       });
     },
@@ -662,6 +665,7 @@ Resumes a session that is currently \`paused\`, transitioning it back to \`live\
           additionalProperties: false,
           properties: {
             viewersVisible: { type: 'boolean', description: 'Whether to expose the viewer list on the public watch page.' },
+            allowViewerVideoControl: { type: 'boolean', description: 'Whether viewers are allowed to send video playback control commands (play, pause, seek).' },
           },
         },
         response: {
@@ -687,6 +691,9 @@ Resumes a session that is currently \`paused\`, transitioning it back to \`live\
 
       if (body.viewersVisible !== undefined) {
         session.setViewersVisible(body.viewersVisible);
+      }
+      if (body.allowViewerVideoControl !== undefined) {
+        session.setAllowViewerVideoControl(body.allowViewerVideoControl);
       }
 
       await deps.sessionRepo.update(session);

@@ -68,7 +68,8 @@
     "optionalLabel": "optional",
     "endStream": "End Stream",
     "quality": {
-      "label": "Recording quality"
+      "label": "Quality",
+      "streamLabel": "Stream quality"
     },
     "camera": {
       "optional": "Camera preview (optional)",
@@ -178,6 +179,24 @@
       "noneYet": "No viewers yet",
       "updatedOn": "Viewer list visible",
       "updatedOff": "Viewer list hidden"
+    },
+    "videoShare": {
+      "sourceLabel": "Video",
+      "sourcePickerLabel": "Video source",
+      "camera": "Camera",
+      "localFile": "File",
+      "onlineUrl": "URL",
+      "loadFile": "Choose File",
+      "urlPlaceholder": "Paste video URL…",
+      "loadUrl": "Load",
+      "play": "Play",
+      "pause": "Pause",
+      "seek": "Seek",
+      "allowViewerControl": "Allow viewer control",
+      "viewerControlEnabled": "Viewers can control",
+      "viewerControlDisabled": "Only you control",
+      "noVideoLoaded": "No video loaded",
+      "pausedViewersBlack": "Paused — viewers see a black screen"
     },
     "errors": {
       "noDestinations": "Please add at least one destination",
@@ -492,7 +511,14 @@
     "noViewers": "No viewers yet",
     "noComments": "No comments yet",
     "commentPlaceholder": "Add a comment…",
-    "send": "Send"
+    "send": "Send",
+    "videoControls": {
+      "label": "Video Controls",
+      "play": "Play",
+      "pause": "Pause",
+      "seek": "Seek",
+      "controlDisabled": "Waiting for streamer…"
+    }
   },
   "notFound": {
     "heading": "Page Not Found",

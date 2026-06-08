@@ -7,9 +7,12 @@ const MAX_COMMENTS = 200;
 const MAX_REACTIONS = 20;
 const QUALITY_STORAGE_KEY = 'tiklivepro:videoQualityId';
 
-function readStoredQuality(): string {
-  if (typeof window === 'undefined') return DEFAULT_VIDEO_QUALITY_ID;
-  return localStorage.getItem(QUALITY_STORAGE_KEY) ?? DEFAULT_VIDEO_QUALITY_ID;
+export type PreSourceType = 'local-file' | 'online-url';
+
+export interface PreSource {
+  type: PreSourceType;
+  file?: File;
+  url?: string;
 }
 
 export interface LiveReaction {
@@ -44,6 +47,9 @@ interface StreamState {
   setMinimized: (value: boolean) => void;
   setActiveStream: (stream: MediaStream | null) => void;
   setVideoQualityId: (id: string) => void;
+  hydrateVideoQuality: () => void;
+  preSource: PreSource | null;
+  setPreSource: (src: PreSource | null) => void;
 }
 
 export const useStreamStore = create<StreamState>()((set, get) => ({
@@ -56,7 +62,8 @@ export const useStreamStore = create<StreamState>()((set, get) => ({
   isPausing: false,
   isMinimized: false,
   activeStream: null,
-  videoQualityId: readStoredQuality(),
+  videoQualityId: DEFAULT_VIDEO_QUALITY_ID,
+  preSource: null,
 
   setSession: (session) => {
     if (session === null) {
@@ -111,4 +118,9 @@ export const useStreamStore = create<StreamState>()((set, get) => ({
     if (typeof window !== 'undefined') localStorage.setItem(QUALITY_STORAGE_KEY, id);
     set({ videoQualityId: id });
   },
+  hydrateVideoQuality: () => {
+    const stored = localStorage.getItem(QUALITY_STORAGE_KEY);
+    if (stored) set({ videoQualityId: stored });
+  },
+  setPreSource: (src) => set({ preSource: src }),
 }));

@@ -13,6 +13,8 @@ import { useAuthStore } from '@/features/auth/store/auth.store';
 import { useElapsedTime } from '../hooks/useElapsedTime';
 import { LiveReactionFloat } from './LiveReactionFloat';
 import { ViewersPanel } from './ViewersPanel';
+import { ViewerVideoControls } from './ViewerVideoControls';
+import type { ViewerVideoState } from './ViewerVideoControls';
 import type { Comment } from '@tik-live-pro/shared-types';
 
 const WEBRTC_BASE =
@@ -49,6 +51,7 @@ export interface PublicSession {
   endedAt: string | null;
   viewersVisible?: boolean;
   viewerCount?: number;
+  allowViewerVideoControl?: boolean;
 }
 
 // ── Video players ─────────────────────────────────────────────
@@ -318,6 +321,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
 
   const [unreadCount, setUnreadCount] = useState(0);
   const prevCommentLenRef = useRef(0);
+  const [videoState, setVideoState] = useState<ViewerVideoState | null>(null);
 
   useEffect(() => {
     const curr = comments.length;
@@ -399,6 +403,10 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
         left: Math.floor(Math.random() * 36),
       };
       setLiveReactions((prev) => [...prev, reaction].slice(-MAX_REACTIONS));
+    });
+
+    socket.on('video_state', (data: ViewerVideoState) => {
+      setVideoState(data);
     });
 
     socketRef.current = socket;
@@ -488,6 +496,10 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       setIsSending(false);
     }
   }, [commentText, isSending, isAuthenticated, session.id, displayName]);
+
+  const sendVideoControl = useCallback((type: 'play' | 'pause' | 'seek', currentTime?: number) => {
+    socketRef.current?.emit('video_control_request', { type, ...(currentTime !== undefined ? { currentTime } : {}) });
+  }, []);
 
   // Auto-scroll comment list to top when new comment arrives
   useEffect(() => {
@@ -706,6 +718,16 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       {/* ── Live interaction layer ── */}
       {isLive && (
         <>
+          {/* Viewer video controls — shown when streamer is sharing a video and allows control */}
+          {session.allowViewerVideoControl && videoState && !anyPanelOpen && (
+            <ViewerVideoControls
+              videoState={videoState}
+              onPlay={() => sendVideoControl('play')}
+              onPause={() => sendVideoControl('pause')}
+              onSeek={(time) => sendVideoControl('seek', time)}
+            />
+          )}
+
           {/* Floating comments — hidden when any panel is open */}
           {!anyPanelOpen && (
             <div className="absolute bottom-28 left-3 z-20 flex flex-col-reverse gap-1.5">

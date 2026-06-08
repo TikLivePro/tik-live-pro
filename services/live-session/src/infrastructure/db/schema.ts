@@ -19,6 +19,7 @@ export const liveSessions = pgTable(
     destinations: jsonb('destinations').$type<StoredDestination[]>().notNull(),
     shouldRecord: boolean('should_record').notNull().default(false),
     viewersVisible: boolean('viewers_visible').notNull().default(false),
+    allowViewerVideoControl: boolean('allow_viewer_video_control').notNull().default(false),
     platformHlsUrl: text('platform_hls_url'),
     startedAt: timestamp('started_at', { withTimezone: true }),
     endedAt: timestamp('ended_at', { withTimezone: true }),

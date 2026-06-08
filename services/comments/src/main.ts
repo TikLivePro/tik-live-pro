@@ -263,6 +263,37 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
         }
       })();
     });
+
+    // Streamer identifies itself to receive viewer control commands
+    socket.on('join_as_streamer', () => {
+      void socket.join(`${sessionId}:streamer`);
+      logger.debug({ sessionId }, 'Client joined as streamer for video controls');
+    });
+
+    // Streamer broadcasts current video playback state to all viewers in the session
+    socket.on('video_state', (data: unknown) => {
+      const d = data as Record<string, unknown> | null;
+      if (!d) return;
+      socket.to(sessionId).emit('video_state', {
+        playing: Boolean(d['playing']),
+        currentTime: Number(d['currentTime'] ?? 0),
+        duration: Number(d['duration'] ?? 0),
+        allowViewerControl: Boolean(d['allowViewerControl']),
+      });
+    });
+
+    // Viewer requests a video control action → forward to the streamer room only
+    socket.on('video_control_request', (data: unknown) => {
+      const d = data as Record<string, unknown> | null;
+      if (!d) return;
+      const type = String(d['type'] ?? '');
+      if (!['play', 'pause', 'seek', 'speed'].includes(type)) return;
+      socket.to(`${sessionId}:streamer`).emit('video_control_command', {
+        type,
+        ...(d['currentTime'] !== undefined ? { currentTime: Number(d['currentTime']) } : {}),
+        ...(d['speed'] !== undefined ? { speed: Number(d['speed']) } : {}),
+      });
+    });
   });
 
   setIo(io);

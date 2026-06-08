@@ -8,6 +8,8 @@ export interface WhipStreamResult {
   state: WhipState;
   connect: (whipUrl: string, stream: MediaStream, bitrate?: number) => Promise<void>;
   disconnect: () => void;
+  replaceVideoTrack: (track: MediaStreamTrack) => Promise<void>;
+  setVideoBitrate: (bitrate: number) => Promise<void>;
 }
 
 export function useWhipStream(): WhipStreamResult {
@@ -91,9 +93,28 @@ export function useWhipStream(): WhipStreamResult {
     }
   }, [disconnect]);
 
+  const replaceVideoTrack = useCallback(async (track: MediaStreamTrack): Promise<void> => {
+    const pc = pcRef.current;
+    if (!pc) return;
+    const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
+    if (sender) await sender.replaceTrack(track);
+  }, []);
+
+  const setVideoBitrate = useCallback(async (bitrate: number): Promise<void> => {
+    const pc = pcRef.current;
+    if (!pc) return;
+    const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
+    if (!sender) return;
+    const params = sender.getParameters();
+    if (params.encodings.length > 0) {
+      params.encodings[0]!.maxBitrate = bitrate;
+      await sender.setParameters(params);
+    }
+  }, []);
+
   useEffect(() => {
     return () => { disconnect(); };
   }, [disconnect]);
 
-  return { state, connect, disconnect };
+  return { state, connect, disconnect, replaceVideoTrack, setVideoBitrate };
 }

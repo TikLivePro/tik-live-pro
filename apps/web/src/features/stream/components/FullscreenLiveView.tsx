@@ -11,15 +11,18 @@ import { useElapsedTime } from '../hooks/useElapsedTime';
 import { useCameraStream } from '../hooks/useCameraStream';
 import { useWhipStream } from '../hooks/useWhipStream';
 import { useStreamStore } from '../store/stream.store';
-import { getVideoQualityPreset } from '../consts/stream.consts';
+import { getVideoQualityPreset, VIDEO_QUALITY_PRESETS } from '../consts/stream.consts';
 import { useComments } from '@/features/comments/hooks/useComments';
 import { useRecording } from '../hooks/useRecording';
+import { useVideoShare } from '../hooks/useVideoShare';
 import type { LiveSessionId } from '@tik-live-pro/shared-types';
 import { LiveCommentFloat } from './LiveCommentFloat';
 import { LiveReactionFloat } from './LiveReactionFloat';
 import { MinimizedPlayer } from './MinimizedPlayer';
 import { LiveCommentPanel } from './LiveCommentPanel';
 import { ViewersPanel } from './ViewersPanel';
+import { VideoSourcePicker } from './VideoSourcePicker';
+import { VideoSharePlayer } from './VideoSharePlayer';
 
 const REACTION_EMOJIS = ['❤️', '🔥', '😍', '👏', '💯', '🎉'];
 
@@ -32,7 +35,7 @@ export function FullscreenLiveView(): React.ReactElement {
   const router = useRouter();
   const { currentSession, isEnding, isPausing, endSession, pauseSession, resumeSession } =
     useStream();
-  const { comments, liveReactions, addReaction, removeReaction, videoQualityId } = useStreamStore();
+  const { comments, liveReactions, addReaction, removeReaction, videoQualityId, setVideoQualityId, preSource, setPreSource } = useStreamStore();
   const isPaused = currentSession?.status === 'paused';
   const {
     videoRef,
@@ -47,8 +50,9 @@ export function FullscreenLiveView(): React.ReactElement {
     getStream,
   } = useCameraStream(true);
 
-  const { sendComment, replyToComment, emitReaction, isSending } = useComments(currentSession?.id ?? null);
-  const { state: whipState, connect: connectWhip, disconnect: disconnectWhip } = useWhipStream();
+  const { sendComment, replyToComment, emitReaction, isSending, socketRef } = useComments(currentSession?.id ?? null);
+  const videoShare = useVideoShare({ socketRef, sessionId: currentSession?.id ?? null });
+  const { state: whipState, connect: connectWhip, disconnect: disconnectWhip, replaceVideoTrack, setVideoBitrate } = useWhipStream();
   const { isRecording, isToggling: isTogglingRecording, toggle: toggleRecording } = useRecording(
     (currentSession?.id as LiveSessionId) ?? null,
   );
@@ -134,6 +138,9 @@ export function FullscreenLiveView(): React.ReactElement {
       try {
         const bitrate = getVideoQualityPreset(useStreamStore.getState().videoQualityId).bitrate;
         await connectWhip(whipUrl, stream, bitrate);
+        // If a video share source was already selected before the WHIP connected, switch the video track.
+        const shareTrack = videoShare.getVideoTrack();
+        if (shareTrack) await replaceVideoTrack(shareTrack);
       } catch {
         whipStartedRef.current = false;
       }
@@ -148,9 +155,59 @@ export function FullscreenLiveView(): React.ReactElement {
   useEffect(() => {
     if (currentSession?.status === 'ended' || currentSession?.status === 'error') {
       whipStartedRef.current = false;
+      appliedSourceRef.current = null;
       disconnectWhip();
     }
   }, [currentSession?.status, disconnectWhip]);
+
+  // Apply pre-selected source (set in GoLiveForm dashboard) once the video share hook is ready.
+  useEffect(() => {
+    if (!preSource) return;
+    if (preSource.type === 'local-file' && preSource.file) videoShare.loadLocalFile(preSource.file);
+    else if (preSource.type === 'online-url' && preSource.url) videoShare.loadOnlineUrl(preSource.url);
+    setPreSource(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mid-stream video source switching: replace the WHIP video track when the source changes.
+  // appliedSourceRef tracks which source type was last successfully applied to the WHIP sender.
+  // It is only updated when WHIP is connected, so if the source changes while WHIP is still
+  // connecting, the replacement runs as soon as whipState becomes 'connected'.
+  const appliedSourceRef = useRef<typeof videoShare.sourceType | null>(null);
+  const { sourceType: shareSourceType, getVideoTrack } = videoShare;
+  useEffect(() => {
+    if (whipState !== 'connected') return;
+    if (appliedSourceRef.current === shareSourceType) return;
+
+    void (async () => {
+      if (shareSourceType === 'camera') {
+        const cameraTrack = getStream()?.getVideoTracks()[0];
+        if (cameraTrack) await replaceVideoTrack(cameraTrack);
+      } else {
+        const track = getVideoTrack();
+        if (track) await replaceVideoTrack(track);
+      }
+      appliedSourceRef.current = shareSourceType;
+    })();
+  }, [shareSourceType, whipState, getStream, replaceVideoTrack, getVideoTrack]);
+
+  // Persist viewer video control setting on toggle
+  const updateAllowViewerVideoControl = useCallback(
+    async (allow: boolean): Promise<void> => {
+      videoShare.setAllowViewerControl(allow);
+      if (!currentSession?.id) return;
+      try {
+        await apiFetch(`${API_BASE}/sessions/${currentSession.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ allowViewerVideoControl: allow }),
+        });
+      } catch {
+        // silent — local state is already updated
+      }
+    },
+    [currentSession?.id, videoShare],
+  );
 
   const setMinimizedInStore = useStreamStore((s) => s.setMinimized);
 
@@ -165,6 +222,7 @@ export function FullscreenLiveView(): React.ReactElement {
   const [isMinimized, setIsMinimized] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [viewersPanelOpen, setViewersPanelOpen] = useState(false);
+  const [videoSourceOpen, setVideoSourceOpen] = useState(false);
 
   // ── Unread comment tracking ──────────────────────────────────
   const [unreadCount, setUnreadCount] = useState(0);
@@ -281,15 +339,28 @@ export function FullscreenLiveView(): React.ReactElement {
       <div
         className={cn('fixed inset-0 z-50 overflow-hidden bg-black', isMinimized && 'invisible')}
       >
-        {/* Background video */}
+        {/* Camera feed — always mounted for mic track; hidden when video share is active */}
         <video
           ref={videoRef}
           autoPlay
           muted
           playsInline
-          className={cn('absolute inset-0 h-full w-full object-cover', isCameraOff && 'opacity-0')}
+          className={cn(
+            'absolute inset-0 h-full w-full object-cover',
+            (isCameraOff || videoShare.sourceType !== 'camera') && 'opacity-0',
+          )}
         />
-        {isCameraOff && <div className="absolute inset-0 bg-[#0f1117]" />}
+        {/* Video share element — always in DOM so captureStream() works; shown when active */}
+        <video
+          ref={videoShare.videoRef}
+          muted
+          playsInline
+          className={cn(
+            'absolute inset-0 h-full w-full object-contain bg-black',
+            videoShare.sourceType === 'camera' && 'opacity-0 pointer-events-none',
+          )}
+        />
+        {isCameraOff && videoShare.sourceType === 'camera' && <div className="absolute inset-0 bg-[#0f1117]" />}
 
         {/* ── Top overlay ── */}
         <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/40 to-transparent pb-14 px-4 pt-4">
@@ -489,6 +560,71 @@ export function FullscreenLiveView(): React.ReactElement {
             isTogglingVisibility={isTogglingVisibility}
             className="absolute left-0 top-14 bottom-24 z-40 w-full border-r sm:w-80"
           />
+        )}
+
+        {/* ── Video source panel ── */}
+        {videoSourceOpen && (
+          <div className="absolute inset-x-3 bottom-28 z-40 flex flex-col gap-3 rounded-2xl border border-white/15 bg-black/85 p-4 backdrop-blur-2xl sm:left-auto sm:right-16 sm:w-80">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-white">{t('videoShare.sourceLabel')}</span>
+              <button type="button" onClick={() => setVideoSourceOpen(false)} className="flex h-6 w-6 items-center justify-center rounded-full text-white/40 hover:bg-white/10 hover:text-white">
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <VideoSourcePicker
+              sourceType={videoShare.sourceType}
+              onSelectCamera={() => videoShare.switchToCamera()}
+              onSelectLocalFile={(file) => videoShare.loadLocalFile(file)}
+              onSelectOnlineUrl={(url) => videoShare.loadOnlineUrl(url)}
+            />
+            {videoShare.sourceType !== 'camera' && (
+              <VideoSharePlayer
+                isPlaying={videoShare.isPlaying}
+                currentTime={videoShare.currentTime}
+                duration={videoShare.duration}
+                allowViewerControl={videoShare.allowViewerControl}
+                isVideoLoaded={videoShare.isVideoLoaded}
+                onPlay={() => videoShare.play()}
+                onPause={() => videoShare.pause()}
+                onSeek={(time) => videoShare.seek(time)}
+                onSetSpeed={(r) => videoShare.setSpeed(r)}
+                onToggleViewerControl={(allow) => void updateAllowViewerVideoControl(allow)}
+              />
+            )}
+
+            {/* Stream quality selector */}
+            <div className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 p-3">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-white/50">
+                {t('quality.streamLabel')}
+              </span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {VIDEO_QUALITY_PRESETS.map((preset) => {
+                  const isSelected = videoQualityId === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => {
+                        setVideoQualityId(preset.id);
+                        void setVideoBitrate(preset.bitrate);
+                      }}
+                      className={cn(
+                        'flex flex-col items-center rounded-xl border px-1.5 py-2 text-center text-[10px] transition-colors',
+                        isSelected
+                          ? 'border-brand/60 bg-brand/20 text-brand'
+                          : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white',
+                      )}
+                    >
+                      <span className="font-semibold">{preset.label}</span>
+                      <span className="leading-tight text-white/40">{preset.subLabel}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         )}
 
         {/* ── Right side: action buttons + floating reactions ── */}
@@ -725,6 +861,26 @@ export function FullscreenLiveView(): React.ReactElement {
               </span>
             </button>
           )}
+
+          {/* Video source toggle */}
+          <button
+            type="button"
+            onClick={() => { setVideoSourceOpen((o) => !o); setCommentsOpen(false); setViewersPanelOpen(false); }}
+            aria-label={t('videoShare.sourceLabel')}
+            className={cn(
+              'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+              videoSourceOpen || videoShare.sourceType !== 'camera'
+                ? 'border-purple-400/40 bg-purple-900/50 text-purple-300 shadow-purple-900/20'
+                : 'border-white/20 bg-black/45 text-white shadow-black/20',
+            )}
+          >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+              <line x1="8" y1="21" x2="16" y2="21" />
+              <line x1="12" y1="17" x2="12" y2="21" />
+            </svg>
+            <span className="text-[9px] font-semibold leading-none">{t('videoShare.sourceLabel')}</span>
+          </button>
 
           {/* Viewers panel toggle */}
           <button

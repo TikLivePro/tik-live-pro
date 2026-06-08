@@ -68,7 +68,8 @@
     "optionalLabel": "optionnel",
     "endStream": "Terminer le stream",
     "quality": {
-      "label": "Qualité d'enregistrement"
+      "label": "Qualité",
+      "streamLabel": "Qualité du stream"
     },
     "camera": {
       "optional": "Prévisualisation caméra (optionnelle)",
@@ -178,6 +179,24 @@
       "noneYet": "Aucun spectateur pour l'instant",
       "updatedOn": "Liste des spectateurs visible",
       "updatedOff": "Liste des spectateurs masquée"
+    },
+    "videoShare": {
+      "sourceLabel": "Vidéo",
+      "sourcePickerLabel": "Source vidéo",
+      "camera": "Caméra",
+      "localFile": "Fichier",
+      "onlineUrl": "URL",
+      "loadFile": "Choisir un fichier",
+      "urlPlaceholder": "Collez l'URL de la vidéo…",
+      "loadUrl": "Charger",
+      "play": "Lire",
+      "pause": "Pause",
+      "seek": "Avancer",
+      "allowViewerControl": "Autoriser le contrôle",
+      "viewerControlEnabled": "Les spectateurs contrôlent",
+      "viewerControlDisabled": "Vous seul contrôlez",
+      "noVideoLoaded": "Aucune vidéo chargée",
+      "pausedViewersBlack": "En pause — les spectateurs voient un écran noir"
     },
     "errors": {
       "noDestinations": "Veuillez ajouter au moins une destination",
@@ -492,7 +511,14 @@
     "noViewers": "Aucun spectateur pour l'instant",
     "noComments": "Aucun commentaire pour l'instant",
     "commentPlaceholder": "Ajouter un commentaire…",
-    "send": "Envoyer"
+    "send": "Envoyer",
+    "videoControls": {
+      "label": "Contrôles vidéo",
+      "play": "Lire",
+      "pause": "Pause",
+      "seek": "Avancer",
+      "controlDisabled": "En attente du streamer…"
+    }
   },
   "notFound": {
     "heading": "Page introuvable",

@@ -14,6 +14,7 @@ export class LiveSession {
     private _destinations: PlatformStreamDestination[],
     private _shouldRecord: boolean,
     private _viewersVisible: boolean,
+    private _allowViewerVideoControl: boolean,
     private _platformHlsUrl: string | null,
     private _startedAt: Date | null,
     private _endedAt: Date | null,
@@ -29,6 +30,7 @@ export class LiveSession {
       LSS.CREATED,
       [],
       shouldRecord,
+      false,
       false,
       null,
       null,
@@ -46,6 +48,7 @@ export class LiveSession {
     destinations: PlatformStreamDestination[];
     shouldRecord: boolean;
     viewersVisible: boolean;
+    allowViewerVideoControl: boolean;
     platformHlsUrl: string | null;
     startedAt: Date | null;
     endedAt: Date | null;
@@ -60,6 +63,7 @@ export class LiveSession {
       props.destinations,
       props.shouldRecord,
       props.viewersVisible,
+      props.allowViewerVideoControl,
       props.platformHlsUrl,
       props.startedAt,
       props.endedAt,
@@ -84,6 +88,10 @@ export class LiveSession {
 
   setViewersVisible(visible: boolean): void {
     this._viewersVisible = visible;
+  }
+
+  setAllowViewerVideoControl(allow: boolean): void {
+    this._allowViewerVideoControl = allow;
   }
 
   setPlatformHlsUrl(url: string | null): void {
@@ -150,6 +158,7 @@ export class LiveSession {
   get destinations(): PlatformStreamDestination[] { return [...this._destinations]; }
   get shouldRecord(): boolean { return this._shouldRecord; }
   get viewersVisible(): boolean { return this._viewersVisible; }
+  get allowViewerVideoControl(): boolean { return this._allowViewerVideoControl; }
   get platformHlsUrl(): string | null { return this._platformHlsUrl; }
   get startedAt(): Date | null { return this._startedAt; }
   get endedAt(): Date | null { return this._endedAt; }
