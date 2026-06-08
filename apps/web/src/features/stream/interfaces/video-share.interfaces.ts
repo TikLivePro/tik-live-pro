@@ -34,4 +34,5 @@ export interface VideoShareResult {
   setVideoVolume: (volume: number) => void;
   getVideoTrack: () => MediaStreamTrack | null;
   getAudioTrack: () => MediaStreamTrack | null;
+  videoLoadKey: number;
 }

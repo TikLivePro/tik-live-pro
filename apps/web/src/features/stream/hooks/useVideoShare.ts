@@ -86,6 +86,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   const [loadError, setLoadError] = useState<string | null>(null);
   const [recentSources, setRecentSources] = useState<RecentSource[]>(loadSavedUrls);
   const [videoVolume, setVideoVolumeState] = useState(50);
+  const [videoLoadKey, setVideoLoadKey] = useState(0);
 
   const allowViewerControlRef = useRef(false);
   const sourceTypeRef = useRef<VideoSourceType>('camera');
@@ -118,6 +119,15 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     const onPause = (): void => setIsPlaying(false);
     const onEnded = (): void => setIsPlaying(false);
     const onLoadedData = (): void => {
+      // Re-capture the stream so getVideoTrack() returns a live track for the new source.
+      // After video.load(), the previous captureStream() track can be in a no-data state;
+      // a fresh capture gives WebRTC a healthy track to replace with.
+      try {
+        capturedStreamRef.current = (video as CaptureableVideo).captureStream();
+      } catch {
+        // ignore — capturedStreamRef keeps the old stream if recapture fails
+      }
+      setVideoLoadKey((k) => k + 1);
       setIsVideoLoaded(true);
       setLoadError(null);
       setDuration(isFinite(video.duration) ? video.duration : 0);
@@ -415,5 +425,6 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     setVideoVolume,
     getVideoTrack,
     getAudioTrack,
+    videoLoadKey,
   };
 }

@@ -13,12 +13,8 @@ export function useSessionHistory() {
     try {
       const res = await apiFetch(`${API_BASE}/sessions`);
 
-      console.log('res :>> ', res);
-
       if (res.ok) {
         const json = (await res.json()) as { data: LiveSession[] };
-
-        console.log('json :>> ', json);
 
         setSessions(
           json.data.filter(
@@ -34,8 +30,6 @@ export function useSessionHistory() {
   useEffect(() => {
     void fetch();
   }, [fetch]);
-
-  console.log('sessions 2222 :>> ', sessions);
 
   return { sessions, loading, refresh: fetch };
 }

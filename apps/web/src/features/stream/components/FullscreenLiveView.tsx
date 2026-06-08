@@ -237,24 +237,28 @@ export function FullscreenLiveView(): React.ReactElement {
   ]);
 
   // Auto-play pre-selected video when stream starts.
-  // When a video is selected before going live, it loads but can't autoplay due to
-  // browser policies (no user interaction yet). Once the stream starts (whipState = 'connected'),
-  // we have user interaction context (from the "Go Live" button), so we can play the video.
+  // Only triggers when WHIP connects or the video becomes loaded — NOT on every pause,
+  // so the user's pause action is not immediately overridden.
   useEffect(() => {
     if (whipState !== 'connected') return;
     if (videoShare.sourceType === 'camera') return;
     if (!videoShare.isVideoLoaded) return;
     if (videoShare.isPlaying) return;
-
-    // Video is loaded but not playing — start it now that stream has started
     videoShare.play();
-  }, [
-    whipState,
-    videoShare.sourceType,
-    videoShare.isVideoLoaded,
-    videoShare.isPlaying,
-    videoShare.play,
-  ]);
+    // intentionally exclude videoShare.isPlaying from deps so this doesn't re-fire on pause
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [whipState, videoShare.sourceType, videoShare.isVideoLoaded, videoShare.play]);
+
+  // Refresh the WHIP video track whenever a new file finishes loading.
+  // captureStream() re-captures a live track in onLoadedData; replacing the sender
+  // prevents the receiver from showing a frozen/black frame after a source change.
+  useEffect(() => {
+    if (whipState !== 'connected') return;
+    if (videoShare.sourceType === 'camera') return;
+    const videoTrack = videoShare.getVideoTrack();
+    if (videoTrack) void replaceVideoTrack(videoTrack);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoShare.videoLoadKey]);
 
   // Persist viewer video control setting on toggle
   const updateAllowViewerVideoControl = useCallback(
