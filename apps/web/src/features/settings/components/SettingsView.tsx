@@ -1,8 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { ProfileSection } from './ProfileSection';
 import { AppearanceSection } from './AppearanceSection';
 import { NotificationsSection } from './NotificationsSection';
@@ -11,12 +13,37 @@ import { SecuritySection } from './SecuritySection';
 import { ConnectedAccountsSection } from './ConnectedAccountsSection';
 import { BackArrowIcon, LogOutIcon } from '@/features/auth/components/AuthIcons';
 import { useAuth } from '@/features/auth';
+import { useQueryClient } from '@tanstack/react-query';
 
 export function SettingsView(): React.JSX.Element {
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
   const tAuth = useTranslations('auth');
+  const tAccounts = useTranslations('accounts');
+  const tNotifications = useTranslations('notifications');
   const { logout } = useAuth();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const connected = searchParams.get('connected');
+    const error = searchParams.get('error');
+    if (connected) {
+      const platformLabel = connected.charAt(0).toUpperCase() + connected.slice(1);
+      toast.success(tNotifications('accountConnected', { platform: platformLabel }));
+      void queryClient.invalidateQueries({ queryKey: ['social-accounts'] });
+    } else if (error === 'connect_failed') {
+      toast.error(tAccounts('errors.connectFailed'));
+    }
+    if (connected ?? error) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('connected');
+      url.searchParams.delete('error');
+      router.replace(url.pathname + (url.search || ''), { scroll: false });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">

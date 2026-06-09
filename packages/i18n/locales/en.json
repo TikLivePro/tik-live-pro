@@ -198,6 +198,7 @@
       "viewerControlDisabled": "Only you control",
       "noVideoLoaded": "No video loaded",
       "pausedViewersBlack": "Paused — viewers see a black screen",
+      "buffering": "Buffering…",
       "recent": "Recent",
       "total": "total",
       "loadMore": "+ {count} more",

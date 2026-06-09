@@ -20,6 +20,8 @@ export interface VideoShareResult {
   duration: number;
   allowViewerControl: boolean;
   isVideoLoaded: boolean;
+  isBuffering: boolean;
+  bufferedAhead: number;
   loadError: string | null;
   recentSources: RecentSource[];
   videoVolume: number;

@@ -9,6 +9,8 @@ interface Props {
   duration: number;
   allowViewerControl: boolean;
   isVideoLoaded: boolean;
+  isBuffering: boolean;
+  bufferedAhead: number;
   loadError: string | null;
   videoVolume: number;
   onPlay: () => void;
@@ -33,6 +35,8 @@ export function VideoSharePlayer({
   duration,
   allowViewerControl,
   isVideoLoaded,
+  isBuffering,
+  bufferedAhead,
   loadError,
   videoVolume,
   onPlay,
@@ -61,11 +65,29 @@ export function VideoSharePlayer({
             className="h-1 w-full cursor-pointer accent-brand"
           />
 
+          {/* Buffer-ahead track — gray fill showing how far the browser has pre-fetched */}
+          {duration > 0 && (
+            <div className="h-px w-full overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full bg-white/30 transition-[width] duration-500"
+                style={{ width: `${Math.min(100, ((currentTime + bufferedAhead) / duration) * 100)}%` }}
+              />
+            </div>
+          )}
+
           {/* Time */}
           <div className="flex items-center justify-between text-[10px] tabular-nums text-white/40">
             <span>{formatTime(currentTime)}</span>
             <span>{formatTime(duration)}</span>
           </div>
+
+          {/* Buffering indicator */}
+          {isBuffering && (
+            <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-900/20 px-2.5 py-1 text-[10px] font-semibold text-amber-300">
+              <span className="h-2.5 w-2.5 animate-spin rounded-full border border-amber-300 border-t-transparent" />
+              {t('videoShare.buffering')}
+            </div>
+          )}
 
           {/* Controls row */}
           <div className="flex items-center gap-2">

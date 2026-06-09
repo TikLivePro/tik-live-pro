@@ -214,15 +214,24 @@ export function FullscreenLiveView(): React.ReactElement {
 
     void (async () => {
       if (shareSourceType === 'camera') {
+        // Tear down compositor (no raw-track restore — camera track is different)
+        cancelAnimationFrame(compositorRafRef.current);
+        compositorStreamRef.current?.getTracks().forEach((t) => t.stop());
+        compositorStreamRef.current = null;
         const cameraVideoTrack = getStream()?.getVideoTracks()[0];
         if (cameraVideoTrack) await replaceVideoTrack(cameraVideoTrack);
         const micAudioTrack = getStream()?.getAudioTracks()[0];
         if (micAudioTrack) await replaceAudioTrack(micAudioTrack);
       } else {
-        const videoTrack = getVideoTrack();
-        if (videoTrack) await replaceVideoTrack(videoTrack);
+        // Audio always comes from the video file
         const audioTrack = getAudioTrack();
         if (audioTrack) await replaceAudioTrack(audioTrack);
+        // Video: use compositor when PiP is visible, raw track otherwise
+        // (startCompositor may not be defined yet at this call site —
+        //  it is defined later; the webcamPipVisible effect handles the
+        //  actual compositor start once the source is switched.)
+        const videoTrack = getVideoTrack();
+        if (videoTrack) await replaceVideoTrack(videoTrack);
       }
       appliedSourceRef.current = shareSourceType;
     })();
@@ -250,13 +259,22 @@ export function FullscreenLiveView(): React.ReactElement {
   }, [whipState, videoShare.sourceType, videoShare.isVideoLoaded, videoShare.play]);
 
   // Refresh the WHIP video track whenever a new file finishes loading.
-  // captureStream() re-captures a live track in onLoadedData; replacing the sender
-  // prevents the receiver from showing a frozen/black frame after a source change.
+  // If the compositor is active, restart it so it captures the fresh track;
+  // otherwise fall back to the raw video track.
   useEffect(() => {
     if (whipState !== 'connected') return;
     if (videoShare.sourceType === 'camera') return;
-    const videoTrack = videoShare.getVideoTrack();
-    if (videoTrack) void replaceVideoTrack(videoTrack);
+    // startCompositor / webcamPipVisible come from a later declaration;
+    // we reference them via refs to avoid stale-closure issues.
+    const compositorTrack = webcamPipVisibleRef.current && !isCameraOffRef.current
+      ? startCompositorRef.current?.()
+      : null;
+    if (compositorTrack) {
+      void replaceVideoTrack(compositorTrack);
+    } else {
+      const videoTrack = videoShare.getVideoTrack();
+      if (videoTrack) void replaceVideoTrack(videoTrack);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoShare.videoLoadKey]);
 
@@ -295,11 +313,241 @@ export function FullscreenLiveView(): React.ReactElement {
   const [bottomControlsVisible, setBottomControlsVisible] = useState(true);
   const bottomHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Webcam PiP overlay ──────────────────────────────────────
+  // Shows the streamer's webcam in a small rounded inset (draggable)
+  // when the main feed is a video file/URL (not camera mode).
+  const [webcamPipVisible, setWebcamPipVisible] = useState(true);
+  const pipVideoRef = useRef<HTMLVideoElement>(null);
+
+  // PiP position — default to bottom-right (computed lazily so SSR is safe)
+  const [pipPos, setPipPos] = useState<{ x: number; y: number }>(() => ({
+    x: typeof window !== 'undefined' ? window.innerWidth - 130 - 80 : 800,
+    y: typeof window !== 'undefined' ? window.innerHeight - 180 - 100 : 400,
+  }));
+  // Stable ref so compositor closure always reads the latest position
+  const pipPosRef = useRef(pipPos);
+  useEffect(() => { pipPosRef.current = pipPos; }, [pipPos]);
+
+  // Drag state
+  const dragOffsetRef = useRef<{ ox: number; oy: number } | null>(null);
+  const pipWrapperRef = useRef<HTMLDivElement>(null);
+
+  function handlePipPointerDown(e: React.PointerEvent<HTMLDivElement>): void {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragOffsetRef.current = { ox: e.clientX - pipPos.x, oy: e.clientY - pipPos.y };
+  }
+
+  function handlePipPointerMove(e: React.PointerEvent<HTMLDivElement>): void {
+    if (!dragOffsetRef.current) return;
+    const wrapper = pipWrapperRef.current;
+    const pw = wrapper?.offsetWidth ?? 110;
+    const ph = wrapper?.offsetHeight ?? 160;
+    const newX = Math.max(0, Math.min(window.innerWidth - pw, e.clientX - dragOffsetRef.current.ox));
+    const newY = Math.max(0, Math.min(window.innerHeight - ph, e.clientY - dragOffsetRef.current.oy));
+    setPipPos({ x: newX, y: newY });
+  }
+
+  function handlePipPointerUp(e: React.PointerEvent<HTMLDivElement>): void {
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    dragOffsetRef.current = null;
+  }
+
+  // Keep the PiP video element fed with the latest camera MediaStream.
+  useEffect(() => {
+    const el = pipVideoRef.current;
+    if (!el) return;
+    const stream = getStream();
+    if (stream) {
+      el.srcObject = stream;
+    } else {
+      // Poll until the stream is available (getUserMedia is async)
+      const id = setInterval(() => {
+        const s = getStream();
+        if (s && pipVideoRef.current) {
+          pipVideoRef.current.srcObject = s;
+          clearInterval(id);
+        }
+      }, 200);
+      return () => clearInterval(id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Canvas compositor — streams webcam PiP to viewers ──────────
+  // When the streamer shares a video file/URL with PiP visible, we
+  // composite the video element + webcam onto a hidden canvas and feed
+  // that canvas stream as the WHIP video track.  Viewers receive the
+  // composite automatically through the existing WHEP pipeline.
+  const compositorRafRef = useRef<number>(0);
+  const compositorStreamRef = useRef<MediaStream | null>(null);
+
+  /**
+   * Builds an offscreen canvas that draws the video-share element
+   * (full frame) and the camera element (PiP inset, mirrored) at 30 fps.
+   * Returns the first video track of the resulting captureStream, or null
+   * if the required video elements are not yet ready.
+   */
+  const startCompositor = useCallback((): MediaStreamTrack | null => {
+    // Clean up any previous compositor first
+    cancelAnimationFrame(compositorRafRef.current);
+    compositorStreamRef.current?.getTracks().forEach((t) => t.stop());
+    compositorStreamRef.current = null;
+
+    const mainEl = videoShare.videoRef.current;
+    const camEl = videoRef.current; // the full-screen camera video element
+    if (!mainEl) return null;
+
+    const W = 1280;
+    const H = 720;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // PiP geometry — size in canvas pixels
+    const PIP_W = 160;
+    const PIP_H = 90;
+    const PIP_RADIUS = 12;
+    // Bottom margin raised to 90px so the viewer's bottom controls/gradient
+    // don't cover the PiP (viewer gradient is ~h-52 ≈ 208px, controls sit above it).
+    const DEFAULT_BOTTOM_MARGIN = 90;
+
+    function drawFrame(): void {
+      compositorRafRef.current = requestAnimationFrame(drawFrame);
+      if (!ctx) return;
+
+      // 1. Main video (full frame)
+      if (mainEl && mainEl.readyState >= 2) {
+        ctx.drawImage(mainEl, 0, 0, W, H);
+      } else {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, W, H);
+      }
+
+      // 2. Webcam PiP inset — position follows the streamer's drag position,
+      //    scaled from screen coordinates to canvas (1280×720) coordinates.
+      if (camEl && camEl.readyState >= 2) {
+        const sw = window.innerWidth  || W;
+        const sh = window.innerHeight || H;
+        const { x: screenX, y: screenY } = pipPosRef.current;
+        // Scale screen position → canvas position, clamped inside canvas
+        const scaleX = W / sw;
+        const scaleY = H / sh;
+        const pipX = Math.max(0, Math.min(W - PIP_W, screenX * scaleX));
+        // If the streamer hasn't moved the pip yet (default position), use the
+        // bottom-right corner with a viewer-safe margin.
+        const rawPipY = screenY * scaleY;
+        const pipY = rawPipY + PIP_H > H - DEFAULT_BOTTOM_MARGIN
+          ? H - PIP_H - DEFAULT_BOTTOM_MARGIN
+          : Math.max(0, rawPipY);
+
+        ctx.save();
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(pipX, pipY, PIP_W, PIP_H, PIP_RADIUS);
+        } else {
+          ctx.rect(pipX, pipY, PIP_W, PIP_H);
+        }
+        ctx.clip();
+        ctx.translate(pipX + PIP_W, pipY);
+        ctx.scale(-1, 1);
+        ctx.drawImage(camEl, 0, 0, PIP_W, PIP_H);
+        ctx.restore();
+
+        // Subtle border
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(pipX, pipY, PIP_W, PIP_H, PIP_RADIUS);
+        } else {
+          ctx.rect(pipX, pipY, PIP_W, PIP_H);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    drawFrame();
+
+    const stream = canvas.captureStream(30);
+    compositorStreamRef.current = stream;
+    return stream.getVideoTracks()[0] ?? null;
+  }, [videoShare.videoRef, videoRef, pipPosRef]);
+
+  /** Tears down the compositor and optionally restores the raw video track. */
+  const stopCompositor = useCallback(
+    async (restoreRawTrack = true): Promise<void> => {
+      cancelAnimationFrame(compositorRafRef.current);
+      compositorStreamRef.current?.getTracks().forEach((t) => t.stop());
+      compositorStreamRef.current = null;
+      if (restoreRawTrack && whipState === 'connected') {
+        const rawTrack = videoShare.getVideoTrack();
+        if (rawTrack) await replaceVideoTrack(rawTrack);
+      }
+    },
+    [whipState, videoShare, replaceVideoTrack],
+  );
+
+  // Stable mutable refs so the videoLoadKey effect (declared earlier, runs
+  // asynchronously) can always read the latest values without stale closures.
+  const webcamPipVisibleRef = useRef(webcamPipVisible);
+  const isCameraOffRef = useRef(isCameraOff);
+  const startCompositorRef = useRef(startCompositor);
+  useEffect(() => { webcamPipVisibleRef.current = webcamPipVisible; }, [webcamPipVisible]);
+  useEffect(() => { isCameraOffRef.current = isCameraOff; }, [isCameraOff]);
+  useEffect(() => { startCompositorRef.current = startCompositor; }, [startCompositor]);
+
+  // Start / stop the canvas compositor whenever:
+  //   • the streamer toggles the webcam PiP on/off
+  //   • the source type changes (camera ↔ video file)
+  //   • the camera is turned off while PiP is visible
+  useEffect(() => {
+    if (whipState !== 'connected') return;
+    if (shareSourceType === 'camera') {
+      // No compositor needed in full-camera mode; clean up if it was running.
+      void stopCompositor(false);
+      return;
+    }
+    if (webcamPipVisible && !isCameraOff) {
+      // Start compositor and push the composited track to WHIP.
+      const track = startCompositor();
+      if (track) void replaceVideoTrack(track);
+    } else {
+      // PiP hidden or cam turned off — restore the raw video-file track.
+      void stopCompositor(true);
+    }
+    return () => {
+      // Cleanup on unmount / deps change — stop the RAF loop only;
+      // track replacement is handled by the next effect run.
+      cancelAnimationFrame(compositorRafRef.current);
+    };
+  }, [
+    webcamPipVisible,
+    isCameraOff,
+    shareSourceType,
+    whipState,
+    startCompositor,
+    stopCompositor,
+    replaceVideoTrack,
+  ]);
+
   function showBottomControls(): void {
     setBottomControlsVisible(true);
     if (bottomHideTimerRef.current) clearTimeout(bottomHideTimerRef.current);
     bottomHideTimerRef.current = setTimeout(() => setBottomControlsVisible(false), 4000);
   }
+
+  // Start the idle timer on mount so controls auto-hide even without any mouse movement.
+  useEffect(() => {
+    showBottomControls();
+    return () => {
+      if (bottomHideTimerRef.current) clearTimeout(bottomHideTimerRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleStreamerMouseMove(): void {
     showBottomControls();
@@ -440,6 +688,50 @@ export function FullscreenLiveView(): React.ReactElement {
             (isCameraOff || videoShare.sourceType !== 'camera') && 'opacity-0',
           )}
         />
+
+        {/* ── Webcam PiP overlay (draggable) ── */}
+        {/* Always in the DOM so pipVideoRef is populated at mount.
+            Position driven by pipPos state; drag handled via pointer events. */}
+        <div
+          ref={pipWrapperRef}
+          onPointerDown={handlePipPointerDown}
+          onPointerMove={handlePipPointerMove}
+          onPointerUp={handlePipPointerUp}
+          style={{ left: pipPos.x, top: pipPos.y }}
+          className={cn(
+            'absolute z-30 cursor-grab active:cursor-grabbing transition-opacity duration-300 ease-out select-none',
+            videoShare.sourceType !== 'camera' && !isCameraOff && webcamPipVisible
+              ? 'opacity-100 scale-100 pointer-events-auto'
+              : 'opacity-0 scale-90 pointer-events-none',
+          )}
+        >
+          {/* Outer glow ring */}
+          <div className="rounded-2xl p-[2px] bg-gradient-to-br from-white/30 via-white/10 to-white/5 shadow-2xl shadow-black/60">
+            <div className="relative overflow-hidden rounded-[14px] border border-white/10">
+              <video
+                ref={pipVideoRef}
+                autoPlay
+                muted
+                playsInline
+                className="block h-32 w-[90px] object-cover [transform:scaleX(-1)] sm:h-40 sm:w-28"
+              />
+              {/* Subtle vignette */}
+              <div className="pointer-events-none absolute inset-0 rounded-[14px] bg-gradient-to-b from-black/10 via-transparent to-black/20" />
+              {/* Live indicator dot */}
+              <div className="absolute left-2 top-2 flex items-center gap-1">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.8)]" />
+              </div>
+              {/* Drag hint — shows on hover */}
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity hover:opacity-100">
+                <svg className="h-5 w-5 text-white/60 drop-shadow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="5 9 2 12 5 15" /><polyline points="9 5 12 2 15 5" />
+                  <polyline points="15 19 12 22 9 19" /><polyline points="19 9 22 12 19 15" />
+                  <line x1="2" y1="12" x2="22" y2="12" /><line x1="12" y1="2" x2="12" y2="22" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
         {/* Video share element — always in DOM so captureStream() works; shown when active */}
         {/* Not muted: Web Audio (createMediaElementSource) has taken over audio routing,
             so local volume is controlled by monitorGain, not the element's muted attr. */}
@@ -447,6 +739,7 @@ export function FullscreenLiveView(): React.ReactElement {
           ref={videoShare.videoRef}
           autoPlay
           playsInline
+          preload="auto"
           onClick={() => {
             if (videoShare.sourceType !== 'camera') {
               if (videoShare.isPlaying) videoShare.pause();
@@ -724,6 +1017,8 @@ export function FullscreenLiveView(): React.ReactElement {
                 duration={videoShare.duration}
                 allowViewerControl={videoShare.allowViewerControl}
                 isVideoLoaded={videoShare.isVideoLoaded}
+                isBuffering={videoShare.isBuffering}
+                bufferedAhead={videoShare.bufferedAhead}
                 loadError={videoShare.loadError}
                 videoVolume={videoShare.videoVolume}
                 onPlay={() => videoShare.play()}
@@ -769,7 +1064,12 @@ export function FullscreenLiveView(): React.ReactElement {
         )}
 
         {/* ── Right side: action buttons + floating reactions ── */}
-        <div className="absolute bottom-28 right-3 flex flex-col items-center gap-3">
+        <div
+          className={cn(
+            'absolute bottom-28 right-3 flex flex-col items-center gap-3 transition-all duration-300',
+            bottomControlsVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-3 pointer-events-none',
+          )}
+        >
           <div className="pointer-events-none relative h-44 w-12 overflow-visible">
             {liveReactions.map((r) => (
               <LiveReactionFloat
@@ -1012,6 +1312,55 @@ export function FullscreenLiveView(): React.ReactElement {
                 )}
               >
                 {isRecording ? t('recording.active') : t('recording.start')}
+              </span>
+            </button>
+          )}
+
+          {/* Webcam PiP toggle — only shown when main source is video/URL */}
+          {videoShare.sourceType !== 'camera' && !isCameraOff && (
+            <button
+              type="button"
+              onClick={() => setWebcamPipVisible((v) => !v)}
+              aria-label={webcamPipVisible ? 'Hide webcam overlay' : 'Show webcam overlay'}
+              className={cn(
+                'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+                webcamPipVisible
+                  ? 'border-cyan-400/40 bg-cyan-900/50 text-cyan-300 shadow-cyan-900/20'
+                  : 'border-white/20 bg-black/45 text-white shadow-black/20',
+              )}
+            >
+              {webcamPipVisible ? (
+                <svg
+                  className="h-5 w-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  {/* Camera with checkmark overlay = PiP on */}
+                  <path d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.89L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                  <polyline points="7 11.5 9.5 14 13 10" strokeWidth="2.5" />
+                </svg>
+              ) : (
+                <svg
+                  className="h-5 w-5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  {/* Camera with slash = PiP off */}
+                  <path d="M16 16v1a2 2 0 01-2 2H3a2 2 0 01-2-2V7a2 2 0 012-2h2m5.66 0H14a2 2 0 012 2v3.34l1 1L23 7v10M1 1l22 22" />
+                </svg>
+              )}
+              <span className="text-[9px] font-semibold leading-none">
+                {webcamPipVisible ? 'Cam on' : 'Cam off'}
               </span>
             </button>
           )}

@@ -21,6 +21,7 @@ const envSchema = baseEnvSchema.extend({
   FACEBOOK_APP_ID: z.string(),
   FACEBOOK_APP_SECRET: z.string(),
   OAUTH_REDIRECT_BASE_URL: z.string().url(),
+  FRONTEND_URL: z.string().url().default('http://localhost:3010'),
   TOKEN_ENCRYPTION_KEY: z.string().min(32),
   INTERNAL_API_KEY: z.string().min(32),
 });
@@ -123,6 +124,14 @@ All endpoints except the OAuth callback require a JWT Bearer token.
     db,
     tokenEncryptionKey: env.TOKEN_ENCRYPTION_KEY,
     internalApiKey: env.INTERNAL_API_KEY,
+    tiktokClientKey: env.TIKTOK_CLIENT_KEY,
+    tiktokClientSecret: env.TIKTOK_CLIENT_SECRET,
+    facebookAppId: env.FACEBOOK_APP_ID,
+    facebookAppSecret: env.FACEBOOK_APP_SECRET,
+    oauthRedirectBaseUrl: env.OAUTH_REDIRECT_BASE_URL,
+    frontendUrl: env.FRONTEND_URL,
+    nats,
+    logger,
   });
 
   registerTikTokWebhookRoutes(fastify, {

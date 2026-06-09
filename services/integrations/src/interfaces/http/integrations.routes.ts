@@ -1,8 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { createDecipheriv } from 'node:crypto';
-import { inArray } from 'drizzle-orm';
-import { socialAccounts } from '../../infrastructure/db/schema.js';
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
+import { and, eq, inArray } from 'drizzle-orm';
+import { socialAccounts, oauthStates } from '../../infrastructure/db/schema.js';
+import type { NatsJetStreamClient } from '@tik-live-pro/events';
+import { Subjects } from '@tik-live-pro/events';
+import type { Logger } from '@tik-live-pro/logger';
+import { SocialPlatform } from '@tik-live-pro/shared-types';
+import type { SocialAccountId, UserId } from '@tik-live-pro/shared-types';
+import { TikTokAdapter, FacebookAdapter } from '@tik-live-pro/platform-adapters';
 
 // ---------------------------------------------------------------------------
 // Reusable schema fragments
@@ -69,6 +75,15 @@ const socialAccountSchema = {
 
 // ---------------------------------------------------------------------------
 
+function encryptToken(plaintext: string, keyHex: string): string {
+  const key = Buffer.from(keyHex.padEnd(64, '0').slice(0, 64), 'hex');
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${iv.toString('hex')}:${tag.toString('hex')}:${ciphertext.toString('hex')}`;
+}
+
 function decryptToken(encryptedHex: string, keyHex: string): string {
   const key = Buffer.from(keyHex.padEnd(64, '0').slice(0, 64), 'hex');
   const parts = encryptedHex.split(':');
@@ -81,9 +96,23 @@ function decryptToken(encryptedHex: string, keyHex: string): string {
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
 }
 
+type IntegrationsDeps = {
+  db: NodePgDatabase;
+  tokenEncryptionKey: string;
+  internalApiKey: string;
+  tiktokClientKey: string;
+  tiktokClientSecret: string;
+  facebookAppId: string;
+  facebookAppSecret: string;
+  oauthRedirectBaseUrl: string;
+  frontendUrl: string;
+  nats: NatsJetStreamClient;
+  logger: Logger;
+};
+
 export function registerIntegrationsRoutes(
   fastify: FastifyInstance,
-  deps: { db: NodePgDatabase; tokenEncryptionKey: string; internalApiKey: string },
+  deps: IntegrationsDeps,
 ): void {
   // GET /integrations/accounts -----------------------------------------------
   fastify.get(
@@ -126,8 +155,26 @@ Returns all social accounts (TikTok, Facebook) connected by the authenticated us
         },
       },
     },
-    async (_request, reply) => {
-      return reply.status(200).send({ data: [] });
+    async (request, reply) => {
+      await request.jwtVerify();
+      const userId = (request.user as { sub: string }).sub;
+
+      const rows = await deps.db
+        .select({
+          id: socialAccounts.id,
+          platform: socialAccounts.platform,
+          platformUserId: socialAccounts.platformUserId,
+          displayName: socialAccounts.displayName,
+          avatarUrl: socialAccounts.avatarUrl,
+          isActive: socialAccounts.isActive,
+          connectedAt: socialAccounts.connectedAt,
+        })
+        .from(socialAccounts)
+        .where(eq(socialAccounts.userId, userId));
+
+      return reply.status(200).send({
+        data: rows.map((r) => ({ ...r, connectedAt: r.connectedAt.toISOString() })),
+      });
     },
   );
 
@@ -169,7 +216,47 @@ Revokes the stored OAuth tokens and removes the social account from the user's p
         },
       },
     },
-    async (_request, reply) => {
+    async (request, reply) => {
+      await request.jwtVerify();
+      const userId = (request.user as { sub: string }).sub;
+      const { accountId } = request.params;
+
+      const [account] = await deps.db
+        .select()
+        .from(socialAccounts)
+        .where(eq(socialAccounts.id, accountId));
+
+      if (!account) {
+        return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Account not found' } });
+      }
+      if (account.userId !== userId) {
+        return reply.status(403).send({ error: { code: 'FORBIDDEN', message: 'Account belongs to a different user' } });
+      }
+
+      // Best-effort token revocation
+      try {
+        const accessToken = decryptToken(account.accessTokenEncrypted, deps.tokenEncryptionKey);
+        if (account.platform === SocialPlatform.FACEBOOK) {
+          const adapter = new FacebookAdapter({ appId: deps.facebookAppId, appSecret: deps.facebookAppSecret }, deps.logger);
+          await adapter.revokeTokens(accessToken);
+        } else if (account.platform === SocialPlatform.TIKTOK) {
+          const adapter = new TikTokAdapter({ clientKey: deps.tiktokClientKey, clientSecret: deps.tiktokClientSecret }, deps.logger);
+          await adapter.revokeTokens(accessToken);
+        }
+      } catch (err) {
+        deps.logger.warn({ err, accountId }, 'Token revocation failed (non-blocking)');
+      }
+
+      await deps.db.delete(socialAccounts).where(eq(socialAccounts.id, accountId));
+
+      await deps.nats.publish(Subjects.INTEGRATION_ACCOUNT_DISCONNECTED, {
+        socialAccountId: accountId as SocialAccountId,
+        userId: userId as UserId,
+        platform: account.platform as SocialPlatform,
+        platformUserId: account.platformUserId,
+        reason: 'user_disconnected' as const,
+      });
+
       return reply.status(204).send();
     },
   );
@@ -235,8 +322,49 @@ Initiates the OAuth 2.0 authorization code flow for the specified platform.
         },
       },
     },
-    async (_request, reply) => {
-      return reply.status(200).send({ data: { authUrl: 'https://open.tiktok.com/platform/oauth' } });
+    async (request, reply) => {
+      await request.jwtVerify();
+      const userId = (request.user as { sub: string }).sub;
+      const { platform } = request.params;
+
+      if (platform !== 'tiktok' && platform !== 'facebook') {
+        return reply.status(400).send({ error: { code: 'BAD_REQUEST', message: 'Unsupported platform' } });
+      }
+
+      const state = randomUUID();
+      const redirectUri = `${deps.oauthRedirectBaseUrl}/integrations/oauth/${platform}/callback`;
+
+      await deps.db.insert(oauthStates).values({
+        id: randomUUID(),
+        userId,
+        platform,
+        state,
+        redirectUri,
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      });
+
+      let authUrl: string;
+      if (platform === 'tiktok') {
+        const params = new URLSearchParams({
+          client_key: deps.tiktokClientKey,
+          redirect_uri: redirectUri,
+          state,
+          scope: 'user.info.basic,live.stream.content',
+          response_type: 'code',
+        });
+        authUrl = `https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`;
+      } else {
+        const params = new URLSearchParams({
+          client_id: deps.facebookAppId,
+          redirect_uri: redirectUri,
+          state,
+          scope: 'pages_show_list,pages_manage_posts,pages_read_engagement',
+          response_type: 'code',
+        });
+        authUrl = `https://www.facebook.com/v21.0/dialog/oauth?${params.toString()}`;
+      }
+
+      return reply.status(200).send({ data: { authUrl } });
     },
   );
 
@@ -295,8 +423,102 @@ Callback URL invoked by the social platform after the user completes the OAuth c
         },
       },
     },
-    async (_request, reply) => {
-      return reply.redirect('https://app.tiklivepro.pro/integrations?success=true');
+    async (request, reply) => {
+      const { platform } = request.params;
+      const { code, state, error } = request.query;
+      const failureUrl = `${deps.frontendUrl}/settings?error=connect_failed`;
+
+      if (error || !code || !state) {
+        return reply.redirect(failureUrl);
+      }
+
+      const [stateRow] = await deps.db
+        .select()
+        .from(oauthStates)
+        .where(and(eq(oauthStates.state, state), eq(oauthStates.platform, platform)));
+
+      if (!stateRow || stateRow.expiresAt < new Date()) {
+        return reply.redirect(failureUrl);
+      }
+
+      await deps.db.delete(oauthStates).where(eq(oauthStates.id, stateRow.id));
+
+      try {
+        let accessToken: string;
+        let refreshToken: string | null;
+        let expiresAt: Date;
+        let platformUserId: string;
+        let displayName: string;
+        let avatarUrl: string | null;
+
+        if (platform === 'facebook') {
+          const adapter = new FacebookAdapter({ appId: deps.facebookAppId, appSecret: deps.facebookAppSecret }, deps.logger);
+          const tokens = await adapter.exchangeCode(code, stateRow.redirectUri);
+          const user = await adapter.getUser(tokens.accessToken);
+          accessToken = tokens.accessToken;
+          refreshToken = tokens.refreshToken;
+          expiresAt = tokens.expiresAt;
+          platformUserId = user.platformUserId;
+          displayName = user.displayName;
+          avatarUrl = user.avatarUrl;
+        } else {
+          const adapter = new TikTokAdapter({ clientKey: deps.tiktokClientKey, clientSecret: deps.tiktokClientSecret }, deps.logger);
+          const tokens = await adapter.exchangeCode(code, stateRow.redirectUri);
+          const user = await adapter.getUser(tokens.accessToken);
+          accessToken = tokens.accessToken;
+          refreshToken = tokens.refreshToken;
+          expiresAt = tokens.expiresAt;
+          platformUserId = user.platformUserId;
+          displayName = user.displayName;
+          avatarUrl = user.avatarUrl;
+        }
+
+        const encryptedAccessToken = encryptToken(accessToken, deps.tokenEncryptionKey);
+        const encryptedRefreshToken = refreshToken ? encryptToken(refreshToken, deps.tokenEncryptionKey) : null;
+        const accountId = randomUUID();
+
+        const [saved] = await deps.db
+          .insert(socialAccounts)
+          .values({
+            id: accountId,
+            userId: stateRow.userId!,
+            platform,
+            platformUserId,
+            displayName,
+            avatarUrl,
+            accessTokenEncrypted: encryptedAccessToken,
+            refreshTokenEncrypted: encryptedRefreshToken,
+            tokenExpiresAt: expiresAt,
+            isActive: true,
+          })
+          .onConflictDoUpdate({
+            target: [socialAccounts.platform, socialAccounts.platformUserId],
+            set: {
+              userId: stateRow.userId!,
+              displayName,
+              avatarUrl,
+              accessTokenEncrypted: encryptedAccessToken,
+              refreshTokenEncrypted: encryptedRefreshToken,
+              tokenExpiresAt: expiresAt,
+              isActive: true,
+              updatedAt: new Date(),
+            },
+          })
+          .returning({ id: socialAccounts.id });
+
+        await deps.nats.publish(Subjects.INTEGRATION_ACCOUNT_CONNECTED, {
+          socialAccountId: (saved?.id ?? accountId) as SocialAccountId,
+          userId: stateRow.userId as UserId,
+          platform: platform as SocialPlatform,
+          platformUserId,
+          displayName,
+        });
+
+        return reply.redirect(`${deps.frontendUrl}/settings?connected=${platform}`);
+      } catch (err) {
+        deps.logger.error({ err, platform }, 'OAuth callback processing failed');
+        return reply.redirect(failureUrl);
+      }
     },
   );
 

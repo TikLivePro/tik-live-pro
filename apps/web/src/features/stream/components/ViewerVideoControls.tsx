@@ -67,63 +67,70 @@ export function ViewerVideoControls({
       aria-label={t('videoControls.label')}
     >
       {/* ── Glass pill ── */}
-      <div
-        className={cn(
-          'flex flex-col gap-2 rounded-2xl border border-white/15 bg-black/72 px-4 py-3 shadow-2xl shadow-black/50 backdrop-blur-2xl',
-          !allowViewerControl && 'pointer-events-none opacity-50',
-        )}
-      >
-        {/* ── Progress / seek bar ── */}
-        <div className="relative flex items-center gap-2">
-          {/* Seek slider */}
-          <input
-            type="range"
-            min={0}
-            max={duration || 1}
-            step={0.1}
-            value={currentTime}
-            onChange={(e) => allowViewerControl && onSeek(Number(e.target.value))}
-            disabled={!allowViewerControl}
-            aria-label={t('videoControls.seek')}
-            className="h-1 flex-1 cursor-pointer accent-brand disabled:cursor-default"
-            style={{
-              // coloured track up to current position
-              background: `linear-gradient(to right, hsl(var(--brand)) ${progress * 100}%, rgba(255,255,255,0.12) ${progress * 100}%)`,
-            }}
-          />
+      <div className="flex flex-col gap-2 rounded-2xl border border-white/15 bg-black/72 px-4 py-3 shadow-2xl shadow-black/50 backdrop-blur-2xl">
+
+        {/* ── Playback section (disabled when streamer locks control) ── */}
+        <div
+          className={cn(
+            'flex flex-col gap-2',
+            !allowViewerControl && 'pointer-events-none opacity-40',
+          )}
+        >
+          {/* Progress / seek bar */}
+          <div className="relative flex items-center gap-2">
+            <input
+              type="range"
+              min={0}
+              max={duration || 1}
+              step={0.1}
+              value={currentTime}
+              onChange={(e) => allowViewerControl && onSeek(Number(e.target.value))}
+              disabled={!allowViewerControl}
+              aria-label={t('videoControls.seek')}
+              className="h-1 flex-1 cursor-pointer accent-brand disabled:cursor-default"
+              style={{
+                background: `linear-gradient(to right, hsl(var(--brand)) ${progress * 100}%, rgba(255,255,255,0.12) ${progress * 100}%)`,
+              }}
+            />
+          </div>
+
+          {/* Play / Pause + time */}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={playing ? onPause : onPlay}
+              disabled={!allowViewerControl}
+              aria-label={playing ? t('videoControls.pause') : t('videoControls.play')}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition-all duration-150 hover:scale-110 hover:bg-white/25 active:scale-90 disabled:cursor-default disabled:opacity-40"
+            >
+              {playing ? (
+                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="6" y="4" width="4" height="16" />
+                  <rect x="14" y="4" width="4" height="16" />
+                </svg>
+              ) : (
+                <svg className="h-3 w-3 translate-x-px" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+              )}
+            </button>
+
+            <span className="min-w-[72px] text-[10px] tabular-nums text-white/45">
+              {formatTime(currentTime)} / {formatTime(duration)}
+            </span>
+          </div>
         </div>
 
-        {/* ── Controls row ── */}
+        {/* Thin separator */}
+        {!allowViewerControl && (
+          <div className="h-px w-full rounded-full bg-white/8" />
+        )}
+
+        {/* ── Volume + share row (ALWAYS interactive regardless of allowViewerControl) ── */}
         <div className="flex items-center gap-3">
-          {/* Play / Pause */}
-          <button
-            type="button"
-            onClick={playing ? onPause : onPlay}
-            disabled={!allowViewerControl}
-            aria-label={playing ? t('videoControls.pause') : t('videoControls.play')}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition-all duration-150 hover:scale-110 hover:bg-white/25 active:scale-90 disabled:cursor-default disabled:opacity-40"
-          >
-            {playing ? (
-              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="6" y="4" width="4" height="16" />
-                <rect x="14" y="4" width="4" height="16" />
-              </svg>
-            ) : (
-              <svg className="h-3 w-3 translate-x-px" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <polygon points="5 3 19 12 5 21 5 3" />
-              </svg>
-            )}
-          </button>
-
-          {/* Time */}
-          <span className="min-w-[72px] text-[10px] tabular-nums text-white/45">
-            {formatTime(currentTime)} / {formatTime(duration)}
-          </span>
-
-          {/* Spacer */}
+          {/* Spacer so volume/share sit on the right */}
           <div className="flex-1" />
 
-          {/* ── Volume section ── */}
           {/* Mute toggle */}
           <button
             type="button"
@@ -150,7 +157,7 @@ export function ViewerVideoControls({
             )}
           </button>
 
-          {/* Volume slider — compact width */}
+          {/* Volume slider */}
           <input
             type="range"
             min={0}

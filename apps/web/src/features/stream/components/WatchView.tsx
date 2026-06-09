@@ -587,6 +587,39 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     socketRef.current?.emit('video_control_request', { type, ...(currentTime !== undefined ? { currentTime } : {}) });
   }, []);
 
+  // ── Keyboard shortcuts ──────────────────────────────────────────
+  // Space  → play / pause   (requires allowViewerControl)
+  // ←  →   → seek ±10 s     (requires allowViewerControl)
+  // Guards: only fires when video is active + control is allowed + focus is NOT in a text field.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent): void {
+      // Don't steal keys from inputs / textareas / contenteditable elements
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
+
+      if (!videoState?.allowViewerControl) return;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        sendVideoControl(videoState.playing ? 'pause' : 'play');
+        showControls();
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        const newTime = Math.max(0, videoState.currentTime - 10);
+        sendVideoControl('seek', newTime);
+        showControls();
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        const newTime = Math.min(videoState.duration, videoState.currentTime + 10);
+        sendVideoControl('seek', newTime);
+        showControls();
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [videoState, sendVideoControl, showControls]);
+
   // Auto-scroll comment list to top when new comment arrives
   useEffect(() => {
     if (commentListRef.current) {

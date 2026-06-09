@@ -83,6 +83,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   const [duration, setDuration] = useState(0);
   const [allowViewerControl, setAllowViewerControlState] = useState(false);
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+  const [bufferedAhead, setBufferedAhead] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [recentSources, setRecentSources] = useState<RecentSource[]>(loadSavedUrls);
   const [videoVolume, setVideoVolumeState] = useState(50);
@@ -113,11 +114,23 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
       capturedStreamRef.current = null;
     }
 
+    function getBufferedAhead(el: HTMLVideoElement): number {
+      const { buffered, currentTime } = el;
+      for (let i = 0; i < buffered.length; i++) {
+        if (buffered.start(i) <= currentTime + 0.5 && buffered.end(i) > currentTime) {
+          return Math.max(0, buffered.end(i) - currentTime);
+        }
+      }
+      return 0;
+    }
+
     const onTimeUpdate = (): void => setCurrentTime(video.currentTime);
     const onDurationChange = (): void => setDuration(isFinite(video.duration) ? video.duration : 0);
     const onPlay = (): void => setIsPlaying(true);
     const onPause = (): void => setIsPlaying(false);
     const onEnded = (): void => setIsPlaying(false);
+    const onProgress = (): void => setBufferedAhead(getBufferedAhead(video));
+    const onCanPlay = (): void => setBufferedAhead(getBufferedAhead(video));
     const onLoadedData = (): void => {
       // Re-capture the stream so getVideoTrack() returns a live track for the new source.
       // After video.load(), the previous captureStream() track can be in a no-data state;
@@ -155,7 +168,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
             msg =
               video.crossOrigin === 'anonymous'
                 ? 'Erreur réseau — le serveur ne renvoie pas les en-têtes CORS requis. Utilisez une URL hébergée avec CORS activé.'
-                : 'Erreur réseau — vérifiez que l\'URL est accessible.';
+                : "Erreur réseau — vérifiez que l'URL est accessible.";
             break;
           case MediaError.MEDIA_ERR_DECODE:
             msg = 'Format non supporté ou fichier corrompu.';
@@ -181,6 +194,9 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     video.addEventListener('ended', onEnded);
     video.addEventListener('loadeddata', onLoadedData);
     video.addEventListener('error', onError);
+    video.addEventListener('progress', onProgress);
+    video.addEventListener('canplay', onCanPlay);
+    video.addEventListener('canplaythrough', onCanPlay);
 
     // Set up Web Audio API for audio capture — only once per video element.
     // mediaSourcedElements guards against React Strict Mode double-invocation where
@@ -206,8 +222,8 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
         video.removeAttribute('muted');
 
         const src = ctx.createMediaElementSource(video);
-        src.connect(dest);         // → WebRTC (viewers)
-        src.connect(monitorGain);  // → streamer local monitoring
+        src.connect(dest); // → WebRTC (viewers)
+        src.connect(monitorGain); // → streamer local monitoring
         monitorGain.connect(ctx.destination);
         mediaSourcedElements.add(video);
       } catch {
@@ -223,6 +239,9 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
       video.removeEventListener('ended', onEnded);
       video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('error', onError);
+      video.removeEventListener('progress', onProgress);
+      video.removeEventListener('canplay', onCanPlay);
+      video.removeEventListener('canplaythrough', onCanPlay);
       // Do not close the AudioContext here — the mediaSourcedElements guard ensures
       // createMediaElementSource is only called once, so we keep the context alive
       // across Strict Mode's fake unmount/remount cycle. True cleanup happens on GC.
@@ -411,6 +430,15 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     duration,
     allowViewerControl,
     isVideoLoaded,
+    // Proactive check: show as buffering whenever the lookahead drops below 5 s while
+    // playing and there is still meaningful content ahead (avoids false positives near EOF).
+    isBuffering:
+      isVideoLoaded &&
+      isPlaying &&
+      sourceType !== 'camera' &&
+      duration - currentTime > 5 &&
+      bufferedAhead < 5,
+    bufferedAhead,
     loadError,
     recentSources,
     videoVolume,
