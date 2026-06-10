@@ -84,7 +84,9 @@
       "mute": "Couper le micro",
       "unmute": "Activer le micro",
       "hideCamera": "Masquer la vidéo",
-      "showCamera": "Afficher la vidéo"
+      "showCamera": "Afficher la vidéo",
+      "notDetected": "Aucune webcam détectée",
+      "enableWebcam": "Activer la webcam"
     },
     "share": {
       "sectionLabel": "PARTAGER VOTRE LIVE",
@@ -188,6 +190,11 @@
       "onlineUrl": "URL",
       "loadFile": "Choisir un fichier",
       "urlPlaceholder": "Collez l'URL de la vidéo…",
+      "urlPlatformDetected": "Les plateformes (YouTube, Twitch…) ne peuvent pas être capturées — utilisez une URL directe .mp4 ou .m3u8, ou résolvez-la via le serveur.",
+      "urlUnsafeBlocked": "Cette URL n'est pas autorisée.",
+      "urlResolve": "Résoudre via le serveur",
+      "urlResolving": "Résolution…",
+      "urlResolveFailed": "Impossible de résoudre. Vérifiez l'URL et réessayez.",
       "loadUrl": "Charger",
       "play": "Lire",
       "pause": "Pause",

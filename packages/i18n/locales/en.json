@@ -84,7 +84,9 @@
       "mute": "Mute microphone",
       "unmute": "Unmute microphone",
       "hideCamera": "Hide video",
-      "showCamera": "Show video"
+      "showCamera": "Show video",
+      "notDetected": "No webcam detected",
+      "enableWebcam": "Enable webcam"
     },
     "share": {
       "sectionLabel": "SHARE YOUR LIVE",
@@ -188,6 +190,11 @@
       "onlineUrl": "URL",
       "loadFile": "Choose File",
       "urlPlaceholder": "Paste video URL…",
+      "urlPlatformDetected": "Streaming platforms (YouTube, Twitch…) can't be captured — use a direct .mp4 or .m3u8 URL, or resolve it via the server.",
+      "urlUnsafeBlocked": "This URL is not allowed.",
+      "urlResolve": "Resolve via server",
+      "urlResolving": "Resolving…",
+      "urlResolveFailed": "Could not resolve. Check the URL and try again.",
       "loadUrl": "Load",
       "play": "Play",
       "pause": "Pause",

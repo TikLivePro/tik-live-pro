@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import Link from 'next/link';
 import Hls from 'hls.js';
+import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { io as socketIo, type Socket } from 'socket.io-client';
 
@@ -228,7 +229,7 @@ function CommentBubble({
     <div
       className={cn(
         'flex max-w-[230px] items-start gap-2 rounded-2xl border border-white/15 bg-black/60 px-3 py-2 shadow-lg backdrop-blur-lg',
-        animate && 'animate-slide-comment',
+        animate && 'animate-float-comment',
       )}
     >
       <div className="relative mt-0.5 shrink-0">
@@ -258,8 +259,11 @@ function CommentBubble({
 
 // ── Auth gate modal ───────────────────────────────────────────
 
-function AuthGateModal({ onClose }: { onClose: () => void }): React.ReactElement {
+function AuthGateModal({ onClose, callbackUrl }: { onClose: () => void; callbackUrl?: string }): React.ReactElement {
   const t = useTranslations('watch');
+  const loginHref = callbackUrl
+    ? `/auth/login?callbackUrl=${encodeURIComponent(callbackUrl)}`
+    : '/auth/login';
   return (
     <div
       className="absolute inset-0 z-50 flex items-end justify-center bg-black/40 pb-16 backdrop-blur-sm sm:items-center sm:pb-0"
@@ -273,7 +277,7 @@ function AuthGateModal({ onClose }: { onClose: () => void }): React.ReactElement
         <p className="mb-1 text-base font-semibold text-white">{t('signInToInteract')}</p>
         <p className="mb-5 text-xs text-white/50">{t('signInDesc')}</p>
         <Link
-          href="/auth/login"
+          href={loginHref}
           className="block w-full rounded-xl bg-brand py-3 text-sm font-bold text-white transition-opacity hover:opacity-90"
         >
           {t('signIn')}
@@ -319,6 +323,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const t = useTranslations('watch');
   const tStream = useTranslations('stream');
 
+  const pathname = usePathname();
   const { isAuthenticated, accessToken, displayName } = useAuthStore();
 
   const [session, setSession] = useState<PublicSession>(initialSession);
@@ -356,6 +361,8 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const [isMuted, setIsMuted] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [floatingComments, setFloatingComments] = useState<Array<{ comment: Comment; key: string }>>([]);
+  const floatingRemoveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
     const curr = comments.length;
@@ -428,6 +435,13 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
 
     socket.on('comment', (comment: Comment) => {
       setComments((prev) => [comment, ...prev].slice(0, 100));
+      const key = crypto.randomUUID();
+      setFloatingComments((prev) => [...prev, { comment, key }].slice(-MAX_FLOATING));
+      const timer = setTimeout(() => {
+        setFloatingComments((prev) => prev.filter((f) => f.key !== key));
+        floatingRemoveTimersRef.current.delete(key);
+      }, 5200);
+      floatingRemoveTimersRef.current.set(key, timer);
     });
 
     socket.on('reaction', (data: { emoji: string }) => {
@@ -448,6 +462,8 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     return () => {
       socket.disconnect();
       socketRef.current = null;
+      floatingRemoveTimersRef.current.forEach(clearTimeout);
+      floatingRemoveTimersRef.current.clear();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id, isLive]);
@@ -524,8 +540,12 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     }
   }, [commentsOpen, viewersOpen]);
 
-  function handleControlAreaMouseMove(): void {
-    if (isLive) showControls();
+  function handleControlAreaMouseMove(e: ReactMouseEvent<HTMLDivElement>): void {
+    if (!isLive) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (e.clientY > rect.bottom - rect.height * 0.3) {
+      showControls();
+    }
   }
 
   function handleControlAreaMouseLeave(): void {
@@ -627,16 +647,8 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     }
   }, [comments.length]);
 
-  function isNewComment(comment: Comment): boolean {
-    const ts = comment.receivedAt;
-    const ms = ts instanceof Date
-      ? ts.getTime()
-      : new Date(ts as unknown as string).getTime();
-    return ms > mountedAtRef.current - 500;
-  }
 
-  const anyPanelOpen = commentsOpen || viewersOpen;
-  const recentFloating = comments.slice(0, MAX_FLOATING);
+  const anyPanelOpen = viewersOpen;
 
   // ── Video renderer ─────────────────────────────────────────
   const renderVideo = (): React.ReactElement | null => {
@@ -660,12 +672,15 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const hasVideo = (isLive || isPaused) && !!session.platformHlsUrl;
 
   return (
-    <div
-      className="fixed inset-0 overflow-hidden bg-black"
-      onMouseMove={handleControlAreaMouseMove}
-      onMouseLeave={handleControlAreaMouseLeave}
-      onClick={handleVideoAreaClick}
-    >
+    <div className="fixed inset-0 flex overflow-hidden bg-black">
+
+      {/* ── Main video area ── */}
+      <div
+        className="relative flex-1 min-w-0"
+        onMouseMove={handleControlAreaMouseMove}
+        onMouseLeave={handleControlAreaMouseLeave}
+        onClick={handleVideoAreaClick}
+      >
       {/* ── Video background ── */}
       {hasVideo && renderVideo()}
       {!hasVideo && <div className="absolute inset-0 bg-[#0a0b0f]" />}
@@ -890,11 +905,11 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
           {!videoState && !anyPanelOpen && (
             <div
               className={cn(
-                'absolute bottom-8 left-1/2 z-20 w-[min(360px,90vw)]',
-                'transition-all duration-300 ease-out',
+                'absolute bottom-8 left-1/2 -translate-x-1/2 z-20 w-[min(360px,90vw)]',
+                'transition-opacity duration-300 ease-out',
                 controlsVisible
-                  ? '-translate-x-1/2 opacity-100 pointer-events-auto'
-                  : '-translate-x-[calc(50%+60vw)] opacity-0 pointer-events-none',
+                  ? 'opacity-100 pointer-events-auto'
+                  : 'opacity-0 pointer-events-none',
               )}
             >
               <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-black/72 px-4 py-3 shadow-2xl shadow-black/50 backdrop-blur-2xl">
@@ -967,11 +982,11 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
             </div>
           )}
 
-          {/* Floating comments — always visible */}
-          {!anyPanelOpen && (
+          {/* Floating comments — auto-disappear via animate-float-comment */}
+          {!commentsOpen && !anyPanelOpen && (
             <div className="absolute bottom-36 left-3 z-20 flex flex-col-reverse gap-1.5">
-              {recentFloating.map((c) => (
-                <CommentBubble key={c.id} comment={c} animate={isNewComment(c)} />
+              {floatingComments.map(({ comment, key }) => (
+                <CommentBubble key={key} comment={comment} animate />
               ))}
             </div>
           )}
@@ -980,10 +995,10 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
           {!anyPanelOpen && (
             <div
               className={cn(
-                'absolute bottom-32 right-3 z-20 flex flex-col items-center gap-2.5 transition-all duration-300 ease-out',
+                'absolute bottom-32 right-3 z-20 flex flex-col items-center gap-2.5 transition-opacity duration-300 ease-out',
                 controlsVisible
-                  ? 'opacity-100 translate-x-0 pointer-events-auto'
-                  : 'opacity-0 translate-x-4 pointer-events-none',
+                  ? 'opacity-100 pointer-events-auto'
+                  : 'opacity-0 pointer-events-none',
               )}
             >
               {/* Reaction floats */}
@@ -1079,170 +1094,6 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
 
 
 
-          {/* ── Comment bottom sheet ── */}
-          {commentsOpen && (
-            <div
-              className="absolute inset-x-0 bottom-0 z-30 flex flex-col rounded-t-3xl border-t border-white/15 bg-black/90 backdrop-blur-2xl"
-              style={{ height: '62%' }}
-            >
-              {/* Drag handle */}
-              <div className="flex justify-center pt-3">
-                <div className="h-1 w-8 rounded-full bg-white/20" />
-              </div>
-
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 py-3">
-                <div className="flex items-center gap-2">
-                  <svg
-                    className="h-4 w-4 text-white/50"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
-                  </svg>
-                  <span className="text-sm font-semibold text-white">{t('comments')}</span>
-                  {comments.length > 0 && (
-                    <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white/60">
-                      {comments.length}
-                    </span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCommentsOpen(false)}
-                  aria-label="Close"
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-white/40 transition-colors hover:bg-white/10 hover:text-white"
-                >
-                  <svg
-                    className="h-4 w-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Comment list */}
-              <div ref={commentListRef} className="flex-1 overflow-y-auto">
-                {comments.length === 0 ? (
-                  <p className="mt-10 text-center text-xs text-white/30">
-                    {t('noComments')}
-                  </p>
-                ) : (
-                  <div className="py-1">
-                    {comments.map((c) => (
-                      <div
-                        key={c.id}
-                        className="flex items-start gap-2.5 px-4 py-2"
-                      >
-                        <div className="relative mt-0.5 shrink-0">
-                          <div className="flex h-[26px] w-[26px] items-center justify-center rounded-full bg-white/15 text-[9px] font-bold text-white">
-                            {getInitials(c.authorName)}
-                          </div>
-                          <span
-                            className={cn(
-                              'absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-black/40',
-                              PLATFORM_DOT[c.platform] ?? 'bg-white/30',
-                            )}
-                          />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[11px] font-semibold text-white/60">
-                            {c.authorName}
-                          </p>
-                          <p className="break-words text-xs leading-snug text-white">
-                            {c.content}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Input row */}
-              <div
-                className="border-t border-white/10 px-3 py-3"
-                style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))' }}
-              >
-                {isAuthenticated ? (
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/70 text-[10px] font-bold text-white">
-                      {getInitials(displayName ?? 'You')}
-                    </div>
-                    <input
-                      ref={commentInputRef}
-                      value={commentText}
-                      onChange={(e) => setCommentText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          void handleSendComment();
-                        }
-                      }}
-                      placeholder={t('commentPlaceholder')}
-                      className="flex-1 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/30 outline-none transition-colors focus:border-white/35 focus:bg-white/15"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void handleSendComment()}
-                      disabled={!commentText.trim() || isSending}
-                      aria-label={t('send')}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand/40 bg-brand/70 text-white backdrop-blur-xl transition-opacity disabled:opacity-40"
-                    >
-                      {isSending ? (
-                        <svg
-                          className="h-4 w-4 animate-spin"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          aria-hidden="true"
-                        >
-                          <path d="M21 12a9 9 0 11-6.219-8.56" />
-                        </svg>
-                      ) : (
-                        <svg
-                          className="h-4 w-4"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          aria-hidden="true"
-                        >
-                          <line x1="22" y1="2" x2="11" y2="13" />
-                          <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setAuthGateOpen(true)}
-                    className="w-full rounded-xl border border-white/15 bg-white/8 py-3 text-sm font-medium text-white/60 transition-colors hover:bg-white/12 hover:text-white"
-                  >
-                    {t('signInToInteract')}
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* ── Viewers side panel ── */}
           {viewersOpen && session.viewersVisible && (
             <ViewersPanel
@@ -1255,7 +1106,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       )}
 
       {/* Auth gate modal */}
-      {authGateOpen && <AuthGateModal onClose={() => setAuthGateOpen(false)} />}
+      {authGateOpen && <AuthGateModal onClose={() => setAuthGateOpen(false)} callbackUrl={pathname} />}
 
       {/* Powered-by footer (non-live only) */}
       {!isLive && (
@@ -1266,6 +1117,189 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
           <p className="text-[11px] text-white/20">{t('poweredBy')}</p>
         </footer>
       )}
+      </div>
+
+      {/* ── Comment side panel (pushes video, slides in from right) ── */}
+      <div
+        className={cn(
+          'relative flex-shrink-0 h-full overflow-hidden border-l border-white/8 bg-[#0a0b0f] transition-all duration-500 ease-out',
+          commentsOpen ? 'w-80' : 'w-0',
+        )}
+      >
+        <div
+          className={cn(
+            'absolute inset-0 flex w-80 flex-col transition-all duration-500 ease-out',
+            commentsOpen ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-6',
+          )}
+        >
+          {/* Panel header */}
+          <div className="flex shrink-0 items-center gap-3 border-b border-white/8 px-5 py-4">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5">
+              <svg
+                className="h-4 w-4 text-white/60"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+              </svg>
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-semibold text-white">{t('comments')}</h3>
+              {comments.length > 0 && (
+                <p className="text-[10px] text-white/35">
+                  {comments.length.toLocaleString()}&nbsp;messages
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setCommentsOpen(false)}
+              aria-label="Close comments"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white/35 transition-all hover:bg-white/8 hover:text-white"
+            >
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Comment list */}
+          <div ref={commentListRef} className="flex-1 overflow-y-auto">
+            {comments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/8 bg-white/4">
+                  <svg
+                    className="h-5 w-5 text-white/25"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+                  </svg>
+                </div>
+                <p className="text-xs text-white/30">{t('noComments')}</p>
+              </div>
+            ) : (
+              <div className="py-2">
+                {comments.map((c) => (
+                  <div
+                    key={c.id}
+                    className="group flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.03]"
+                  >
+                    <div className="relative mt-0.5 shrink-0">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-[9px] font-bold text-white">
+                        {getInitials(c.authorName)}
+                      </div>
+                      <span
+                        className={cn(
+                          'absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-[#0a0b0f]',
+                          PLATFORM_DOT[c.platform] ?? 'bg-white/30',
+                        )}
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1 pt-0.5">
+                      <p className="mb-0.5 text-[11px] font-semibold text-white/50">
+                        {c.authorName}
+                      </p>
+                      <p className="break-words text-xs leading-relaxed text-white/85">
+                        {c.content}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Input row */}
+          <div
+            className="shrink-0 border-t border-white/8 p-3"
+            style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))' }}
+          >
+            {isAuthenticated ? (
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/70 text-[10px] font-bold text-white">
+                  {getInitials(displayName ?? 'You')}
+                </div>
+                <input
+                  ref={commentInputRef}
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      void handleSendComment();
+                    }
+                  }}
+                  placeholder={t('commentPlaceholder')}
+                  className="flex-1 rounded-xl border border-white/15 bg-white/8 px-3 py-2 text-sm text-white placeholder-white/30 outline-none transition-colors focus:border-white/30 focus:bg-white/12"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleSendComment()}
+                  disabled={!commentText.trim() || isSending}
+                  aria-label={t('send')}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand/40 bg-brand/70 text-white backdrop-blur-xl transition-opacity disabled:opacity-40"
+                >
+                  {isSending ? (
+                    <svg
+                      className="h-4 w-4 animate-spin"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      aria-hidden="true"
+                    >
+                      <path d="M21 12a9 9 0 11-6.219-8.56" />
+                    </svg>
+                  ) : (
+                    <svg
+                      className="h-4 w-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <line x1="22" y1="2" x2="11" y2="13" />
+                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAuthGateOpen(true)}
+                className="w-full rounded-xl border border-white/10 bg-white/6 py-3 text-sm font-medium text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                {t('signInToInteract')}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

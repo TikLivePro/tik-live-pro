@@ -1,6 +1,24 @@
 import { useAuthStore } from '@/features/auth/store/auth.store';
 
 export const API_BASE = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3000';
+
+export interface VideoProxyResolveResult {
+  resolvedUrl: string;
+  title: string;
+}
+
+export async function resolveVideoProxyUrl(platformUrl: string): Promise<VideoProxyResolveResult> {
+  const res = await apiFetch(`${API_BASE}/stream-orchestrator/video-proxy/resolve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: platformUrl }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { message?: string };
+    throw new Error(body.message ?? 'Failed to resolve URL');
+  }
+  return (await res.json()) as VideoProxyResolveResult;
+}
 export const COMMENTS_WS_URL = process.env['NEXT_PUBLIC_COMMENTS_WS_URL'] ?? 'http://localhost:3006';
 
 // Deduplicates concurrent refresh calls so only one refresh request is in-flight at a time.
@@ -20,7 +38,10 @@ export async function apiFetch(input: string, init?: RequestInit): Promise<Respo
   const { refreshToken } = useAuthStore.getState();
   if (!refreshToken) {
     useAuthStore.getState().clearAuth();
-    if (typeof window !== 'undefined') window.location.href = '/auth/login';
+    if (typeof window !== 'undefined') {
+      const callbackUrl = encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.href = `/auth/login?callbackUrl=${callbackUrl}`;
+    }
     return res;
   }
 
@@ -46,7 +67,10 @@ export async function apiFetch(input: string, init?: RequestInit): Promise<Respo
 
   if (!newToken) {
     useAuthStore.getState().clearAuth();
-    if (typeof window !== 'undefined') window.location.href = '/auth/login';
+    if (typeof window !== 'undefined') {
+      const callbackUrl = encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.href = `/auth/login?callbackUrl=${callbackUrl}`;
+    }
     return res;
   }
 

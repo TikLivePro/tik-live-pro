@@ -3,7 +3,9 @@ import type { IStreamSessionRepository } from '../../domain/repositories/stream-
 import type { IRecordingRepository } from '../../infrastructure/db/recording.repo.impl.js';
 import type { HandleStreamArrivedUseCase } from '../../application/use-cases/handle-stream-arrived.use-case.js';
 import type { LiveSessionId } from '@tik-live-pro/shared-types';
+import type { Logger } from '@tik-live-pro/logger';
 import { StreamSessionStatus, RecordingStatus } from '../../domain/entities/stream-session.entity.js';
+import { isPlatformUrl, resolveWithYtDlp, YtDlpError } from '../../infrastructure/ytdlp/ytdlp-resolver.js';
 import ffmpeg from 'fluent-ffmpeg';
 import type { FfmpegCommand } from 'fluent-ffmpeg';
 
@@ -29,6 +31,24 @@ const bearerAuth = [{ BearerAuth: [] }];
 
 // ---------------------------------------------------------------------------
 
+// Per-IP rate limiter for the video-proxy/resolve endpoint.
+// Keeps only the current window in memory — no external store needed.
+const resolveRateLimiter = new Map<string, { count: number; windowStart: number }>();
+const RESOLVE_MAX = 5;
+const RESOLVE_WINDOW_MS = 60_000;
+
+function checkResolveRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = resolveRateLimiter.get(ip);
+  if (!entry || now - entry.windowStart > RESOLVE_WINDOW_MS) {
+    resolveRateLimiter.set(ip, { count: 1, windowStart: now });
+    return true;
+  }
+  if (entry.count >= RESOLVE_MAX) return false;
+  entry.count++;
+  return true;
+}
+
 export function registerRoutes(
   app: FastifyInstance,
   deps: {
@@ -41,6 +61,7 @@ export function registerRoutes(
     mediaMtxWebrtcUrl: string;
     mediaMtxApiUrl: string;
     mediaMtxApiAuthHeader: string | undefined;
+    logger: Logger;
   },
 ): void {
   // GET /health ---------------------------------------------------------------
@@ -899,6 +920,32 @@ Only valid when the session status is \`live\`.
         return;
       }
 
+      // If this is a platform URL (YouTube, Twitch, Vimeo, Dailymotion), resolve it
+      // to a direct media URL via yt-dlp before handing it to ffmpeg.
+      let videoUri = rawUri;
+      if (isPlatformUrl(rawUri)) {
+        try {
+          const resolved = await resolveWithYtDlp(rawUri, deps.logger);
+          req.log.info({ originalUri: rawUri, resolvedUri: resolved.url }, 'video-push: resolved platform URL via yt-dlp');
+          videoUri = resolved.url;
+        } catch (err) {
+          if (err instanceof YtDlpError) {
+            if (err.code === 'NOT_INSTALLED') {
+              await reply.status(503).send({ code: 'YTDLP_NOT_INSTALLED', message: 'yt-dlp is not installed on this server.' });
+            } else if (err.code === 'NOT_FOUND') {
+              await reply.status(422).send({ code: 'VIDEO_UNAVAILABLE', message: 'The video at that URL is unavailable or private.' });
+            } else if (err.code === 'TIMEOUT') {
+              await reply.status(504).send({ code: 'RESOLVE_TIMEOUT', message: 'Timed out resolving the platform URL.' });
+            } else {
+              await reply.status(422).send({ code: 'RESOLVE_FAILED', message: 'Could not extract a playable URL from that platform link.' });
+            }
+          } else {
+            await reply.status(500).send({ code: 'INTERNAL_ERROR', message: 'Unexpected error resolving URL.' });
+          }
+          return;
+        }
+      }
+
       // Kill any existing video-push process for this session before starting a new one.
       const existing = videoPushProcesses.get(session.sessionId);
       if (existing) {
@@ -920,7 +967,7 @@ Only valid when the session status is \`live\`.
       // -preset veryfast → fast encode with acceptable quality for live streaming
       // -tune zerolatency→ minimise encoder buffering / latency
       // -c:a aac         → re-encode audio to AAC (RTMP standard)
-      const proc = ffmpeg(rawUri)
+      const proc = ffmpeg(videoUri)
         .inputOptions(['-stream_loop -1', '-re'])
         .outputOptions([
           '-map 0:v:0',
@@ -952,6 +999,114 @@ Only valid when the session status is \`live\`.
       videoPushProcesses.set(sessionId, proc);
 
       await reply.status(200).send({ status: 'started' });
+    },
+  );
+
+  // POST /video-proxy/resolve ---------------------------------------------------
+  // Resolves a streaming-platform URL (YouTube, Twitch, Vimeo, Dailymotion) to
+  // a direct media URL using yt-dlp.  The resolved URL can then be loaded by the
+  // browser's <video> element or fed back into POST /sessions/:id/video-push.
+  //
+  // Rate-limited to 5 requests per IP per minute to prevent abuse.
+  // yt-dlp must be installed and available in PATH on the server.
+  app.post<{ Body: { url?: string } }>(
+    '/video-proxy/resolve',
+    {
+      schema: {
+        tags: ['Video Proxy'],
+        summary: 'Resolve a platform URL to a direct media URL',
+        description: `
+Invokes \`yt-dlp\` on the server to extract a direct, playable media URL from a
+streaming-platform link (YouTube, Twitch, Vimeo, Dailymotion).
+
+**Supported platforms:** YouTube, Twitch, Vimeo, Dailymotion.
+Facebook, Instagram, and TikTok are intentionally excluded due to DRM and
+authentication requirements that make extraction unreliable.
+
+**Rate limit:** 5 requests per IP per 60 seconds.
+
+**Requirement:** \`yt-dlp\` must be installed and available in \`PATH\` on the server.
+Install with \`pip install yt-dlp\` or \`brew install yt-dlp\`.
+
+The returned \`resolvedUrl\` is a time-limited CDN URL valid for several minutes.
+For long-running sessions, call this endpoint again to refresh the URL.
+        `.trim(),
+        security: bearerAuth,
+        body: {
+          type: 'object',
+          required: ['url'],
+          additionalProperties: false,
+          properties: {
+            url: {
+              type: 'string',
+              description: 'The platform URL to resolve (YouTube, Twitch, Vimeo, or Dailymotion).',
+              example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+            },
+          },
+        },
+        response: {
+          200: {
+            description: 'Resolved successfully.',
+            type: 'object',
+            required: ['resolvedUrl', 'title'],
+            properties: {
+              resolvedUrl: {
+                type: 'string',
+                description: 'Direct media URL playable by a browser <video> element or ffmpeg.',
+              },
+              title: {
+                type: 'string',
+                description: 'Title of the video as reported by yt-dlp.',
+              },
+            },
+          },
+          400: errorSchema('url is missing or not from a supported platform.'),
+          401: errorSchema('Missing or invalid Bearer token.'),
+          422: errorSchema('Video is unavailable or private.'),
+          429: errorSchema('Rate limit exceeded — 5 resolves per IP per 60 s.'),
+          503: errorSchema('yt-dlp is not installed on this server.'),
+          504: errorSchema('yt-dlp timed out resolving the URL.'),
+        },
+      },
+    },
+    async (req, reply) => {
+      const rawUrl = req.body.url;
+      if (!rawUrl || !isPlatformUrl(rawUrl)) {
+        await reply.status(400).send({
+          code: 'UNSUPPORTED_PLATFORM',
+          message: 'url must be a YouTube, Twitch, Vimeo, or Dailymotion link.',
+        });
+        return;
+      }
+
+      const ip = req.ip;
+      if (!checkResolveRateLimit(ip)) {
+        await reply.status(429).send({
+          code: 'RATE_LIMITED',
+          message: 'Too many resolve requests. Try again in a minute.',
+        });
+        return;
+      }
+
+      try {
+        const result = await resolveWithYtDlp(rawUrl, deps.logger);
+        await reply.status(200).send({ resolvedUrl: result.url, title: result.title });
+      } catch (err) {
+        if (err instanceof YtDlpError) {
+          if (err.code === 'NOT_INSTALLED') {
+            await reply.status(503).send({ code: 'YTDLP_NOT_INSTALLED', message: 'yt-dlp is not installed on this server.' });
+          } else if (err.code === 'NOT_FOUND') {
+            await reply.status(422).send({ code: 'VIDEO_UNAVAILABLE', message: 'The video at that URL is unavailable or private.' });
+          } else if (err.code === 'TIMEOUT') {
+            await reply.status(504).send({ code: 'RESOLVE_TIMEOUT', message: 'Timed out resolving the URL.' });
+          } else {
+            await reply.status(422).send({ code: 'RESOLVE_FAILED', message: 'Could not extract a playable URL from that link.' });
+          }
+        } else {
+          deps.logger.error({ err, url: rawUrl }, 'Unexpected error in video-proxy/resolve');
+          await reply.status(500).send({ code: 'INTERNAL_ERROR', message: 'Unexpected server error.' });
+        }
+      }
     },
   );
 }

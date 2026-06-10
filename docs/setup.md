@@ -1,6 +1,6 @@
 # TikLivePro — Setup Guide
 
-> **Last updated:** 2026-06-03 (add RECORDING_STORAGE_* env vars for stream-orchestrator recording upload)
+> **Last updated:** 2026-06-10 (yt-dlp baked into Docker image; document YTDLP_VERSION ARG and YTDLP_AUTO_UPDATE)
 > Update this file whenever prerequisites, ports, environment variables, or workflow steps change.
 
 ## Prerequisites
@@ -11,7 +11,10 @@
 | pnpm | 9.x | `npm i -g pnpm` |
 | Docker + Compose | 27.x | https://docs.docker.com/get-docker |
 | Git | 2.x | https://git-scm.com |
+| **yt-dlp** _(local dev only — baked into the Docker image)_ | 2024.x | `pip install yt-dlp` · `brew install yt-dlp` |
 | nats CLI _(optional, for stream setup)_ | 0.1.4+ | https://github.com/nats-io/natscli/releases |
+
+> **yt-dlp** is required only for local dev (when running `stream-orchestrator` directly on the host). Docker and Kubernetes deployments have it baked in — see `infra/docker/Dockerfile.stream-orchestrator` (`YTDLP_VERSION` build ARG). Without it, the "Resolve via server" button and platform-URL `video-push` return HTTP 503. See [`docs/video-proxy.md`](./video-proxy.md) for the full update strategy.
 
 ---
 

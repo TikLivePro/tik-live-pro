@@ -37,4 +37,8 @@ export interface VideoShareResult {
   getVideoTrack: () => MediaStreamTrack | null;
   getAudioTrack: () => MediaStreamTrack | null;
   videoLoadKey: number;
+  // true when the current source is safe to draw onto a canvas (same-origin blob: or
+  // an online URL whose CDN returned CORS headers). False for CDN URLs that don't support
+  // CORS (e.g. YouTube googlevideo.com) — the compositor PiP is skipped in that case.
+  isCorsAvailable: boolean;
 }

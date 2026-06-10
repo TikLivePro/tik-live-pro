@@ -35,8 +35,10 @@ export function LoginView() {
   const { theme, toggle } = useTheme();
   const [mode, setMode] = useState<'login' | 'register'>('login');
 
-  const loginForm = useLoginForm();
-  const registerForm = useRegisterForm();
+  const callbackUrl = searchParams.get('callbackUrl') ?? undefined;
+
+  const loginForm = useLoginForm(callbackUrl);
+  const registerForm = useRegisterForm(callbackUrl);
 
   const isLogin = mode === 'login';
   const { isLoading: formLoading, error: formError } = isLogin ? loginForm : registerForm;
@@ -88,7 +90,7 @@ export function LoginView() {
                 key={provider}
                 type="button"
                 disabled={loading}
-                onClick={() => loginWithProvider(provider)}
+                onClick={() => loginWithProvider(provider, callbackUrl)}
                 className={cn(
                   'w-full flex items-center justify-center gap-3',
                   'py-2.5 px-4 rounded-lg text-sm font-medium',

@@ -14,6 +14,9 @@
 
 ARG NODE_VERSION=22
 ARG PNPM_VERSION=9.15.0
+# Bump YTDLP_VERSION when platforms change their extraction logic.
+# Latest releases: https://github.com/yt-dlp/yt-dlp/releases
+ARG YTDLP_VERSION=2024.12.13
 
 # ── Stage 1: base ─────────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-alpine AS base
@@ -76,10 +79,31 @@ RUN pnpm --filter "@tik-live-pro/stream-orchestrator" deploy --prod /app/deploy
 # ── Stage 4: runtime ──────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-alpine AS runtime
 
+ARG YTDLP_VERSION
+
 RUN addgroup --system --gid 1001 nodejs \
  && adduser  --system --uid 1001 nodeuser \
  # ffmpeg must be in the runtime image — fluent-ffmpeg shells out to it
- && apk add --no-cache dumb-init ffmpeg wget
+ && apk add --no-cache dumb-init ffmpeg wget \
+ # /app/bin is owned by nodeuser so yt-dlp can self-update when YTDLP_AUTO_UPDATE=true
+ && mkdir -p /app/bin \
+ && wget -qO /app/bin/yt-dlp \
+      "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp" \
+ && chmod +x /app/bin/yt-dlp \
+ && chown -R nodeuser:nodejs /app/bin \
+ # Entrypoint: optionally run yt-dlp -U before the node process starts
+ && printf '%s\n' \
+      '#!/bin/sh' \
+      'set -e' \
+      'if [ "${YTDLP_AUTO_UPDATE:-false}" = "true" ]; then' \
+      '  echo "Updating yt-dlp..."' \
+      '  yt-dlp -U || echo "yt-dlp update failed (continuing anyway)"' \
+      'fi' \
+      'exec "$@"' \
+    > /usr/local/bin/docker-entrypoint.sh \
+ && chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENV PATH="/app/bin:${PATH}"
 
 WORKDIR /app
 
@@ -96,5 +120,5 @@ EXPOSE 1935
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
   CMD wget -qO- http://localhost:3009/health || exit 1
 
-ENTRYPOINT ["dumb-init", "--"]
+ENTRYPOINT ["dumb-init", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "dist/main.js"]

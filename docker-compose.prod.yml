@@ -480,6 +480,9 @@ services:
       FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:?FACEBOOK_APP_SECRET is required}
       MEDIAMTX_RTMP_URL: rtmp://mediamtx:1936
       MEDIAMTX_HLS_URL: ${MEDIAMTX_HLS_URL:-http://localhost:8888}
+      # Set to "true" to run `yt-dlp -U` at startup (bails gracefully on failure).
+      # Prefer rebuilding with a newer YTDLP_VERSION over enabling this in prod.
+      YTDLP_AUTO_UPDATE: ${YTDLP_AUTO_UPDATE:-false}
       # Higher cap — ffmpeg subprocesses share the cgroup limit
       NODE_OPTIONS: "--max-old-space-size=192"
     ports:

@@ -56,13 +56,11 @@ export function ViewerVideoControls({
   return (
     <div
       className={cn(
-        // centred, not full-width — max-w keeps it compact
-        'absolute bottom-8 left-1/2 z-20 w-[min(480px,90vw)]',
-        // slide transition: visible → centre, hidden → slide off to the left
-        'transition-all duration-300 ease-out',
+        'absolute bottom-8 left-1/2 -translate-x-1/2 z-20 w-[min(480px,90vw)]',
+        'transition-opacity duration-300 ease-out',
         visible
-          ? '-translate-x-1/2 opacity-100 pointer-events-auto'
-          : '-translate-x-[calc(50%+60vw)] opacity-0 pointer-events-none',
+          ? 'opacity-100 pointer-events-auto'
+          : 'opacity-0 pointer-events-none',
       )}
       aria-label={t('videoControls.label')}
     >

@@ -44,7 +44,7 @@ export function useAuth() {
   );
 
   const register = useCallback(
-    async (params: RegisterCredentials) => {
+    async (params: RegisterCredentials, callbackUrl?: string) => {
       setIsLoading(true);
       setError(null);
       try {
@@ -60,7 +60,7 @@ export function useAuth() {
         }
         const { data } = (await res.json()) as { data: AuthResponse };
         setAuth({ ...data, displayName: params.displayName, email: params.email });
-        router.push('/dashboard');
+        router.push(callbackUrl ?? '/dashboard');
       } catch {
         setError(tAuth('errors.generic'));
       } finally {
@@ -71,7 +71,7 @@ export function useAuth() {
   );
 
   const login = useCallback(
-    async (params: LoginCredentials) => {
+    async (params: LoginCredentials, callbackUrl?: string) => {
       setIsLoading(true);
       setError(null);
       try {
@@ -87,7 +87,7 @@ export function useAuth() {
         }
         const { data } = (await res.json()) as { data: AuthResponse };
         setAuth({ ...data, email: params.email });
-        router.push('/dashboard');
+        router.push(callbackUrl ?? '/dashboard');
       } catch {
         setError(tAuth('errors.generic'));
       } finally {
@@ -98,11 +98,14 @@ export function useAuth() {
   );
 
   const loginWithProvider = useCallback(
-    async (provider: OAuthProvider) => {
+    async (provider: OAuthProvider, callbackUrl?: string) => {
       setIsLoading(true);
       setError(null);
       try {
-        await signIn(provider, { callbackUrl: '/auth/social-callback' });
+        const next = callbackUrl
+          ? `/auth/social-callback?next=${encodeURIComponent(callbackUrl)}`
+          : '/auth/social-callback';
+        await signIn(provider, { callbackUrl: next });
       } catch {
         setError(tAuth('errors.oauthFailed'));
       } finally {

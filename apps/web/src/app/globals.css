@@ -122,12 +122,23 @@
     to   { opacity: 1; transform: translateX(0); }
   }
 
+  @keyframes float-comment {
+    0%   { opacity: 0; transform: translateX(-16px); }
+    10%  { opacity: 1; transform: translateX(0); }
+    72%  { opacity: 1; transform: translateX(0); }
+    100% { opacity: 0; transform: translateX(-6px); }
+  }
+
   .animate-float-reaction {
     animation: float-reaction 2.6s ease-out forwards;
   }
 
   .animate-slide-comment {
     animation: slide-comment-in 0.35s ease-out both;
+  }
+
+  .animate-float-comment {
+    animation: float-comment 5s ease-out forwards;
   }
 
   /* Safari-style thin scrollbars — brand-colored, hidden until hover */

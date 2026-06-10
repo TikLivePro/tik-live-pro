@@ -754,14 +754,14 @@ All error responses follow a consistent envelope:
           post: {
             tags: ['Streaming'],
             summary: 'Push a remote video URL into the RTMP stream',
-            description: 'Accepts an HTTP or HTTPS URL of a video file and starts an ffmpeg process that fetches and pushes it into the session RTMP ingest key. The file loops until the session ends or a new video-push replaces it. Only valid when session status is `live`.',
+            description: 'Accepts an HTTP or HTTPS URL (or a YouTube/Twitch/Vimeo/Dailymotion platform link) and starts an ffmpeg process that fetches and pushes it into the session RTMP ingest key. Platform links are resolved via yt-dlp. The file loops until the session ends or a new video-push replaces it. Only valid when session status is `live`.',
             security: [{ BearerAuth: [] }],
             parameters: [
               { in: 'path', name: 'sessionId', required: true, schema: { type: 'string', format: 'uuid' }, description: 'Live session ID.' },
             ],
             requestBody: {
               required: true,
-              content: { 'application/json': { schema: { type: 'object', required: ['videoUri'], properties: { videoUri: { type: 'string', description: 'HTTP or HTTPS URL of the video to stream.', example: 'https://cdn.example.com/streams/intro.mp4' } } } } },
+              content: { 'application/json': { schema: { type: 'object', required: ['videoUri'], properties: { videoUri: { type: 'string', description: 'HTTP/HTTPS URL or platform link (YouTube, Twitch, Vimeo, Dailymotion).', example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' } } } } },
             },
             responses: {
               200: { description: 'Video push started.', content: { 'application/json': { schema: { type: 'object', properties: { status: { type: 'string', enum: ['started'] } } } } } },
@@ -769,6 +769,30 @@ All error responses follow a consistent envelope:
               401: { description: 'Unauthorized.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
               404: { description: 'Session not found.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
               409: { description: 'Session is not live.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              422: { description: 'Platform URL could not be resolved (video unavailable or yt-dlp error).', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              503: { description: 'yt-dlp is not installed on this server.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              504: { description: 'yt-dlp timed out resolving the platform URL.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            },
+          },
+        },
+        '/stream-orchestrator/video-proxy/resolve': {
+          post: {
+            tags: ['Streaming'],
+            summary: 'Resolve a platform URL to a direct media URL',
+            description: 'Uses yt-dlp on the server to extract a direct, playable media URL from a YouTube, Twitch, Vimeo, or Dailymotion link. The resolved URL can be loaded in a browser <video> element or passed to video-push. Rate-limited to 5 requests per IP per 60 s. Requires yt-dlp installed on the server.',
+            security: [{ BearerAuth: [] }],
+            requestBody: {
+              required: true,
+              content: { 'application/json': { schema: { type: 'object', required: ['url'], properties: { url: { type: 'string', description: 'Platform URL to resolve.', example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' } } } } },
+            },
+            responses: {
+              200: { description: 'Resolved successfully.', content: { 'application/json': { schema: { type: 'object', required: ['resolvedUrl', 'title'], properties: { resolvedUrl: { type: 'string' }, title: { type: 'string' } } } } } },
+              400: { description: 'url missing or not from a supported platform.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              401: { description: 'Unauthorized.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              422: { description: 'Video is unavailable or yt-dlp could not extract a URL.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              429: { description: 'Rate limit exceeded.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              503: { description: 'yt-dlp is not installed on this server.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+              504: { description: 'yt-dlp timed out.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
             },
           },
         },

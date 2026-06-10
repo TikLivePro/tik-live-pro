@@ -15,6 +15,7 @@ import { getVideoQualityPreset, VIDEO_QUALITY_PRESETS } from '../consts/stream.c
 import { useComments } from '@/features/comments/hooks/useComments';
 import { useRecording } from '../hooks/useRecording';
 import { useVideoShare } from '../hooks/useVideoShare';
+import { useWebcamAvailability } from '../hooks/useWebcamAvailability';
 import type { LiveSessionId } from '@tik-live-pro/shared-types';
 import { LiveCommentFloat } from './LiveCommentFloat';
 import { LiveReactionFloat } from './LiveReactionFloat';
@@ -46,12 +47,15 @@ export function FullscreenLiveView(): React.ReactElement {
     setPreSource,
   } = useStreamStore();
   const isPaused = currentSession?.status === 'paused';
+  const { hasWebcam } = useWebcamAvailability();
   const {
     videoRef,
+    state: cameraState,
     isMicMuted,
     isCameraOff,
     micVolume,
     speakerVolume,
+    start: startCamera,
     toggleMic,
     toggleCamera,
     setMicVolume,
@@ -152,10 +156,23 @@ export function FullscreenLiveView(): React.ReactElement {
       }
       if (cancelled || !whipUrl) return;
 
-      // 2. Wait for camera stream to be ready (getUserMedia is async).
+      // 2. Wait for a usable stream: camera preferred, video-share tracks as fallback.
+      // This allows the live to start immediately when no webcam is present, as long
+      // as a file/URL source is loaded.
       let stream: MediaStream | null = null;
       while (!cancelled && !stream) {
         stream = getStream();
+        if (!stream) {
+          // No camera — try to build a synthetic stream from video-share tracks
+          const vt = videoShare.getVideoTrack();
+          if (vt) {
+            const synthetic = new MediaStream();
+            synthetic.addTrack(vt);
+            const at = videoShare.getAudioTrack();
+            if (at) synthetic.addTrack(at);
+            stream = synthetic;
+          }
+        }
         if (!stream) await new Promise<void>((r) => setTimeout(r, 200));
       }
       if (cancelled || !stream) return;
@@ -388,6 +405,16 @@ export function FullscreenLiveView(): React.ReactElement {
    * if the required video elements are not yet ready.
    */
   const startCompositor = useCallback((): MediaStreamTrack | null => {
+    // Canvas compositor requires CORS (drawImage on a non-CORS cross-origin video taints
+    // the canvas and captureStream() throws SecurityError). Skip the canvas and return
+    // the raw video track instead — viewers get the video without the webcam PiP inset.
+    if (!videoShare.isCorsAvailable) {
+      cancelAnimationFrame(compositorRafRef.current);
+      compositorStreamRef.current?.getTracks().forEach((t) => t.stop());
+      compositorStreamRef.current = null;
+      return videoShare.getVideoTrack();
+    }
+
     // Clean up any previous compositor first
     cancelAnimationFrame(compositorRafRef.current);
     compositorStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -733,8 +760,8 @@ export function FullscreenLiveView(): React.ReactElement {
           </div>
         </div>
         {/* Video share element — always in DOM so captureStream() works; shown when active */}
-        {/* Not muted: Web Audio (createMediaElementSource) has taken over audio routing,
-            so local volume is controlled by monitorGain, not the element's muted attr. */}
+        {/* Not muted: local monitoring volume is controlled by video.volume (setVideoVolume).
+            captureStream() carries the audio track for WebRTC. */}
         <video
           ref={videoShare.videoRef}
           autoPlay
@@ -1006,6 +1033,7 @@ export function FullscreenLiveView(): React.ReactElement {
             <VideoSourcePicker
               sourceType={videoShare.sourceType}
               recentSources={videoShare.recentSources}
+              cameraDisabled={!hasWebcam && cameraState !== 'active'}
               onSelectCamera={() => videoShare.switchToCamera()}
               onSelectLocalFile={(file) => videoShare.loadLocalFile(file)}
               onSelectOnlineUrl={(url) => videoShare.loadOnlineUrl(url)}
@@ -1316,8 +1344,8 @@ export function FullscreenLiveView(): React.ReactElement {
             </button>
           )}
 
-          {/* Webcam PiP toggle — only shown when main source is video/URL */}
-          {videoShare.sourceType !== 'camera' && !isCameraOff && (
+          {/* Webcam PiP toggle — only when source is compositor-compatible (CORS or local file) */}
+          {videoShare.sourceType !== 'camera' && !isCameraOff && videoShare.isCorsAvailable && (
             <button
               type="button"
               onClick={() => setWebcamPipVisible((v) => !v)}
@@ -1524,76 +1552,103 @@ export function FullscreenLiveView(): React.ReactElement {
 
           {/* Media controls */}
           <div className="pointer-events-auto flex items-center justify-center gap-4">
-            {/* Mic toggle */}
-            <button
-              type="button"
-              onClick={toggleMic}
-              aria-label={isMicMuted ? t('camera.unmute') : t('camera.mute')}
-              className={cn(
-                'flex h-12 w-12 items-center justify-center rounded-full border backdrop-blur-xl transition-colors',
-                isMicMuted
-                  ? 'border-red-400/50 bg-red-900/60 text-red-200'
-                  : 'border-white/20 bg-black/45 text-white hover:bg-black/55',
-              )}
-            >
-              {isMicMuted ? (
-                <svg
-                  className="h-5 w-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <line x1="1" y1="1" x2="23" y2="23" />
-                  <path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6" />
-                  <path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23M12 20v4M8 20h8" />
-                </svg>
-              ) : (
-                <svg
-                  className="h-5 w-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
-                  <path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" />
-                </svg>
-              )}
-            </button>
+            {/* Mic toggle — only when camera is active */}
+            {cameraState === 'active' && (
+              <button
+                type="button"
+                onClick={toggleMic}
+                aria-label={isMicMuted ? t('camera.unmute') : t('camera.mute')}
+                className={cn(
+                  'flex h-12 w-12 items-center justify-center rounded-full border backdrop-blur-xl transition-colors',
+                  isMicMuted
+                    ? 'border-red-400/50 bg-red-900/60 text-red-200'
+                    : 'border-white/20 bg-black/45 text-white hover:bg-black/55',
+                )}
+              >
+                {isMicMuted ? (
+                  <svg
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                    <path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6" />
+                    <path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23M12 20v4M8 20h8" />
+                  </svg>
+                ) : (
+                  <svg
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+                    <path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" />
+                  </svg>
+                )}
+              </button>
+            )}
 
-            {/* Camera toggle */}
-            <button
-              type="button"
-              onClick={toggleCamera}
-              aria-label={isCameraOff ? t('camera.showCamera') : t('camera.hideCamera')}
-              className={cn(
-                'flex h-12 w-12 items-center justify-center rounded-full border backdrop-blur-xl transition-colors',
-                isCameraOff
-                  ? 'border-red-400/50 bg-red-900/60 text-red-200'
-                  : 'border-white/20 bg-black/45 text-white hover:bg-black/55',
-              )}
-            >
-              {isCameraOff ? (
-                <svg
-                  className="h-5 w-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M16 16v1a2 2 0 01-2 2H3a2 2 0 01-2-2V7a2 2 0 012-2h2m5.66 0H14a2 2 0 012 2v3.34l1 1L23 7v10M1 1l22 22" />
-                </svg>
-              ) : (
+            {/* Camera toggle — only when camera is active */}
+            {cameraState === 'active' && (
+              <button
+                type="button"
+                onClick={toggleCamera}
+                aria-label={isCameraOff ? t('camera.showCamera') : t('camera.hideCamera')}
+                className={cn(
+                  'flex h-12 w-12 items-center justify-center rounded-full border backdrop-blur-xl transition-colors',
+                  isCameraOff
+                    ? 'border-red-400/50 bg-red-900/60 text-red-200'
+                    : 'border-white/20 bg-black/45 text-white hover:bg-black/55',
+                )}
+              >
+                {isCameraOff ? (
+                  <svg
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M16 16v1a2 2 0 01-2 2H3a2 2 0 01-2-2V7a2 2 0 012-2h2m5.66 0H14a2 2 0 012 2v3.34l1 1L23 7v10M1 1l22 22" />
+                  </svg>
+                ) : (
+                  <svg
+                    className="h-5 w-5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.89L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                  </svg>
+                )}
+              </button>
+            )}
+
+            {/* Enable webcam — shown when webcam is detected but not yet active */}
+            {hasWebcam && cameraState !== 'active' && cameraState !== 'requesting' && (
+              <button
+                type="button"
+                onClick={() => void startCamera()}
+                aria-label={t('camera.enableWebcam')}
+                className="flex h-12 w-12 items-center justify-center rounded-full border border-green-400/50 bg-green-900/60 text-green-200 backdrop-blur-xl transition-colors hover:bg-green-800/70"
+              >
                 <svg
                   className="h-5 w-5"
                   viewBox="0 0 24 24"
@@ -1605,9 +1660,11 @@ export function FullscreenLiveView(): React.ReactElement {
                   aria-hidden="true"
                 >
                   <path d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.89L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                  <line x1="12" y1="5" x2="12" y2="1" strokeWidth="2.5" />
+                  <polyline points="9 4 12 1 15 4" strokeWidth="2.5" />
                 </svg>
-              )}
-            </button>
+              </button>
+            )}
 
             {/* Pause / Resume */}
             {(isLive || isPaused) && (

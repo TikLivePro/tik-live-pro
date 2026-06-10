@@ -16,6 +16,9 @@ This guide walks through obtaining `FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET` f
 
 ## 2. Create an app
 
+> [!WARNING]
+> Selecting this use case creates a **Consumer** app. Consumer apps only support user data permissions (like `user_birthday`, `user_friends`, etc.) and **cannot** access Page permissions (like `pages_show_list` or `pages_manage_posts`). If you are configuring Facebook Live Video integration, you **must** create a separate **Business** app instead (see [facebook-live-oauth.md](facebook-live-oauth.md)).
+
 1. From the **My Apps** dashboard, click **Create App**.
 2. Select the use case **Authenticate and request data from users with Facebook Login**, then click **Next**.
 3. Fill in the form:

@@ -4,7 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAuth } from './useAuth';
 
-export function useRegisterForm() {
+export function useRegisterForm(callbackUrl?: string) {
   const { register, isLoading, error } = useAuth();
   const t = useTranslations('auth');
   const [email, setEmail] = useState('');
@@ -21,7 +21,7 @@ export function useRegisterForm() {
       setLocalError(t('errors.passwordsDoNotMatch'));
       return;
     }
-    await register({ email, password, displayName });
+    await register({ email, password, displayName }, callbackUrl);
   }
 
   return {

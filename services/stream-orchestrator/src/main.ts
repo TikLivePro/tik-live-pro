@@ -277,6 +277,7 @@ This service is primarily driven by NATS JetStream events from the \`live-sessio
       },
       tags: [
         { name: 'Streaming', description: 'RTMP ingest endpoint management.' },
+        { name: 'Video Proxy', description: 'Platform URL resolution via yt-dlp.' },
         { name: 'Observability', description: 'Prometheus metrics.' },
         { name: 'Health', description: 'Kubernetes liveness / readiness probes.' },
       ],
@@ -305,6 +306,7 @@ This service is primarily driven by NATS JetStream events from the \`live-sessio
     mediaMtxWebrtcUrl: env.MEDIAMTX_WEBRTC_URL,
     mediaMtxApiUrl: env.MEDIAMTX_API_URL,
     mediaMtxApiAuthHeader,
+    logger,
   });
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });

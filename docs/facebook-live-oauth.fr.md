@@ -8,12 +8,16 @@ Ce guide couvre la configuration complète de l'application Facebook pour le ser
 
 ## Pourquoi cette erreur ?
 
-```
-Invalid Scopes: publish_video, pages_manage_posts,
-pages_read_engagement, pages_show_list.
-```
-
+### 1. "Invalid Scopes: publish_video, pages_manage_posts, pages_read_engagement, pages_show_list"
 Cette erreur signifie que les permissions demandées n'ont **pas encore été déclarées** dans votre tableau de bord Meta. Facebook exige que chaque permission soit explicitement ajoutée à votre application avant de pouvoir la demander dans le flux OAuth — même en mode développement. Ce n'est pas une question d'App Review : c'est une étape de configuration préalable obligatoire.
+
+### 2. "Pourquoi je ne trouve que `user_birthday`, `user_hometown`, etc., mais pas `pages_show_list` ou d'autres permissions de Page ?"
+Si vous accédez à votre tableau de bord Meta Developer et que vous ne voyez que des permissions liées à l'utilisateur ou de type "grand public" (telles que `user_birthday`, `user_friends`, `user_posts`, `user_photos`, `user_videos`, `email`, `openid`, etc.) mais que vous ne trouvez pas les permissions de Page (`pages_show_list`, `pages_manage_posts`, etc.), cela signifie que **vous avez créé une application de type « Consumer » (ou que vous avez sélectionné le cas d'usage par défaut « Authentifier et demander des données aux utilisateurs avec Facebook Login » lors de la création).**
+
+Meta restreint l'accès aux permissions liées aux Pages et aux entreprises uniquement aux applications de type **Business**. Pour corriger cela :
+- **Il n'est pas possible de convertir une application Consumer existante en application Business.**
+- Vous **devez** créer une nouvelle application à partir de zéro.
+- Lors de la création, sélectionnez le cas d'usage **Autres** (en bas de la liste), puis choisissez le type **Business** (voir l'étape [Étape 1](#etape-1--creer-une-application-meta-de-type-business)).
 
 ---
 

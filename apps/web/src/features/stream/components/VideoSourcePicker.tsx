@@ -4,6 +4,8 @@ import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import type { VideoSourceType, RecentSource } from '../interfaces/video-share.interfaces';
+import { detectVideoPlatform, isUnsafeVideoUrl } from '../consts/video-url.utils';
+import { resolveVideoProxyUrl } from '@/lib/api';
 
 const INITIAL_SHOWN = 3;
 const PAGE_SIZE = 5;
@@ -11,6 +13,7 @@ const PAGE_SIZE = 5;
 interface Props {
   sourceType: VideoSourceType;
   recentSources?: RecentSource[];
+  cameraDisabled?: boolean;
   onSelectCamera: () => void;
   onSelectLocalFile: (file: File) => void;
   onSelectOnlineUrl: (url: string) => void;
@@ -38,6 +41,7 @@ function RecentIcon({ type }: { type: RecentSource['type'] }): React.ReactElemen
 export function VideoSourcePicker({
   sourceType,
   recentSources = [],
+  cameraDisabled = false,
   onSelectCamera,
   onSelectLocalFile,
   onSelectOnlineUrl,
@@ -47,6 +51,10 @@ export function VideoSourcePicker({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [urlInput, setUrlInput] = useState('');
   const [pendingTab, setPendingTab] = useState<VideoSourceType>(sourceType);
+  const [urlUnsafe, setUrlUnsafe] = useState(false);
+  const [urlPlatform, setUrlPlatform] = useState<string | null>(null);
+  const [isResolving, setIsResolving] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
 
   // History popup state
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -58,6 +66,7 @@ export function VideoSourcePicker({
   const hiddenCount = recentSources.length - INITIAL_SHOWN;
 
   function handleTabClick(tab: VideoSourceType): void {
+    if (tab === 'camera' && cameraDisabled) return;
     setPendingTab(tab);
     if (tab === 'camera') onSelectCamera();
   }
@@ -68,9 +77,40 @@ export function VideoSourcePicker({
     e.target.value = '';
   }
 
+  function handleUrlChange(value: string): void {
+    setUrlInput(value);
+    setResolveError(null);
+    const trimmed = value.trim();
+    if (!trimmed) {
+      setUrlUnsafe(false);
+      setUrlPlatform(null);
+      return;
+    }
+    setUrlUnsafe(isUnsafeVideoUrl(trimmed));
+    setUrlPlatform(detectVideoPlatform(trimmed));
+  }
+
+  async function handleResolveUrl(): Promise<void> {
+    const trimmed = urlInput.trim();
+    if (!trimmed || isResolving) return;
+    setIsResolving(true);
+    setResolveError(null);
+    try {
+      const result = await resolveVideoProxyUrl(trimmed);
+      setUrlInput(result.title ? `${result.resolvedUrl}` : result.resolvedUrl);
+      setUrlPlatform(null);
+      onSelectOnlineUrl(result.resolvedUrl);
+    } catch (err) {
+      setResolveError(err instanceof Error ? err.message : t('videoShare.urlResolveFailed'));
+    } finally {
+      setIsResolving(false);
+    }
+  }
+
   function handleLoadUrl(): void {
     const trimmed = urlInput.trim();
-    if (trimmed) onSelectOnlineUrl(trimmed);
+    if (!trimmed || urlUnsafe || urlPlatform) return;
+    onSelectOnlineUrl(trimmed);
   }
 
   function handleRecentClick(source: RecentSource, closePopup = false): void {
@@ -93,13 +133,20 @@ export function VideoSourcePicker({
   const tabBase = 'flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors';
   const tabActive = 'bg-white/15 text-white';
   const tabInactive = 'text-white/40 hover:text-white/70';
+  const tabDisabled = 'text-white/20 cursor-not-allowed';
 
   return (
     <>
       <div className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 p-3">
         {/* Source tabs */}
         <div className="flex items-center gap-1">
-          <button type="button" onClick={() => handleTabClick('camera')} className={cn(tabBase, pendingTab === 'camera' ? tabActive : tabInactive)}>
+          <button
+            type="button"
+            onClick={() => handleTabClick('camera')}
+            disabled={cameraDisabled}
+            title={cameraDisabled ? t('camera.notDetected') : undefined}
+            className={cn(tabBase, cameraDisabled ? tabDisabled : pendingTab === 'camera' ? tabActive : tabInactive)}
+          >
             <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.89L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
             </svg>
@@ -151,23 +198,82 @@ export function VideoSourcePicker({
         )}
 
         {pendingTab === 'online-url' && (
-          <div className="flex gap-2">
-            <input
-              type="url"
-              value={urlInput}
-              onChange={(e) => setUrlInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleLoadUrl(); }}
-              placeholder={t('videoShare.urlPlaceholder')}
-              className="min-w-0 flex-1 rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-white placeholder-white/30 outline-none focus:border-white/30"
-            />
-            <button
-              type="button"
-              onClick={handleLoadUrl}
-              disabled={!urlInput.trim()}
-              className="rounded-xl border border-brand/40 bg-brand/20 px-3 py-1.5 text-xs font-semibold text-brand transition-opacity disabled:opacity-40"
-            >
-              {t('videoShare.loadUrl')}
-            </button>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={urlInput}
+                onChange={(e) => handleUrlChange(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleLoadUrl(); }}
+                placeholder={t('videoShare.urlPlaceholder')}
+                className={cn(
+                  'min-w-0 flex-1 rounded-xl border bg-white/5 px-3 py-1.5 text-xs text-white placeholder-white/30 outline-none transition-colors',
+                  urlUnsafe
+                    ? 'border-red-500/50 focus:border-red-500/70'
+                    : urlPlatform
+                    ? 'border-amber-500/40 focus:border-amber-500/60'
+                    : 'border-white/15 focus:border-white/30',
+                )}
+              />
+              <button
+                type="button"
+                onClick={handleLoadUrl}
+                disabled={!urlInput.trim() || urlUnsafe || !!urlPlatform}
+                className="rounded-xl border border-brand/40 bg-brand/20 px-3 py-1.5 text-xs font-semibold text-brand transition-opacity disabled:opacity-40"
+              >
+                {t('videoShare.loadUrl')}
+              </button>
+            </div>
+
+            {urlUnsafe && (
+              <p className="flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-900/20 px-2.5 py-1 text-[10px] font-semibold text-red-300">
+                <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                {t('videoShare.urlUnsafeBlocked')}
+              </p>
+            )}
+
+            {!urlUnsafe && urlPlatform && (
+              <div className="flex flex-col gap-1">
+                <p className="flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-900/20 px-2.5 py-1.5 text-[10px] font-semibold text-amber-300">
+                  <svg className="mt-px h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                  {t('videoShare.urlPlatformDetected')}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void handleResolveUrl()}
+                  disabled={isResolving}
+                  className="flex items-center justify-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-900/30 px-2.5 py-1 text-[10px] font-semibold text-amber-200 transition-opacity hover:bg-amber-900/50 disabled:opacity-50"
+                >
+                  {isResolving ? (
+                    <>
+                      <span className="h-2.5 w-2.5 animate-spin rounded-full border border-amber-300 border-t-transparent" />
+                      {t('videoShare.urlResolving')}
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polyline points="23 4 23 10 17 10" />
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                      </svg>
+                      {t('videoShare.urlResolve')}
+                    </>
+                  )}
+                </button>
+                {resolveError && (
+                  <p className="rounded-lg border border-red-500/30 bg-red-900/20 px-2.5 py-1 text-[10px] font-semibold text-red-300">
+                    {resolveError}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 

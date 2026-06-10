@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStreamStore } from '../store/stream.store';
 import { getVideoQualityPreset } from '../consts/stream.consts';
 
-export type CameraState = 'idle' | 'requesting' | 'active' | 'denied' | 'error';
+export type CameraState = 'idle' | 'requesting' | 'active' | 'denied' | 'unavailable' | 'error';
 
 export interface CameraStreamResult {
   videoRef: React.RefObject<HTMLVideoElement | null>;
@@ -114,7 +114,13 @@ export function useCameraStream(autoStart = false): CameraStreamResult {
 
       setState('active');
     } catch (err) {
-      setState(err instanceof DOMException && err.name === 'NotAllowedError' ? 'denied' : 'error');
+      if (err instanceof DOMException) {
+        if (err.name === 'NotAllowedError') setState('denied');
+        else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') setState('unavailable');
+        else setState('error');
+      } else {
+        setState('error');
+      }
     } finally {
       acquiringRef.current = false;
     }

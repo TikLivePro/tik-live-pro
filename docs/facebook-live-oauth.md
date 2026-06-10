@@ -8,12 +8,16 @@ This guide covers the full Facebook app configuration for TikLivePro's `integrat
 
 ## Why this error?
 
-```
-Invalid Scopes: publish_video, pages_manage_posts,
-pages_read_engagement, pages_show_list.
-```
-
+### 1. "Invalid Scopes: publish_video, pages_manage_posts, pages_read_engagement, pages_show_list"
 This error means the permissions you are requesting have **not yet been declared** in your Meta dashboard. Facebook requires every permission to be explicitly added to your app before it can be requested in the OAuth flow — even in development mode. This is not an App Review issue; it is a mandatory configuration step.
+
+### 2. "Why can I only find `user_birthday`, `user_hometown`, etc., but not `pages_show_list` or other page permissions?"
+If you go to your Meta Developer dashboard and only see user/consumer-related permissions (like `user_birthday`, `user_friends`, `user_posts`, `user_photos`, `user_videos`, `email`, `openid`, etc.) but cannot find or add Page permissions like `pages_show_list` or `pages_manage_posts`, it means **you created a "Consumer" app (or selected the simple "Authenticate and request data from users with Facebook Login" use case during app creation).**
+
+Meta restricts Page/Business-related permissions entirely to **Business** type apps. To fix this:
+- **You cannot change an existing Consumer app to a Business app.**
+- You **must** create a new app from scratch.
+- In the creation wizard, select **Other** as the use case, then choose **Business** as the app type (see [Step 1](#step-1--create-a-meta-app-of-type-business)).
 
 ---
 

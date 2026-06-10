@@ -83,6 +83,12 @@ export function CameraPreview({ autoStart = false, className }: Props): React.Re
             </div>
           )}
 
+          {state === 'unavailable' && (
+            <div className="space-y-1.5 px-6 text-center">
+              <p className="text-sm font-semibold text-slate-400">{t('camera.notDetected')}</p>
+            </div>
+          )}
+
           {state === 'error' && (
             <div className="space-y-3 px-6 text-center">
               <p className="text-sm font-semibold text-red-400">{t('camera.error')}</p>

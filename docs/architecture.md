@@ -1,6 +1,6 @@
 # TikLivePro — Architecture Overview
 
-> **Last updated:** 2026-06-03 (stream-orchestrator: add recordings table, per-session recording control via MediaMTX config API, recording list/download routes)
+> **Last updated:** 2026-06-09 (stream-orchestrator: video proxy — yt-dlp URL resolution for YouTube/Twitch/Vimeo/Dailymotion; new POST /video-proxy/resolve endpoint; video-push extended to handle platform URLs)
 > Keep this file up-to-date whenever services, ports, infrastructure, or data flows change.
 
 ## Table of Contents
@@ -74,7 +74,7 @@
 | comments | 3006 | `@tik-live-pro/comments-service` | `tiklivepro_comments` | Platform comment polling, WebSocket fan-out |
 | notifications | 3007 | `@tik-live-pro/notifications-service` | `tiklivepro_notifications` | Push and email notifications via NATS workqueue |
 | analytics | 3008 | `@tik-live-pro/analytics-service` | `tiklivepro_analytics` | Event aggregation, usage metrics |
-| stream-orchestrator | 3009 | `@tik-live-pro/stream-orchestrator` | `tiklivepro_stream` | RTMP ingestion (port 1935), multi-destination broadcast via TikTok/Facebook adapters and platform-native MediaMTX relay; per-session recording control via MediaMTX config API; `recordings` table persists completed segments after S3 upload |
+| stream-orchestrator | 3009 | `@tik-live-pro/stream-orchestrator` | `tiklivepro_stream` | RTMP ingestion (port 1935), multi-destination broadcast via TikTok/Facebook adapters and platform-native MediaMTX relay; per-session recording control via MediaMTX config API; `recordings` table persists completed segments after S3 upload; **video proxy** (`POST /video-proxy/resolve`) resolves YouTube/Twitch/Vimeo/Dailymotion URLs via yt-dlp subprocess — see `docs/video-proxy.md` |
 | **status** | **3011** | `@tik-live-pro/status` | — | Public status page at https://status.tiklivepro.me — polls all service `/health` endpoints server-side and renders aggregated status |
 
 ---

@@ -15,11 +15,6 @@ type CaptureableVideo = HTMLVideoElement & { captureStream(): MediaStream };
 const RECENT_URL_KEY = 'tiklivepro:video:recentUrls';
 const MAX_RECENT = 50;
 
-// Prevent createMediaElementSource from being called twice on the same element
-// (React Strict Mode double-invokes effects; the second call throws).
-// Using a WeakSet so elements are GC-eligible after unmount.
-const mediaSourcedElements = new WeakSet<HTMLVideoElement>();
-
 function loadSavedUrls(): RecentSource[] {
   if (typeof window === 'undefined') return [];
   try {
@@ -63,14 +58,14 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   // keeping the video silent locally (by not connecting to audioContext.destination).
   const capturedStreamRef = useRef<MediaStream | null>(null);
 
-  // Web Audio API nodes for audio capture — lets us send video audio to WebRTC
-  // while keeping the video element muted locally (no echo for the streamer).
-  // createMediaElementSource can only be called once per element per context,
-  // so we create it once on mount and reuse it across source changes.
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const audioDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
-  // GainNode for local monitoring — controls how much the streamer hears
-  const monitorGainRef = useRef<GainNode | null>(null);
+  // Local monitor volume — applied directly to video.volume so the streamer hears
+  // the video through the browser's normal audio output. We intentionally do NOT
+  // use createMediaElementSource / Web Audio here: the Web Audio spec mandates that
+  // a MediaElementAudioSourceNode outputs silence for cross-origin resources that
+  // lack CORS headers (e.g. yt-dlp-resolved CDN URLs), which would mute the streamer.
+  // Using video.volume avoids this restriction; captureStream() provides the audio
+  // track for WebRTC (same-origin files carry audio; non-CORS CDN URLs are a browser
+  // limitation — viewers would need a server-side media proxy for audio in that case).
   const videoVolumeRef = useRef(50);
 
   // Set true in loadLocalFile/loadOnlineUrl; cleared by onLoadedData after play() fires.
@@ -88,6 +83,9 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   const [recentSources, setRecentSources] = useState<RecentSource[]>(loadSavedUrls);
   const [videoVolume, setVideoVolumeState] = useState(50);
   const [videoLoadKey, setVideoLoadKey] = useState(0);
+  // true when it is safe to draw the current source onto a canvas (same-origin blob:
+  // files, or online URLs whose CDN returned CORS headers).
+  const [corsAvailable, setCorsAvailable] = useState(false);
 
   const allowViewerControlRef = useRef(false);
   const sourceTypeRef = useRef<VideoSourceType>('camera');
@@ -106,13 +104,13 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     const video = videoRef.current;
     if (!video) return;
 
-    // captureStream() for the video track only — called while the element may still be
-    // muted by JSX, which is fine because we use the Web Audio API for the audio track.
     try {
       capturedStreamRef.current = (video as CaptureableVideo).captureStream();
     } catch {
       capturedStreamRef.current = null;
     }
+    // Set initial monitor volume so the streamer hears audio at 50% from the first load.
+    video.volume = videoVolumeRef.current / 100;
 
     function getBufferedAhead(el: HTMLVideoElement): number {
       const { buffered, currentTime } = el;
@@ -148,15 +146,9 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
       // "play() interrupted by new load request" AbortError on source changes.
       if (pendingPlayRef.current) {
         pendingPlayRef.current = false;
-        // play() is called from loadeddata which fires after the user picked a file or
-        // typed a URL (sticky user activation), so it succeeds without muted.
-        // Do NOT gate play() on ctx.resume() — AudioContext.resume() requires a user
-        // gesture and may never resolve in an async chain, causing permanent black screen.
-        // Resume the AudioContext separately (fire-and-forget) for audio routing.
         void video.play().catch((err) => {
           console.warn('[useVideoShare] video.play() failed:', err);
         });
-        audioCtxRef.current?.resume().catch(() => {});
       }
     };
     const onError = (): void => {
@@ -165,19 +157,13 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
       if (err) {
         switch (err.code) {
           case MediaError.MEDIA_ERR_NETWORK:
-            msg =
-              video.crossOrigin === 'anonymous'
-                ? 'Erreur réseau — le serveur ne renvoie pas les en-têtes CORS requis. Utilisez une URL hébergée avec CORS activé.'
-                : "Erreur réseau — vérifiez que l'URL est accessible.";
+            msg = "Erreur réseau — vérifiez que l'URL est accessible.";
             break;
           case MediaError.MEDIA_ERR_DECODE:
             msg = 'Format non supporté ou fichier corrompu.';
             break;
           case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-            msg =
-              video.crossOrigin === 'anonymous'
-                ? 'URL inaccessible ou CORS non autorisé. Le serveur doit envoyer "Access-Control-Allow-Origin: *".'
-                : 'Format vidéo non supporté par le navigateur.';
+            msg = 'Format vidéo non supporté ou URL inaccessible.';
             break;
           default:
             msg = `Erreur de lecture (code ${err.code}).`;
@@ -198,39 +184,6 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     video.addEventListener('canplay', onCanPlay);
     video.addEventListener('canplaythrough', onCanPlay);
 
-    // Set up Web Audio API for audio capture — only once per video element.
-    // mediaSourcedElements guards against React Strict Mode double-invocation where
-    // the second createMediaElementSource() call would throw because the element is
-    // already connected to the (now-closed) AudioContext from the first run.
-    if (!mediaSourcedElements.has(video)) {
-      try {
-        const ctx = new AudioContext();
-        audioCtxRef.current = ctx;
-        const dest = ctx.createMediaStreamDestination();
-        audioDestRef.current = dest;
-        const monitorGain = ctx.createGain();
-        monitorGainRef.current = monitorGain;
-        monitorGain.gain.value = videoVolumeRef.current / 100;
-
-        // Per the Web Audio spec, a muted element causes MediaElementAudioSourceNode
-        // to produce silence — neither the WebRTC track nor local monitoring would have
-        // any audio. Unmute before connecting so the node captures actual audio data.
-        // Once createMediaElementSource() is called, Web Audio takes over the element's
-        // audio routing entirely; the element no longer drives speakers directly, so
-        // local playback volume is controlled solely by monitorGain below.
-        video.muted = false;
-        video.removeAttribute('muted');
-
-        const src = ctx.createMediaElementSource(video);
-        src.connect(dest); // → WebRTC (viewers)
-        src.connect(monitorGain); // → streamer local monitoring
-        monitorGain.connect(ctx.destination);
-        mediaSourcedElements.add(video);
-      } catch {
-        // AudioContext unavailable (SSR, sandboxed iframe, etc.)
-      }
-    }
-
     return () => {
       video.removeEventListener('timeupdate', onTimeUpdate);
       video.removeEventListener('durationchange', onDurationChange);
@@ -242,9 +195,6 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
       video.removeEventListener('progress', onProgress);
       video.removeEventListener('canplay', onCanPlay);
       video.removeEventListener('canplaythrough', onCanPlay);
-      // Do not close the AudioContext here — the mediaSourcedElements guard ensures
-      // createMediaElementSource is only called once, so we keep the context alive
-      // across Strict Mode's fake unmount/remount cycle. True cleanup happens on GC.
     };
   }, []);
 
@@ -255,9 +205,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
 
   const getAudioTrack = useCallback((): MediaStreamTrack | null => {
     if (sourceTypeRef.current === 'camera') return null;
-    // Audio comes from the Web Audio API destination node, not from captureStream().
-    // The muted video element prevents captureStream() from including audio tracks.
-    return audioDestRef.current?.stream.getAudioTracks()[0] ?? null;
+    return capturedStreamRef.current?.getAudioTracks()[0] ?? null;
   }, []);
 
   const loadLocalFile = useCallback((file: File): void => {
@@ -269,15 +217,14 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     pendingPlayRef.current = true;
     video.load();
 
-    // Resume AudioContext — user just interacted (file picker), so the browser allows it
-    void audioCtxRef.current?.resume();
-
     setLoadError(null);
     setSourceType('local-file');
     setIsVideoLoaded(false);
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
+    // blob: URLs are same-origin — the canvas compositor can draw them safely.
+    setCorsAvailable(true);
 
     const entry: RecentSource = {
       id: crypto.randomUUID(),
@@ -295,13 +242,15 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     const video = videoRef.current;
     if (!video) return;
     if (video.src?.startsWith('blob:')) URL.revokeObjectURL(video.src);
-    // crossOrigin required so captureStream() can read cross-origin frames without taint.
-    video.crossOrigin = 'anonymous';
+    // Load without crossOrigin so the browser doesn't send an Origin header.
+    // External CDNs (YouTube, etc.) don't send CORS headers, and setting
+    // crossOrigin='anonymous' causes a blocked-CORS console error even though
+    // the video plays fine without it. The canvas compositor is already disabled
+    // for online URLs (isCorsAvailable = false), so no CORS probe is needed.
+    video.removeAttribute('crossorigin');
     video.src = url;
     pendingPlayRef.current = true;
     video.load();
-
-    void audioCtxRef.current?.resume();
 
     setLoadError(null);
     setSourceType('online-url');
@@ -309,6 +258,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
+    setCorsAvailable(false);
 
     const entry: RecentSource = { id: url, type: 'online-url', name: url, url };
     setRecentSources((prev) => {
@@ -321,6 +271,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
 
   const switchToCamera = useCallback((): void => {
     pendingPlayRef.current = false;
+    setCorsAvailable(false);
     const video = videoRef.current;
     if (video) {
       video.pause();
@@ -339,13 +290,9 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   const play = useCallback((): void => {
     const video = videoRef.current;
     if (!video) return;
-    // Play immediately — the element is muted so no user gesture is required.
-    // Resume the AudioContext separately; gating play() on ctx.resume() causes
-    // permanent black screen when the AudioContext hasn't been resumed yet.
     void video.play().catch((err) => {
       console.warn('[useVideoShare] video.play() failed:', err);
     });
-    audioCtxRef.current?.resume().catch(() => {});
   }, []);
 
   const pause = useCallback((): void => {
@@ -371,8 +318,9 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     const clamped = Math.max(0, Math.min(100, volume));
     videoVolumeRef.current = clamped;
     setVideoVolumeState(clamped);
-    if (monitorGainRef.current) {
-      monitorGainRef.current.gain.value = clamped / 100;
+    const video = videoRef.current;
+    if (video) {
+      video.volume = clamped / 100;
     }
   }, []);
 
@@ -454,5 +402,6 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     getVideoTrack,
     getAudioTrack,
     videoLoadKey,
+    isCorsAvailable: corsAvailable,
   };
 }

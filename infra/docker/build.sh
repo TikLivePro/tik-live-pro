@@ -64,11 +64,19 @@ build_service() {
     cache_args=(--cache-from "${CACHE_FROM}")
   fi
 
+  # stream-orchestrator needs YTDLP_VERSION baked in at build time.
+  # Override via: YTDLP_VERSION=2025.01.01 bash infra/docker/build.sh stream-orchestrator
+  local extra_build_args=()
+  if [[ "${svc_name}" == "stream-orchestrator" ]]; then
+    extra_build_args+=(--build-arg "YTDLP_VERSION=${YTDLP_VERSION:-2024.12.13}")
+  fi
+
   docker build \
     -f "${dockerfile}" \
     --build-arg SERVICE_NAME="${svc_name}" \
     --build-arg PACKAGE_NAME="${package_name}" \
     --build-arg SERVICE_PORT="${port}" \
+    "${extra_build_args[@]+"${extra_build_args[@]}"}" \
     -t "${image_tag}" \
     "${cache_args[@]+"${cache_args[@]}"}" \
     "${REPO_ROOT}"
