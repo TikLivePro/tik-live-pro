@@ -44,7 +44,7 @@ export function useAuth() {
   );
 
   const register = useCallback(
-    async (params: RegisterCredentials, callbackUrl?: string) => {
+    async (params: RegisterCredentials, callbackUrl?: string, onSuccess?: () => void) => {
       setIsLoading(true);
       setError(null);
       try {
@@ -60,7 +60,8 @@ export function useAuth() {
         }
         const { data } = (await res.json()) as { data: AuthResponse };
         setAuth({ ...data, displayName: params.displayName, email: params.email });
-        router.push(callbackUrl ?? '/dashboard');
+        if (onSuccess) onSuccess();
+        else router.push(callbackUrl ?? '/dashboard');
       } catch {
         setError(tAuth('errors.generic'));
       } finally {
@@ -71,7 +72,7 @@ export function useAuth() {
   );
 
   const login = useCallback(
-    async (params: LoginCredentials, callbackUrl?: string) => {
+    async (params: LoginCredentials, callbackUrl?: string, onSuccess?: () => void) => {
       setIsLoading(true);
       setError(null);
       try {
@@ -87,7 +88,8 @@ export function useAuth() {
         }
         const { data } = (await res.json()) as { data: AuthResponse };
         setAuth({ ...data, email: params.email });
-        router.push(callbackUrl ?? '/dashboard');
+        if (onSuccess) onSuccess();
+        else router.push(callbackUrl ?? '/dashboard');
       } catch {
         setError(tAuth('errors.generic'));
       } finally {

@@ -127,10 +127,12 @@ export function FullscreenLiveView(): React.ReactElement {
     return () => clearInterval(interval);
   }, [currentSession?.id, currentSession?.status, setSessionInStore]);
 
-  // When session enters "starting" state, poll for the ingest slot, then begin WHIP streaming.
+  // When session enters "starting" state, or when mounting onto an already-"live" session
+  // (e.g. after a page refresh), poll for the ingest slot then begin WHIP streaming.
   const whipStartedRef = useRef(false);
   useEffect(() => {
-    if (!currentSession?.id || currentSession.status !== 'starting') return;
+    if (!currentSession?.id) return;
+    if (currentSession.status !== 'starting' && currentSession.status !== 'live') return;
     if (whipStartedRef.current) return;
 
     let cancelled = false;
@@ -275,9 +277,11 @@ export function FullscreenLiveView(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [whipState, videoShare.sourceType, videoShare.isVideoLoaded, videoShare.play]);
 
-  // Refresh the WHIP video track whenever a new file finishes loading.
-  // If the compositor is active, restart it so it captures the fresh track;
-  // otherwise fall back to the raw video track.
+  // Refresh the WHIP video+audio tracks whenever a new file finishes loading.
+  // Video: use compositor when PiP is visible, raw track otherwise.
+  // Audio: always replace here because capturedStream has real audio tracks only
+  // after loadeddata — the source-switching effect runs before the video loads and
+  // gets null from getAudioTrack(), leaving the camera mic in the WHIP sender.
   useEffect(() => {
     if (whipState !== 'connected') return;
     if (videoShare.sourceType === 'camera') return;
@@ -292,6 +296,8 @@ export function FullscreenLiveView(): React.ReactElement {
       const videoTrack = videoShare.getVideoTrack();
       if (videoTrack) void replaceVideoTrack(videoTrack);
     }
+    const audioTrack = videoShare.getAudioTrack();
+    if (audioTrack) void replaceAudioTrack(audioTrack);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoShare.videoLoadKey]);
 

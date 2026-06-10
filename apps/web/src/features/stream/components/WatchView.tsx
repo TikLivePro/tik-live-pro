@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { getInitials } from '@/lib/text.utils';
 import { API_BASE, COMMENTS_WS_URL, apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/features/auth/store/auth.store';
+import { InlineAuthModal } from '@/features/auth/components/InlineAuthModal';
 import { useElapsedTime } from '../hooks/useElapsedTime';
 import { LiveReactionFloat } from './LiveReactionFloat';
 import { ViewersPanel } from './ViewersPanel';
@@ -259,11 +260,8 @@ function CommentBubble({
 
 // ── Auth gate modal ───────────────────────────────────────────
 
-function AuthGateModal({ onClose, callbackUrl }: { onClose: () => void; callbackUrl?: string }): React.ReactElement {
+function AuthGateModal({ onClose, onSignIn }: { onClose: () => void; onSignIn: () => void }): React.ReactElement {
   const t = useTranslations('watch');
-  const loginHref = callbackUrl
-    ? `/auth/login?callbackUrl=${encodeURIComponent(callbackUrl)}`
-    : '/auth/login';
   return (
     <div
       className="absolute inset-0 z-50 flex items-end justify-center bg-black/40 pb-16 backdrop-blur-sm sm:items-center sm:pb-0"
@@ -276,12 +274,13 @@ function AuthGateModal({ onClose, callbackUrl }: { onClose: () => void; callback
         <div className="mb-3 text-4xl" aria-hidden="true">🔒</div>
         <p className="mb-1 text-base font-semibold text-white">{t('signInToInteract')}</p>
         <p className="mb-5 text-xs text-white/50">{t('signInDesc')}</p>
-        <Link
-          href={loginHref}
+        <button
+          type="button"
+          onClick={onSignIn}
           className="block w-full rounded-xl bg-brand py-3 text-sm font-bold text-white transition-opacity hover:opacity-90"
         >
           {t('signIn')}
-        </Link>
+        </button>
         <button
           type="button"
           onClick={onClose}
@@ -328,11 +327,13 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
 
   const [session, setSession] = useState<PublicSession>(initialSession);
   const [whepFailed, setWhepFailed] = useState(false);
+  const [whepKey, setWhepKey] = useState(0);
 
   // Panel visibility
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [viewersOpen, setViewersOpen] = useState(false);
   const [authGateOpen, setAuthGateOpen] = useState(false);
+  const [authLoginOpen, setAuthLoginOpen] = useState(false);
 
   // Interactions
   const [localLiked, setLocalLiked] = useState(false);
@@ -467,6 +468,16 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id, isLive]);
+
+  // Auto-retry WHEP after failure so viewers recover when the stream comes back
+  useEffect(() => {
+    if (!whepFailed || !isLive) return;
+    const timer = setTimeout(() => {
+      setWhepFailed(false);
+      setWhepKey((k) => k + 1);
+    }, 10_000);
+    return () => clearTimeout(timer);
+  }, [whepFailed, isLive]);
 
   const removeReaction = useCallback((id: string) => {
     setLiveReactions((prev) => prev.filter((r) => r.id !== id));
@@ -658,6 +669,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       !!whepUrl && !whepFailed && typeof RTCPeerConnection !== 'undefined';
     return useWhep ? (
       <WhepPlayer
+        key={whepKey}
         src={whepUrl}
         title={session.title}
         onError={() => setWhepFailed(true)}
@@ -1106,7 +1118,18 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       )}
 
       {/* Auth gate modal */}
-      {authGateOpen && <AuthGateModal onClose={() => setAuthGateOpen(false)} callbackUrl={pathname} />}
+      {authGateOpen && (
+        <AuthGateModal
+          onClose={() => setAuthGateOpen(false)}
+          onSignIn={() => { setAuthGateOpen(false); setAuthLoginOpen(true); }}
+        />
+      )}
+      {authLoginOpen && (
+        <InlineAuthModal
+          onClose={() => setAuthLoginOpen(false)}
+          callbackUrl={pathname}
+        />
+      )}
 
       {/* Powered-by footer (non-live only) */}
       {!isLive && (
@@ -1291,7 +1314,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
             ) : (
               <button
                 type="button"
-                onClick={() => setAuthGateOpen(true)}
+                onClick={() => setAuthLoginOpen(true)}
                 className="w-full rounded-xl border border-white/10 bg-white/6 py-3 text-sm font-medium text-white/55 transition-colors hover:bg-white/10 hover:text-white"
               >
                 {t('signInToInteract')}

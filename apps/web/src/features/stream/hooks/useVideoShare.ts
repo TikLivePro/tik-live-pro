@@ -242,13 +242,12 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     const video = videoRef.current;
     if (!video) return;
     if (video.src?.startsWith('blob:')) URL.revokeObjectURL(video.src);
-    // Load without crossOrigin so the browser doesn't send an Origin header.
-    // External CDNs (YouTube, etc.) don't send CORS headers, and setting
-    // crossOrigin='anonymous' causes a blocked-CORS console error even though
-    // the video plays fine without it. The canvas compositor is already disabled
-    // for online URLs (isCorsAvailable = false), so no CORS probe is needed.
+    // Route through the same-origin proxy so captureStream() captures real frames.
+    // Direct cross-origin URLs produce opaque (black) video tracks and silent audio
+    // tracks in Chromium; the proxy makes the resource appear same-origin, which
+    // removes the browser's taint restriction and enables the canvas compositor too.
     video.removeAttribute('crossorigin');
-    video.src = url;
+    video.src = `/api/video-stream?url=${encodeURIComponent(url)}`;
     pendingPlayRef.current = true;
     video.load();
 
@@ -258,7 +257,8 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
-    setCorsAvailable(false);
+    // Proxy URL is same-origin → canvas compositor can draw it safely.
+    setCorsAvailable(true);
 
     const entry: RecentSource = { id: url, type: 'online-url', name: url, url };
     setRecentSources((prev) => {
