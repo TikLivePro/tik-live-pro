@@ -89,7 +89,7 @@ describe('StartBroadcastUseCase', () => {
     const eventPublisher = makeEventPublisher();
 
     const useCase = new StartBroadcastUseCase(
-      repo, tokenProvider, adapterRegistry, eventPublisher, mockLogger,
+      repo, tokenProvider, adapterRegistry, eventPublisher, 'rtmp://localhost:1936', mockLogger,
     );
 
     const result = await useCase.execute({ sessionId, correlationId: 'corr-1' });
@@ -108,26 +108,27 @@ describe('StartBroadcastUseCase', () => {
   it('throws NOT_FOUND when session does not exist', async () => {
     const repo = makeRepo(null);
     const useCase = new StartBroadcastUseCase(
-      repo, makeTokenProvider(), makeAdapterRegistry(), makeEventPublisher(), mockLogger,
+      repo, makeTokenProvider(), makeAdapterRegistry(), makeEventPublisher(), 'rtmp://localhost:1936', mockLogger,
     );
     await expect(useCase.execute({ sessionId, correlationId: 'corr-1' })).rejects.toThrow('not found');
   });
 
-  it('marks session as ERROR and throws when all token resolutions fail', async () => {
+  it('succeeds and returns ingestKey even when all token resolutions fail', async () => {
     const session = makeSession();
     const repo = makeRepo(session);
     const tokenProvider = makeTokenProvider();
     tokenProvider.getToken.mockRejectedValue(new Error('Network error'));
 
     const useCase = new StartBroadcastUseCase(
-      repo, tokenProvider, makeAdapterRegistry(), makeEventPublisher(), mockLogger,
+      repo, tokenProvider, makeAdapterRegistry(), makeEventPublisher(), 'rtmp://localhost:1936', mockLogger,
     );
 
-    await expect(useCase.execute({ sessionId, correlationId: 'corr-1' })).rejects.toThrow('No valid destinations');
+    const result = await useCase.execute({ sessionId, correlationId: 'corr-1' });
+    expect(result.ingestKey).toBeTruthy();
     expect(repo.update).toHaveBeenCalledTimes(1);
   });
 
-  it('marks session as ERROR when all createLiveStream calls fail', async () => {
+  it('succeeds and returns ingestKey even when all createLiveStream calls fail', async () => {
     const session = makeSession();
     const repo = makeRepo(session);
     const adapterRegistry = makeAdapterRegistry();
@@ -135,9 +136,11 @@ describe('StartBroadcastUseCase', () => {
     adapter.createLiveStream.mockRejectedValue(new Error('API error'));
 
     const useCase = new StartBroadcastUseCase(
-      repo, makeTokenProvider(), adapterRegistry, makeEventPublisher(), mockLogger,
+      repo, makeTokenProvider(), adapterRegistry, makeEventPublisher(), 'rtmp://localhost:1936', mockLogger,
     );
 
-    await expect(useCase.execute({ sessionId, correlationId: 'corr-1' })).rejects.toThrow('All destinations failed');
+    const result = await useCase.execute({ sessionId, correlationId: 'corr-1' });
+    expect(result.ingestKey).toBeTruthy();
+    expect(repo.update).toHaveBeenCalledTimes(1);
   });
 });

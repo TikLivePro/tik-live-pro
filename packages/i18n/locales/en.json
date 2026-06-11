@@ -195,6 +195,9 @@
       "urlResolve": "Resolve via server",
       "urlResolving": "Resolving…",
       "urlResolveFailed": "Could not resolve. Check the URL and try again.",
+      "sourceQualityLabel": "Source quality",
+      "sourceQualityBest": "Best",
+      "sourceQualityChanging": "Switching…",
       "loadUrl": "Load",
       "play": "Play",
       "pause": "Pause",
@@ -540,6 +543,11 @@
       "mute": "Mute",
       "unmute": "Unmute",
       "label": "Volume"
+    },
+    "quality": {
+      "label": "Quality",
+      "auto": "Auto",
+      "open": "Stream quality"
     }
   },
   "notFound": {

@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { parseEnv, baseEnvSchema } from '@tik-live-pro/config';
 import { createLogger } from '@tik-live-pro/logger';
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
 
 const envSchema = baseEnvSchema.extend({
   JWT_SECRET: z.string().min(64),
@@ -46,7 +47,10 @@ const STRIP_PREFIX_ROUTES = new Set(['/stream-orchestrator']);
 const PUBLIC_PREFIXES = new Set(['/auth']);
 
 // Exact paths publicly accessible without a JWT (within otherwise-protected prefixes).
-const PUBLIC_PATHS = new Set(['/billing/plans']);
+const PUBLIC_PATHS = new Set([
+  '/billing/plans',
+  '/stream-orchestrator/video-proxy/merge-stream',
+]);
 // Pattern-matched public paths (e.g. /sessions/:id/public — shared watch pages).
 const PUBLIC_PATH_PATTERNS = [
   /^\/sessions\/[^/]+\/public$/,
@@ -63,7 +67,16 @@ async function bootstrap(): Promise<void> {
     ajv: { customOptions: { keywords: ['example'] } },
   });
 
-  await fastify.register(fastifyHelmet);
+  await fastify.register(fastifyHelmet, {
+    // In development the web app (localhost:3010) and API gateway (localhost:3000)
+    // are on different ports — treated as cross-origin by browsers. Allow cross-origin
+    // resource loading so video elements can load merge-stream responses directly.
+    // In production everything is served behind the same domain (Caddy), so
+    // same-origin is correct and provides the proper security boundary.
+    crossOriginResourcePolicy: {
+      policy: env.NODE_ENV === 'development' ? 'cross-origin' : 'same-origin',
+    },
+  });
   await fastify.register(fastifyCors, { origin: true });
   await fastify.register(fastifyRateLimit, { max: 500, timeWindow: '1 minute' });
   await fastify.register(fastifyJwt, { secret: env.JWT_SECRET });
@@ -1165,6 +1178,44 @@ All error responses follow a consistent envelope:
   // Proxy routes
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // Streaming passthrough — merge-stream (binary MP4, not JSON)
+  // ---------------------------------------------------------------------------
+  // The generic proxy below buffers via response.json() which cannot handle
+  // streaming binary responses. This dedicated route pipes the ffmpeg output
+  // directly to the client without buffering.
+  fastify.get('/stream-orchestrator/video-proxy/merge-stream', async (request, reply) => {
+    const upstreamPath = request.url.slice('/stream-orchestrator'.length);
+    const targetUrl = `${env.STREAM_ORCHESTRATOR_SERVICE_URL}${upstreamPath}`;
+
+    let upstream: Response;
+    try {
+      upstream = await fetch(targetUrl);
+    } catch {
+      return reply.status(502).send({ error: { code: 'BAD_GATEWAY', message: 'Upstream unavailable' } });
+    }
+
+    if (!upstream.body) {
+      return reply.status(upstream.status).send();
+    }
+
+    // Bypass Fastify's JSON serialization pipeline — pipe the binary MP4 stream
+    // directly to the raw Node.js response socket so no buffering or encoding occurs.
+    reply.hijack();
+    reply.raw.writeHead(upstream.status, {
+      'Content-Type': upstream.headers.get('content-type') ?? 'video/mp4',
+      'Cache-Control': 'no-store',
+      'X-Accel-Buffering': 'no',
+      'Cross-Origin-Resource-Policy': env.NODE_ENV === 'development' ? 'cross-origin' : 'same-origin',
+    });
+
+    const nodeStream = Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]);
+    // Destroy the upstream when the browser disconnects so ffmpeg is killed promptly.
+    request.raw.once('close', () => { nodeStream.destroy(); });
+    nodeStream.pipe(reply.raw, { end: true });
+  });
+
+  // ---------------------------------------------------------------------------
   // Hop-by-hop headers must not be forwarded to downstream services.
   // accept-encoding is excluded so the downstream always returns uncompressed
   // JSON — the gateway re-serializes the body so it cannot forward a

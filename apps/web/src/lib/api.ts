@@ -4,18 +4,30 @@ export const API_BASE = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:
 
 export interface VideoProxyResolveResult {
   resolvedUrl: string;
+  /**
+   * Audio-only CDN URL — present only for DASH streams where video and audio
+   * are separate.  When set, use the merge-stream endpoint to play both.
+   */
+  audioUrl?: string;
   title: string;
+  /** All video heights available (DASH + combined), sorted descending. */
+  availableHeights: number[];
 }
 
-export async function resolveVideoProxyUrl(platformUrl: string): Promise<VideoProxyResolveResult> {
+export async function resolveVideoProxyUrl(
+  platformUrl: string,
+  height?: number,
+): Promise<VideoProxyResolveResult> {
+  const body: Record<string, unknown> = { url: platformUrl };
+  if (height !== undefined) body['height'] = height;
   const res = await apiFetch(`${API_BASE}/stream-orchestrator/video-proxy/resolve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ url: platformUrl }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({})) as { message?: string };
-    throw new Error(body.message ?? 'Failed to resolve URL');
+    const responseBody = await res.json().catch(() => ({})) as { message?: string };
+    throw new Error(responseBody.message ?? 'Failed to resolve URL');
   }
   return (await res.json()) as VideoProxyResolveResult;
 }

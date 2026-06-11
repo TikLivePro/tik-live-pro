@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import type { FastifyInstance } from 'fastify';
 import type { IStreamSessionRepository } from '../../domain/repositories/stream-session.repository.js';
 import type { IRecordingRepository } from '../../infrastructure/db/recording.repo.impl.js';
@@ -12,6 +13,10 @@ import type { FfmpegCommand } from 'fluent-ffmpeg';
 // Map of sessionId → active video-push ffmpeg process.
 // Ensures only one push process runs per session at a time.
 const videoPushProcesses = new Map<string, FfmpegCommand>();
+
+// Crude SSRF guard shared with the merge-stream endpoint.
+const PRIVATE_IP_RE =
+  /^(localhost|127\.|0\.0\.0\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1|fc|fd)/i;
 
 // ---------------------------------------------------------------------------
 // Reusable schema fragments
@@ -47,6 +52,25 @@ function checkResolveRateLimit(ip: string): boolean {
   if (entry.count >= RESOLVE_MAX) return false;
   entry.count++;
   return true;
+}
+
+// Per-IP rate limiter for the merge-stream endpoint (concurrent open streams).
+// One active merge stream per IP at a time is generous for normal use.
+const mergeRateLimiter = new Map<string, number>(); // ip → active stream count
+const MERGE_MAX_PER_IP = 3;
+
+function acquireMergeSlot(ip: string): boolean {
+  const current = mergeRateLimiter.get(ip) ?? 0;
+  if (current >= MERGE_MAX_PER_IP) return false;
+  mergeRateLimiter.set(ip, current + 1);
+  return true;
+}
+
+function releaseMergeSlot(ip: string): void {
+  const current = mergeRateLimiter.get(ip) ?? 1;
+  const next = Math.max(0, current - 1);
+  if (next === 0) mergeRateLimiter.delete(ip);
+  else mergeRateLimiter.set(ip, next);
 }
 
 export function registerRoutes(
@@ -1007,9 +1031,14 @@ Only valid when the session status is \`live\`.
   // a direct media URL using yt-dlp.  The resolved URL can then be loaded by the
   // browser's <video> element or fed back into POST /sessions/:id/video-push.
   //
+  // Always fetches the highest available combined (audio+video) format unless
+  // `height` is supplied, in which case the best combined format at or below
+  // that height is returned.  The response also includes `availableHeights` so
+  // the caller can render a quality picker without a second round-trip.
+  //
   // Rate-limited to 5 requests per IP per minute to prevent abuse.
   // yt-dlp must be installed and available in PATH on the server.
-  app.post<{ Body: { url?: string } }>(
+  app.post<{ Body: { url?: string; height?: number } }>(
     '/video-proxy/resolve',
     {
       schema: {
@@ -1030,6 +1059,11 @@ Install with \`pip install yt-dlp\` or \`brew install yt-dlp\`.
 
 The returned \`resolvedUrl\` is a time-limited CDN URL valid for several minutes.
 For long-running sessions, call this endpoint again to refresh the URL.
+
+Pass an optional \`height\` to cap the source resolution (e.g. \`720\` for 720p).
+Omit it to receive the highest available combined format.  The response always
+includes \`availableHeights\` — all heights available as combined (audio+video)
+formats — so the client can show a quality picker without an extra round-trip.
         `.trim(),
         security: bearerAuth,
         body: {
@@ -1042,21 +1076,37 @@ For long-running sessions, call this endpoint again to refresh the URL.
               description: 'The platform URL to resolve (YouTube, Twitch, Vimeo, or Dailymotion).',
               example: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
             },
+            height: {
+              type: 'integer',
+              minimum: 1,
+              description: 'Optional maximum height cap in pixels (e.g. 720). Omit for highest available.',
+              example: 720,
+            },
           },
         },
         response: {
           200: {
             description: 'Resolved successfully.',
             type: 'object',
-            required: ['resolvedUrl', 'title'],
+            required: ['resolvedUrl', 'title', 'availableHeights'],
             properties: {
               resolvedUrl: {
                 type: 'string',
-                description: 'Direct media URL playable by a browser <video> element or ffmpeg.',
+                description: 'Direct video CDN URL. For DASH this is the video-only stream; pair with audioUrl.',
+              },
+              audioUrl: {
+                type: 'string',
+                description: 'Audio-only CDN URL. Present only for DASH streams; absent when the video already contains audio.',
               },
               title: {
                 type: 'string',
                 description: 'Title of the video as reported by yt-dlp.',
+              },
+              availableHeights: {
+                type: 'array',
+                items: { type: 'integer' },
+                description: 'All heights (px) available as video streams, sorted descending.',
+                example: [1080, 720, 480, 360],
               },
             },
           },
@@ -1088,9 +1138,19 @@ For long-running sessions, call this endpoint again to refresh the URL.
         return;
       }
 
+      const maxHeight = typeof req.body.height === 'number' && req.body.height > 0
+        ? req.body.height
+        : undefined;
+
       try {
-        const result = await resolveWithYtDlp(rawUrl, deps.logger);
-        await reply.status(200).send({ resolvedUrl: result.url, title: result.title });
+        const result = await resolveWithYtDlp(rawUrl, deps.logger, maxHeight);
+        const body: Record<string, unknown> = {
+          resolvedUrl: result.url,
+          title: result.title,
+          availableHeights: result.availableHeights,
+        };
+        if (result.audioUrl) body['audioUrl'] = result.audioUrl;
+        await reply.status(200).send(body);
       } catch (err) {
         if (err instanceof YtDlpError) {
           if (err.code === 'NOT_INSTALLED') {
@@ -1107,6 +1167,115 @@ For long-running sessions, call this endpoint again to refresh the URL.
           await reply.status(500).send({ code: 'INTERNAL_ERROR', message: 'Unexpected server error.' });
         }
       }
+    },
+  );
+
+  // GET /video-proxy/merge-stream -------------------------------------------------
+  // Accepts two CDN URLs (video-only + audio-only from a DASH resolve) and streams
+  // a real-time ffmpeg merge as fragmented MP4.  The browser loads this via the
+  // same-origin Next.js /api/video-stream proxy so captureStream() works.
+  //
+  // No Bearer auth: the CDN URLs are already time-limited tokens issued by the
+  // resolve endpoint (which is auth-gated).  SSRF protection + per-IP concurrency
+  // limits mitigate abuse.
+  app.get<{ Querystring: { v?: string; a?: string } }>(
+    '/video-proxy/merge-stream',
+    {
+      schema: {
+        tags: ['Video Proxy'],
+        summary: 'Stream a real-time merge of separate video + audio CDN URLs',
+        description: `
+Merges a DASH video-only CDN URL and an audio-only CDN URL using ffmpeg and
+streams the result as fragmented MP4.  This is consumed by the browser
+\`<video>\` element through the Next.js same-origin proxy so that
+\`captureStream()\` can capture full-quality video for WHIP.
+
+Both \`v\` and \`a\` must be HTTPS URLs from public CDN hosts (not private IPs).
+The stream runs for as long as the client connection is open; closing the
+connection kills the ffmpeg process.
+
+**Rate limit:** ${MERGE_MAX_PER_IP} concurrent streams per IP.
+        `.trim(),
+        querystring: {
+          type: 'object',
+          required: ['v', 'a'],
+          additionalProperties: false,
+          properties: {
+            v: { type: 'string', description: 'URL-encoded video-only CDN URL.' },
+            a: { type: 'string', description: 'URL-encoded audio-only CDN URL.' },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { v: rawV, a: rawA } = req.query;
+      req.log.info({ hasV: !!rawV, hasA: !!rawA }, 'merge-stream request received');
+      if (!rawV || !rawA) {
+        await reply.status(400).send({ code: 'MISSING_PARAMS', message: 'v and a query params are required.' });
+        return;
+      }
+
+      // SSRF guard
+      let vUrl: URL;
+      let aUrl: URL;
+      try {
+        vUrl = new URL(rawV);
+        aUrl = new URL(rawA);
+      } catch {
+        await reply.status(400).send({ code: 'INVALID_URL', message: 'v or a is not a valid URL.' });
+        return;
+      }
+      for (const u of [vUrl, aUrl]) {
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+          await reply.status(400).send({ code: 'INVALID_URL', message: 'Only http/https URLs are allowed.' });
+          return;
+        }
+        if (PRIVATE_IP_RE.test(u.hostname)) {
+          await reply.status(400).send({ code: 'PRIVATE_URL', message: 'Private or loopback URLs are not allowed.' });
+          return;
+        }
+      }
+
+      const ip = req.ip;
+      if (!acquireMergeSlot(ip)) {
+        await reply.status(429).send({ code: 'RATE_LIMITED', message: `Max ${MERGE_MAX_PER_IP} concurrent merge streams per IP.` });
+        return;
+      }
+
+      // Merge with ffmpeg: copy H.264+AAC without re-encoding, output fragmented
+      // MP4 so the browser can start playback before the stream ends.
+      const proc = spawn('ffmpeg', [
+        '-i', rawV,
+        '-i', rawA,
+        '-c', 'copy',
+        '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
+        '-f', 'mp4',
+        'pipe:1',
+      ], { shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+
+      proc.stderr?.on('data', (chunk: Buffer) => {
+        req.log.debug({ msg: chunk.toString().trim() }, 'merge-stream ffmpeg');
+      });
+
+      proc.on('error', (err: Error) => {
+        req.log.error({ err }, 'merge-stream ffmpeg spawn error');
+        releaseMergeSlot(ip);
+      });
+
+      proc.on('close', () => {
+        releaseMergeSlot(ip);
+      });
+
+      // Kill ffmpeg immediately when the client disconnects.
+      req.raw.on('close', () => {
+        proc.kill('SIGKILL');
+      });
+
+      await reply
+        .header('Content-Type', 'video/mp4')
+        .header('Cache-Control', 'no-store')
+        .header('X-Accel-Buffering', 'no')
+        .send(proc.stdout);
     },
   );
 }

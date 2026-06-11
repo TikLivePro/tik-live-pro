@@ -12,7 +12,7 @@ import { useStreamStore } from '../store/stream.store';
 import type { PreSourceType } from '../store/stream.store';
 import { useWebcamAvailability } from '../hooks/useWebcamAvailability';
 import { isUnsafeVideoUrl, detectVideoPlatform } from '../consts/video-url.utils';
-import { resolveVideoProxyUrl } from '@/lib/api';
+import { resolveVideoProxyUrl, API_BASE } from '@/lib/api';
 
 interface Props {
   onSubmit: (params: { title: string; description?: string; destinationIds: SocialAccountId[] }) => void;
@@ -33,6 +33,9 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
   const [urlPlatform, setUrlPlatform] = useState<string | null>(null);
   const [isResolving, setIsResolving] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
+  const [availableHeights, setAvailableHeights] = useState<number[] | null>(null);
+  const [selectedHeight, setSelectedHeight] = useState<number | null>(null);
+  const [resolvedPlatformUrl, setResolvedPlatformUrl] = useState<string | null>(null);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const initializedRef = useRef(false);
@@ -87,25 +90,47 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
   function handleUrlChange(value: string): void {
     setUrlInput(value);
     setResolveError(null);
+    // Reset quality state when the URL changes
+    setAvailableHeights(null);
+    setSelectedHeight(null);
+    setResolvedPlatformUrl(null);
     setUrlPlatform(detectVideoPlatform(value.trim()));
   }
 
-  async function handleResolveUrl(): Promise<void> {
-    const trimmed = urlInput.trim();
-    if (!trimmed || isResolving) return;
+  async function doResolve(platformUrl: string, height?: number): Promise<void> {
+    if (!platformUrl || isResolving) return;
     setIsResolving(true);
     setResolveError(null);
     try {
-      const result = await resolveVideoProxyUrl(trimmed);
-      setUrlInput(result.resolvedUrl);
+      const result = await resolveVideoProxyUrl(platformUrl, height);
+
+      if (height === undefined) {
+        setAvailableHeights(result.availableHeights);
+        setSelectedHeight(result.availableHeights[0] ?? null);
+        setResolvedPlatformUrl(platformUrl);
+      } else {
+        setSelectedHeight(height);
+      }
+
+      const effectiveUrl = result.audioUrl
+        ? `${API_BASE}/stream-orchestrator/video-proxy/merge-stream` +
+          `?v=${encodeURIComponent(result.resolvedUrl)}&a=${encodeURIComponent(result.audioUrl)}`
+        : result.resolvedUrl;
+
+      setUrlInput(effectiveUrl);
       setUrlPlatform(null);
       setSourceTab('online-url');
-      setPreSource({ type: 'online-url', url: result.resolvedUrl });
+      setPreSource({ type: 'online-url', url: effectiveUrl });
     } catch (err) {
       setResolveError(err instanceof Error ? err.message : t('videoShare.urlResolveFailed'));
     } finally {
       setIsResolving(false);
     }
+  }
+
+  function handleQualitySelect(height: number): void {
+    if (!resolvedPlatformUrl || isResolving) return;
+    void doResolve(resolvedPlatformUrl, height);
   }
 
   function handleLoadUrl(): void {
@@ -338,7 +363,7 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
                 </p>
                 <button
                   type="button"
-                  onClick={() => void handleResolveUrl()}
+                  onClick={() => void doResolve(urlInput.trim())}
                   disabled={isResolving}
                   className="flex items-center justify-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-50 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-900/40"
                 >
@@ -362,6 +387,43 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
                     {resolveError}
                   </p>
                 )}
+              </div>
+            )}
+
+            {/* Source quality picker — shown after a platform URL has been resolved */}
+            {!urlPlatform && availableHeights !== null && availableHeights.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t('videoShare.sourceQualityLabel')}
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {availableHeights.map((h) => {
+                    const isActive = selectedHeight === h;
+                    return (
+                      <button
+                        key={h}
+                        type="button"
+                        disabled={isResolving}
+                        onClick={() => handleQualitySelect(h)}
+                        className={cn(
+                          'rounded-lg border px-2.5 py-1 text-xs font-semibold transition-colors disabled:opacity-40',
+                          isActive
+                            ? 'border-brand/60 bg-brand/10 text-brand'
+                            : 'border-border bg-background text-foreground hover:border-border/80 hover:bg-muted/50',
+                        )}
+                      >
+                        {isResolving && isActive ? (
+                          <span className="flex items-center gap-1">
+                            <span className="h-2.5 w-2.5 animate-spin rounded-full border border-current border-t-transparent" />
+                            {h}p
+                          </span>
+                        ) : (
+                          `${h}p`
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

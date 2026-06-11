@@ -19,7 +19,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (!ALLOWED_PROTOCOLS.has(parsed.protocol)) {
     return new Response('Only http/https URLs are allowed', { status: 400 });
   }
-  if (PRIVATE_IP_RE.test(parsed.hostname)) {
+  if (process.env.NODE_ENV !== 'development' && PRIVATE_IP_RE.test(parsed.hostname)) {
     return new Response('Private/loopback URLs are not allowed', { status: 400 });
   }
 

@@ -31,6 +31,9 @@ async function buildAudioChain(
   micGain: GainNode;
   monitorGain: GainNode;
 } | null> {
+  if (stream.getAudioTracks().length === 0) {
+    return null;
+  }
   try {
     const ctx = new AudioContext();
     await ctx.resume();
@@ -93,14 +96,37 @@ export function useCameraStream(autoStart = false): CameraStreamResult {
     try {
       const qualityId = useStreamStore.getState().videoQualityId;
       const preset = getVideoQualityPreset(qualityId);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: preset.width, max: preset.width },
-          height: { ideal: preset.height, max: preset.height },
-          frameRate: { ideal: 30, max: 30 },
-        },
-        audio: true,
-      });
+
+      const videoConstraints = {
+        width: { ideal: preset.width },
+        height: { ideal: preset.height },
+        frameRate: { ideal: 30 },
+      };
+
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: videoConstraints,
+          audio: true,
+        });
+      } catch (firstErr) {
+        console.warn('Failed to start camera with audio, retrying video-only:', firstErr);
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: videoConstraints,
+            audio: false,
+          });
+          setIsMicMuted(true);
+        } catch (secondErr) {
+          console.warn('Failed to start camera with ideal constraints, retrying with basic constraints:', secondErr);
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+          setIsMicMuted(true);
+        }
+      }
+
       streamRef.current = stream;
       useStreamStore.getState().setActiveStream(stream);
       if (videoRef.current) videoRef.current.srcObject = stream;
@@ -114,10 +140,13 @@ export function useCameraStream(autoStart = false): CameraStreamResult {
 
       setState('active');
     } catch (err) {
-      if (err instanceof DOMException) {
-        if (err.name === 'NotAllowedError') setState('denied');
-        else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') setState('unavailable');
-        else setState('error');
+      const name = err instanceof Error || (err && typeof err === 'object' && 'name' in err)
+        ? (err as { name: string }).name
+        : '';
+      if (name === 'NotAllowedError') {
+        setState('denied');
+      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        setState('unavailable');
       } else {
         setState('error');
       }

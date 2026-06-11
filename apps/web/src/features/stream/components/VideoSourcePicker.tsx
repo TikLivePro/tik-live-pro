@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import type { VideoSourceType, RecentSource } from '../interfaces/video-share.interfaces';
 import { detectVideoPlatform, isUnsafeVideoUrl } from '../consts/video-url.utils';
-import { resolveVideoProxyUrl } from '@/lib/api';
+import { resolveVideoProxyUrl, API_BASE } from '@/lib/api';
 
 const INITIAL_SHOWN = 3;
 const PAGE_SIZE = 5;
@@ -55,6 +55,9 @@ export function VideoSourcePicker({
   const [urlPlatform, setUrlPlatform] = useState<string | null>(null);
   const [isResolving, setIsResolving] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
+  const [availableHeights, setAvailableHeights] = useState<number[] | null>(null);
+  const [selectedHeight, setSelectedHeight] = useState<number | null>(null);
+  const [resolvedPlatformUrl, setResolvedPlatformUrl] = useState<string | null>(null);
 
   // History popup state
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -80,6 +83,10 @@ export function VideoSourcePicker({
   function handleUrlChange(value: string): void {
     setUrlInput(value);
     setResolveError(null);
+    // Reset quality state when the URL changes
+    setAvailableHeights(null);
+    setSelectedHeight(null);
+    setResolvedPlatformUrl(null);
     const trimmed = value.trim();
     if (!trimmed) {
       setUrlUnsafe(false);
@@ -90,21 +97,55 @@ export function VideoSourcePicker({
     setUrlPlatform(detectVideoPlatform(trimmed));
   }
 
-  async function handleResolveUrl(): Promise<void> {
-    const trimmed = urlInput.trim();
-    if (!trimmed || isResolving) return;
+  /**
+   * Resolves `platformUrl` via the server and calls `onSelectOnlineUrl` with
+   * the playable URL.  When the backend returns separate DASH video+audio URLs,
+   * constructs the server-side merge-stream URL so the browser receives a
+   * single streamable response.
+   *
+   * Accepts the URL explicitly to avoid the async React state-update race
+   * that would occur if we read `urlInput` after a state setter fires.
+   */
+  async function doResolve(platformUrl: string, height?: number): Promise<void> {
+    if (!platformUrl || isResolving) return;
     setIsResolving(true);
     setResolveError(null);
     try {
-      const result = await resolveVideoProxyUrl(trimmed);
-      setUrlInput(result.title ? `${result.resolvedUrl}` : result.resolvedUrl);
+      const result = await resolveVideoProxyUrl(platformUrl, height);
+
+      if (height === undefined) {
+        setAvailableHeights(result.availableHeights);
+        setSelectedHeight(result.availableHeights[0] ?? null);
+        setResolvedPlatformUrl(platformUrl);
+      } else {
+        setSelectedHeight(height);
+      }
+
+      // When DASH: video and audio are separate CDN streams. Route them through
+      // the server-side merge endpoint so the browser gets a single MP4 stream
+      // and captureStream() can capture full-quality video.
+      const effectiveUrl = result.audioUrl
+        ? `${API_BASE}/stream-orchestrator/video-proxy/merge-stream` +
+          `?v=${encodeURIComponent(result.resolvedUrl)}&a=${encodeURIComponent(result.audioUrl)}`
+        : result.resolvedUrl;
+
+      setUrlInput(effectiveUrl);
       setUrlPlatform(null);
-      onSelectOnlineUrl(result.resolvedUrl);
+      onSelectOnlineUrl(effectiveUrl);
     } catch (err) {
       setResolveError(err instanceof Error ? err.message : t('videoShare.urlResolveFailed'));
     } finally {
       setIsResolving(false);
     }
+  }
+
+  function handleResolveUrl(): void {
+    void doResolve(urlInput.trim());
+  }
+
+  function handleQualitySelect(height: number): void {
+    if (!resolvedPlatformUrl || isResolving) return;
+    void doResolve(resolvedPlatformUrl, height);
   }
 
   function handleLoadUrl(): void {
@@ -248,7 +289,7 @@ export function VideoSourcePicker({
                 </p>
                 <button
                   type="button"
-                  onClick={() => void handleResolveUrl()}
+                  onClick={handleResolveUrl}
                   disabled={isResolving}
                   className="flex items-center justify-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-900/30 px-2.5 py-1 text-[10px] font-semibold text-amber-200 transition-opacity hover:bg-amber-900/50 disabled:opacity-50"
                 >
@@ -272,6 +313,43 @@ export function VideoSourcePicker({
                     {resolveError}
                   </p>
                 )}
+              </div>
+            )}
+
+            {/* Source quality picker — shown after a platform URL has been resolved */}
+            {!urlUnsafe && !urlPlatform && availableHeights !== null && availableHeights.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-white/30">
+                  {t('videoShare.sourceQualityLabel')}
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {availableHeights.map((h) => {
+                    const isActive = selectedHeight === h;
+                    return (
+                      <button
+                        key={h}
+                        type="button"
+                        disabled={isResolving}
+                        onClick={() => handleQualitySelect(h)}
+                        className={cn(
+                          'rounded-lg border px-2 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-40',
+                          isActive
+                            ? 'border-brand/60 bg-brand/20 text-brand'
+                            : 'border-white/15 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white',
+                        )}
+                      >
+                        {isResolving && isActive ? (
+                          <span className="flex items-center gap-1">
+                            <span className="h-2 w-2 animate-spin rounded-full border border-current border-t-transparent" />
+                            {h}p
+                          </span>
+                        ) : (
+                          `${h}p`
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

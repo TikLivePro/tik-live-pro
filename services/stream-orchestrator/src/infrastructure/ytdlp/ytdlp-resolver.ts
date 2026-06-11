@@ -20,8 +20,20 @@ export function isPlatformUrl(rawUrl: string): boolean {
 }
 
 export interface YtDlpResult {
+  /** Direct video URL (CDN). For DASH this is the video-only stream. */
   url: string;
+  /**
+   * Audio-only CDN URL, present only when separate video+audio streams are
+   * selected (DASH).  When undefined the video URL already contains audio.
+   */
+  audioUrl?: string;
   title: string;
+  /**
+   * All heights available as video streams (DASH or combined), sorted
+   * descending.  Includes heights above what a combined format provides so
+   * the quality picker can offer 1080p / 4K where available.
+   */
+  availableHeights: number[];
 }
 
 export class YtDlpError extends Error {
@@ -34,18 +46,54 @@ export class YtDlpError extends Error {
   }
 }
 
-export function resolveWithYtDlp(platformUrl: string, logger: Logger): Promise<YtDlpResult> {
+interface RawFormat {
+  height?: number;
+  vcodec?: string;
+  acodec?: string;
+}
+
+/** All unique heights that have a video stream (DASH or combined), sorted desc. */
+function extractVideoHeights(formats: RawFormat[]): number[] {
+  const seen = new Set<number>();
+  for (const f of formats) {
+    if (f.height && f.height > 0 && f.vcodec && f.vcodec !== 'none') {
+      seen.add(f.height);
+    }
+  }
+  return [...seen].sort((a, b) => b - a);
+}
+
+/**
+ * Resolves a platform URL to the best available video (and optional separate
+ * audio) CDN URL using yt-dlp.
+ *
+ * Format selection strategy (in priority order):
+ *  1. Best H.264 MP4 video  +  best AAC M4A audio  (DASH — needs merge)
+ *  2. Best video of any codec  +  best audio of any codec  (DASH — needs merge)
+ *  3. Best combined (audio+video in one stream)   (no merge needed)
+ *
+ * When `maxHeight` is supplied the video is capped at that height so the
+ * quality-picker re-resolution produces the correct rendition.
+ */
+export function resolveWithYtDlp(
+  platformUrl: string,
+  logger: Logger,
+  maxHeight?: number,
+): Promise<YtDlpResult> {
   return new Promise((resolve, reject) => {
-    // Prefer combined video+audio formats; fall back to best available.
-    // Using separate video+audio would output two URLs which would require
-    // two ffmpeg -i inputs — combined formats keep ffmpeg setup simple.
+    // Prefer H.264+AAC DASH streams for maximum quality without transcoding.
+    // Fall back to any DASH, then to a combined progressive format.
+    const h = maxHeight ? `[height<=${maxHeight}]` : '';
+    const formatSelector = maxHeight
+      ? `bestvideo${h}[ext=mp4]+bestaudio[ext=m4a]/bestvideo${h}+bestaudio/best${h}[vcodec!=none][acodec!=none]/best${h}`
+      : 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[vcodec!=none][acodec!=none]/best';
+
     const args = [
       '--no-playlist',
       '--no-warnings',
       '--no-check-certificate',
-      '-f', 'best[vcodec!=none][acodec!=none][height<=1080]/best[vcodec!=none][acodec!=none]/best',
-      '--get-title',
-      '--get-url',
+      '--dump-json',
+      '-f', formatSelector,
       '--',
       platformUrl,
     ];
@@ -58,15 +106,11 @@ export function resolveWithYtDlp(platformUrl: string, logger: Logger): Promise<Y
       return;
     }
 
-    const lines: string[] = [];
+    const chunks: string[] = [];
     let stderr = '';
 
-    proc.stdout!.on('data', (chunk: Buffer) => {
-      lines.push(...chunk.toString().split('\n').filter((l) => l.trim().length > 0));
-    });
-    proc.stderr!.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
+    proc.stdout!.on('data', (chunk: Buffer) => { chunks.push(chunk.toString()); });
+    proc.stderr!.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
 
     const timer = setTimeout(() => {
       proc.kill('SIGKILL');
@@ -95,21 +139,67 @@ export function resolveWithYtDlp(platformUrl: string, logger: Logger): Promise<Y
         return;
       }
 
-      // --get-title outputs the title first, then --get-url outputs the URL.
-      // For DASH streams the audio URL may appear on a second URL line — we want
-      // the first URL line (video) in that edge case.
-      if (lines.length < 2) {
-        logger.warn({ platformUrl, lines }, 'yt-dlp produced unexpected output');
+      let data: Record<string, unknown>;
+      try {
+        data = JSON.parse(chunks.join('')) as Record<string, unknown>;
+      } catch {
+        logger.warn({ platformUrl }, 'yt-dlp produced non-JSON output');
         reject(new YtDlpError('yt-dlp returned no usable URL', 'EXTRACT_FAILED'));
         return;
       }
 
-      const title = lines[0]!;
-      // Last line is the URL (or only URL when combined format)
-      const url = lines[lines.length - 1]!;
+      const title = String(data['title'] ?? '');
 
-      logger.info({ platformUrl, title }, 'yt-dlp resolved platform URL');
-      resolve({ url, title });
+      // For DASH (bestvideo+bestaudio) yt-dlp sets `requested_formats` to the
+      // two selected format objects; the root `url` may be absent.
+      // For a combined progressive format the root `url` is set and
+      // `requested_formats` contains a single entry.
+      let videoUrl = '';
+      let audioUrl: string | undefined;
+
+      const reqFormats = data['requested_formats'];
+      if (Array.isArray(reqFormats) && reqFormats.length >= 2) {
+        // DASH: find video and audio by codec presence
+        const fmts = reqFormats as Array<Record<string, unknown>>;
+        const videoFmt = fmts.find(
+          (f) => typeof f['vcodec'] === 'string' && f['vcodec'] !== 'none',
+        );
+        const audioFmt = fmts.find(
+          (f) =>
+            typeof f['acodec'] === 'string' &&
+            f['acodec'] !== 'none' &&
+            (typeof f['vcodec'] !== 'string' || f['vcodec'] === 'none'),
+        );
+        videoUrl = typeof videoFmt?.['url'] === 'string' ? videoFmt['url'] : '';
+        audioUrl = typeof audioFmt?.['url'] === 'string' ? audioFmt['url'] : undefined;
+      } else {
+        // Combined format — root `url` or single requested_format entry
+        if (typeof data['url'] === 'string' && data['url']) {
+          videoUrl = data['url'];
+        } else if (Array.isArray(reqFormats) && reqFormats.length === 1) {
+          const f = reqFormats[0] as Record<string, unknown>;
+          videoUrl = typeof f['url'] === 'string' ? f['url'] : '';
+        }
+      }
+
+      if (!videoUrl) {
+        logger.warn({ platformUrl }, 'yt-dlp JSON missing url field');
+        reject(new YtDlpError('yt-dlp returned no usable URL', 'EXTRACT_FAILED'));
+        return;
+      }
+
+      const formats = Array.isArray(data['formats'])
+        ? (data['formats'] as RawFormat[])
+        : [];
+      const availableHeights = extractVideoHeights(formats);
+
+      logger.info(
+        { platformUrl, title, availableHeights, hasSeparateAudio: !!audioUrl },
+        'yt-dlp resolved platform URL',
+      );
+      const result: YtDlpResult = { url: videoUrl, title, availableHeights };
+      if (audioUrl) result.audioUrl = audioUrl;
+      resolve(result);
     });
   });
 }

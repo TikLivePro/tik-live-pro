@@ -4,6 +4,7 @@ import type { StreamWorkerFactory, IStreamWorker, StreamWorkerStats } from '../p
 import type { StreamEventPublisher } from '../../infrastructure/nats/stream-event-publisher.js';
 import { DestinationStatus, SocialPlatform as SP } from '@tik-live-pro/shared-types';
 import type { Logger } from '@tik-live-pro/logger';
+import { StreamSessionStatus } from '../../domain/entities/stream-session.entity.js';
 
 export class HandleStreamArrivedUseCase {
   private readonly workers = new Map<string, IStreamWorker>();
@@ -48,17 +49,25 @@ export class HandleStreamArrivedUseCase {
     }
 
     // Social destinations that need ffmpeg to relay from MediaMTX → platform RTMP.
+    // If the stream reconnected, some destinations may already be in LIVE status.
     const socialDests = session.destinations.filter(
-      (d) => d.platform !== SP.PLATFORM && d.status === DestinationStatus.CONNECTING && d.rtmpDestination !== null,
+      (d) =>
+        d.platform !== SP.PLATFORM &&
+        (d.status === DestinationStatus.CONNECTING || d.status === DestinationStatus.LIVE) &&
+        d.rtmpDestination !== null,
     );
 
     if (socialDests.length === 0) {
       // No social accounts — go live immediately (HLS is already available from MediaMTX).
-      session.markLive();
-      const hlsUrl = `${this.mediaMtxHlsUrl}/live/${ingestKey}/index.m3u8`;
-      await this.eventPublisher.sessionLive(session.sessionId, session.userId, hlsUrl, randomUUID());
-      await this.sessionRepo.update(session);
-      this.logger.info({ sessionId: session.sessionId }, 'Session live (platform-only, no social destinations)');
+      if (session.status === StreamSessionStatus.WAITING_FOR_STREAM) {
+        session.markLive();
+        const hlsUrl = `${this.mediaMtxHlsUrl}/live/${ingestKey}/index.m3u8`;
+        await this.eventPublisher.sessionLive(session.sessionId, session.userId, hlsUrl, randomUUID());
+        await this.sessionRepo.update(session);
+        this.logger.info({ sessionId: session.sessionId }, 'Session live (platform-only, no social destinations)');
+      } else {
+        this.logger.info({ sessionId: session.sessionId }, 'Session already live (platform-only, no social destinations)');
+      }
       return;
     }
 
@@ -76,27 +85,35 @@ export class HandleStreamArrivedUseCase {
       void (async () => {
         if (firstStats) {
           firstStats = false;
+          let changed = false;
           for (const dest of socialDests) {
             try {
-              session.markDestinationLive(dest.socialAccountId);
-              await this.eventPublisher.destinationStatusChanged(
-                session.sessionId,
-                dest.socialAccountId,
-                dest.platform,
-                DestinationStatus.CONNECTING,
-                DestinationStatus.LIVE,
-                null,
-                randomUUID(),
-              );
+              if (dest.status === DestinationStatus.CONNECTING) {
+                session.markDestinationLive(dest.socialAccountId);
+                await this.eventPublisher.destinationStatusChanged(
+                  session.sessionId,
+                  dest.socialAccountId,
+                  dest.platform,
+                  DestinationStatus.CONNECTING,
+                  DestinationStatus.LIVE,
+                  null,
+                  randomUUID(),
+                );
+                changed = true;
+              }
             } catch (err) {
               this.logger.error({ err, accountId: dest.socialAccountId }, 'Failed to mark destination live');
             }
           }
 
-          if (session.hasAnyLiveDestination()) {
+          if (session.status === StreamSessionStatus.WAITING_FOR_STREAM && session.hasAnyLiveDestination()) {
             session.markLive();
             const hlsUrl = `${this.mediaMtxHlsUrl}/live/${ingestKey}/index.m3u8`;
             await this.eventPublisher.sessionLive(session.sessionId, session.userId, hlsUrl, randomUUID());
+            changed = true;
+          }
+
+          if (changed) {
             await this.sessionRepo.update(session);
           }
         }

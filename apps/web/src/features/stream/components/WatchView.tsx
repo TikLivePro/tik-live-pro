@@ -58,18 +58,30 @@ export interface PublicSession {
 
 // ── Video players ─────────────────────────────────────────────
 
+export interface HlsQualityLevel {
+  index: number;
+  height: number;
+  bitrate: number;
+}
+
 function HlsPlayer({
   src,
   title,
   volume,
   isMuted,
+  qualityLevel = -1,
+  onQualityLevels,
 }: {
   src: string;
   title: string;
   volume: number;
   isMuted: boolean;
+  /** HLS.js level index, -1 = auto ABR */
+  qualityLevel?: number;
+  onQualityLevels?: (levels: HlsQualityLevel[]) => void;
 }): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const hlsRef = useRef<Hls | null>(null);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -86,10 +98,25 @@ function HlsPlayer({
       liveMaxLatencyDuration: 5,
       maxBufferLength: 5,
     });
+    hlsRef.current = hls;
     hls.loadSource(src);
     hls.attachMedia(video);
-    return () => hls.destroy();
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      onQualityLevels?.(
+        hls.levels.map((l, i) => ({ index: i, height: l.height, bitrate: l.bitrate })),
+      );
+    });
+    return () => {
+      hlsRef.current = null;
+      hls.destroy();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src]);
+
+  // Apply quality level changes without re-mounting
+  useEffect(() => {
+    if (hlsRef.current) hlsRef.current.currentLevel = qualityLevel;
+  }, [qualityLevel]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -329,6 +356,11 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const [whepFailed, setWhepFailed] = useState(false);
   const [whepKey, setWhepKey] = useState(0);
 
+  // Viewer quality selection — only active when HLS is used (not WHEP)
+  const [hlsLevels, setHlsLevels] = useState<HlsQualityLevel[]>([]);
+  const [hlsQualityLevel, setHlsQualityLevel] = useState(-1); // -1 = auto
+  const [qualityPickerOpen, setQualityPickerOpen] = useState(false);
+
   // Panel visibility
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [viewersOpen, setViewersOpen] = useState(false);
@@ -566,6 +598,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   function handleVideoAreaClick(e: ReactMouseEvent<HTMLDivElement>): void {
     if (!isLive) return;
     if ((e.target as HTMLElement).closest('button, a, input, [role=button]')) return;
+    setQualityPickerOpen(false);
     setControlsVisible((v) => {
       if (v && !anyPanelOpen) {
         if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
@@ -677,7 +710,14 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
         isMuted={isMuted}
       />
     ) : (
-      <HlsPlayer src={session.platformHlsUrl} title={session.title} volume={volume} isMuted={isMuted} />
+      <HlsPlayer
+        src={session.platformHlsUrl}
+        title={session.title}
+        volume={volume}
+        isMuted={isMuted}
+        qualityLevel={hlsQualityLevel}
+        onQualityLevels={setHlsLevels}
+      />
     );
   };
 
@@ -778,6 +818,76 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
             </svg>
             {session.viewerCount ?? 0}
           </button>
+
+          {/* Quality picker — only shown when HLS has multiple levels (not WHEP) */}
+          {isLive && hlsLevels.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setQualityPickerOpen((o) => !o)}
+                aria-label={t('quality.open')}
+                className={cn(
+                  'flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold backdrop-blur-xl transition-colors',
+                  qualityPickerOpen
+                    ? 'border-brand/50 bg-brand/40 text-white'
+                    : 'border-white/20 bg-black/40 text-white/70 hover:bg-white/10 hover:text-white',
+                )}
+              >
+                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="2" y="3" width="20" height="14" rx="2" />
+                  <line x1="8" y1="21" x2="16" y2="21" />
+                  <line x1="12" y1="17" x2="12" y2="21" />
+                </svg>
+                {hlsQualityLevel === -1
+                  ? t('quality.auto')
+                  : `${hlsLevels.find((l) => l.index === hlsQualityLevel)?.height ?? '?'}p`}
+              </button>
+
+              {qualityPickerOpen && (
+                <div className="absolute right-0 top-full mt-1.5 z-30 min-w-[120px] rounded-xl border border-white/15 bg-black/90 p-1 shadow-2xl backdrop-blur-2xl">
+                  {/* Auto option */}
+                  <button
+                    type="button"
+                    onClick={() => { setHlsQualityLevel(-1); setQualityPickerOpen(false); }}
+                    className={cn(
+                      'flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                      hlsQualityLevel === -1
+                        ? 'bg-brand/30 text-brand'
+                        : 'text-white/70 hover:bg-white/10 hover:text-white',
+                    )}
+                  >
+                    {t('quality.auto')}
+                    {hlsQualityLevel === -1 && (
+                      <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </button>
+                  {/* Level options, sorted highest first */}
+                  {[...hlsLevels].sort((a, b) => b.height - a.height).map((level) => (
+                    <button
+                      key={level.index}
+                      type="button"
+                      onClick={() => { setHlsQualityLevel(level.index); setQualityPickerOpen(false); }}
+                      className={cn(
+                        'flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                        hlsQualityLevel === level.index
+                          ? 'bg-brand/30 text-brand'
+                          : 'text-white/70 hover:bg-white/10 hover:text-white',
+                      )}
+                    >
+                      {level.height}p
+                      {hlsQualityLevel === level.index && (
+                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </header>
 
