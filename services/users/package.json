@@ -41,6 +41,6 @@
     "ts-jest": "^29.0.0",
     "tsx": "^4.19.0",
     "typescript": "*",
-    "drizzle-kit": "^0.30.0"
+    "drizzle-kit": "^0.31.10"
   }
 }
