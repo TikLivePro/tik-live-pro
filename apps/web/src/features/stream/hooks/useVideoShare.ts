@@ -14,6 +14,41 @@ type CaptureableVideo = HTMLVideoElement & { captureStream(): MediaStream };
 
 const RECENT_URL_KEY = 'tiklivepro:video:recentUrls';
 const MAX_RECENT = 50;
+const LAST_SOURCE_KEY = 'tiklivepro:video:lastSource';
+const LAST_TIME_KEY = 'tiklivepro:video:lastTime';
+const VOLUME_KEY = 'tiklivepro:video:volume';
+const ALLOW_VIEWER_CTRL_KEY = 'tiklivepro:video:allowViewerControl';
+
+interface SavedSource {
+  type: 'online-url';
+  effectiveUrl: string;
+}
+
+function readSavedSource(): SavedSource | null {
+  try {
+    const raw = localStorage.getItem(LAST_SOURCE_KEY);
+    return raw ? (JSON.parse(raw) as SavedSource) : null;
+  } catch { return null; }
+}
+
+function readSavedTime(): number {
+  try {
+    const v = localStorage.getItem(LAST_TIME_KEY);
+    return v ? Number(v) : 0;
+  } catch { return 0; }
+}
+
+function readSavedVolume(): number {
+  try {
+    const v = localStorage.getItem(VOLUME_KEY);
+    return v ? Math.min(100, Math.max(0, Number(v))) : 50;
+  } catch { return 50; }
+}
+
+function readAllowViewerControl(): boolean {
+  try { return localStorage.getItem(ALLOW_VIEWER_CTRL_KEY) === 'true'; }
+  catch { return false; }
+}
 
 function loadSavedUrls(): RecentSource[] {
   if (typeof window === 'undefined') return [];
@@ -58,6 +93,11 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   // keeping the video silent locally (by not connecting to audioContext.destination).
   const capturedStreamRef = useRef<MediaStream | null>(null);
 
+  // Set to true by switchOnlineUrl() before video.load() so the `pause` event fired
+  // during the reload is ignored — this keeps isPlaying=true in the UI during a quality
+  // switch and prevents showing the "paused" overlay and warning banner.
+  const isSwitchingQualityRef = useRef(false);
+
   // Local monitor volume — applied directly to video.volume so the streamer hears
   // the video through the browser's normal audio output. We intentionally do NOT
   // use createMediaElementSource / Web Audio here: the Web Audio spec mandates that
@@ -66,26 +106,36 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   // Using video.volume avoids this restriction; captureStream() provides the audio
   // track for WebRTC (same-origin files carry audio; non-CORS CDN URLs are a browser
   // limitation — viewers would need a server-side media proxy for audio in that case).
-  const videoVolumeRef = useRef(50);
+  const videoVolumeRef = useRef(50); // synced to persisted value in mount effect
 
   // Set true in loadLocalFile/loadOnlineUrl; cleared by onLoadedData after play() fires.
   // Intentionally NOT reset in cleanup so the flag survives React Strict Mode's remount.
   const pendingPlayRef = useRef(false);
 
+  // Stores the playback position to restore after a quality switch (video.load() resets to 0).
+  const resumeTimeRef = useRef<number | null>(null);
+
   const [sourceType, setSourceType] = useState<VideoSourceType>('camera');
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isQualitySwitching, setIsQualitySwitching] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [allowViewerControl, setAllowViewerControlState] = useState(false);
+  const [allowViewerControl, setAllowViewerControlState] = useState(() =>
+    typeof window !== 'undefined' ? readAllowViewerControl() : false
+  );
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
   const [bufferedAhead, setBufferedAhead] = useState(0);
+  const [bufferedRanges, setBufferedRanges] = useState<Array<{ start: number; end: number }>>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [recentSources, setRecentSources] = useState<RecentSource[]>(loadSavedUrls);
-  const [videoVolume, setVideoVolumeState] = useState(50);
+  const [videoVolume, setVideoVolumeState] = useState(() =>
+    typeof window !== 'undefined' ? readSavedVolume() : 50
+  );
   const [videoLoadKey, setVideoLoadKey] = useState(0);
   // true when it is safe to draw the current source onto a canvas (same-origin blob:
   // files, or online URLs whose CDN returned CORS headers).
   const [corsAvailable, setCorsAvailable] = useState(false);
+  const [effectiveUrl, setEffectiveUrl] = useState<string | null>(null);
 
   const allowViewerControlRef = useRef(false);
   const sourceTypeRef = useRef<VideoSourceType>('camera');
@@ -109,26 +159,55 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     } catch {
       capturedStreamRef.current = null;
     }
-    // Set initial monitor volume so the streamer hears audio at 50% from the first load.
+    // Sync ref with persisted volume and apply to video element.
+    videoVolumeRef.current = videoVolume;
     video.volume = videoVolumeRef.current / 100;
 
-    function getBufferedAhead(el: HTMLVideoElement): number {
-      const { buffered, currentTime } = el;
-      for (let i = 0; i < buffered.length; i++) {
-        if (buffered.start(i) <= currentTime + 0.5 && buffered.end(i) > currentTime) {
-          return Math.max(0, buffered.end(i) - currentTime);
+    function readBuffered(el: HTMLVideoElement): { ahead: number; ranges: Array<{ start: number; end: number }> } {
+      const ranges: Array<{ start: number; end: number }> = [];
+      for (let i = 0; i < el.buffered.length; i++) {
+        ranges.push({ start: el.buffered.start(i), end: el.buffered.end(i) });
+      }
+      let ahead = 0;
+      for (const r of ranges) {
+        if (r.start <= el.currentTime + 0.5 && r.end > el.currentTime) {
+          ahead = Math.max(0, r.end - el.currentTime);
+          break;
         }
       }
-      return 0;
+      return { ahead, ranges };
     }
 
-    const onTimeUpdate = (): void => setCurrentTime(video.currentTime);
+    function updateBuffered(): void {
+      if (!video) return;
+      const { ahead, ranges } = readBuffered(video);
+      setBufferedAhead(ahead);
+      setBufferedRanges(ranges);
+    }
+
+    let lastPersistedTime = 0;
+    const onTimeUpdate = (): void => {
+      const t = video.currentTime;
+      setCurrentTime(t);
+      if (t - lastPersistedTime >= 10 && sourceTypeRef.current !== 'camera') {
+        lastPersistedTime = t;
+        try { localStorage.setItem(LAST_TIME_KEY, String(t)); } catch { /* ignore */ }
+      }
+    };
     const onDurationChange = (): void => setDuration(isFinite(video.duration) ? video.duration : 0);
-    const onPlay = (): void => setIsPlaying(true);
-    const onPause = (): void => setIsPlaying(false);
-    const onEnded = (): void => setIsPlaying(false);
-    const onProgress = (): void => setBufferedAhead(getBufferedAhead(video));
-    const onCanPlay = (): void => setBufferedAhead(getBufferedAhead(video));
+    const onPlay = (): void => { isSwitchingQualityRef.current = false; setIsPlaying(true); };
+    const onPause = (): void => {
+      if (!isSwitchingQualityRef.current) setIsPlaying(false);
+      if (sourceTypeRef.current !== 'camera') {
+        try { localStorage.setItem(LAST_TIME_KEY, String(video.currentTime)); } catch { /* ignore */ }
+      }
+    };
+    const onEnded = (): void => {
+      setIsPlaying(false);
+      try { localStorage.removeItem(LAST_TIME_KEY); } catch { /* ignore */ }
+    };
+    const onProgress = (): void => updateBuffered();
+    const onCanPlay = (): void => updateBuffered();
     const onLoadedData = (): void => {
       // Re-capture the stream so getVideoTrack() returns a live track for the new source.
       // After video.load(), the previous captureStream() track can be in a no-data state;
@@ -138,10 +217,18 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
       } catch {
         // ignore — capturedStreamRef keeps the old stream if recapture fails
       }
+      isSwitchingQualityRef.current = false;
+      setIsQualitySwitching(false);
       setVideoLoadKey((k) => k + 1);
       setIsVideoLoaded(true);
       setLoadError(null);
       setDuration(isFinite(video.duration) ? video.duration : 0);
+      // Restore position saved before a quality switch so playback continues from the
+      // same timestamp instead of restarting at 0.
+      if (resumeTimeRef.current !== null) {
+        video.currentTime = resumeTimeRef.current;
+        resumeTimeRef.current = null;
+      }
       // Defer play() to here instead of calling it right after load() — avoids the
       // "play() interrupted by new load request" AbortError on source changes.
       if (pendingPlayRef.current) {
@@ -215,6 +302,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     video.removeAttribute('crossorigin');
     video.src = URL.createObjectURL(file);
     pendingPlayRef.current = true;
+    resumeTimeRef.current = null;
     video.load();
 
     setLoadError(null);
@@ -223,8 +311,14 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
+    setEffectiveUrl(null);
     // blob: URLs are same-origin — the canvas compositor can draw them safely.
     setCorsAvailable(true);
+    // Local files can't be restored after reload — clear any saved URL source.
+    try {
+      localStorage.removeItem(LAST_SOURCE_KEY);
+      localStorage.removeItem(LAST_TIME_KEY);
+    } catch { /* ignore */ }
 
     const entry: RecentSource = {
       id: crypto.randomUUID(),
@@ -238,7 +332,10 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     });
   }, []);
 
-  const loadOnlineUrl = useCallback((url: string): void => {
+  // resumeAt is used internally by the auto-restore effect to seek to the saved position.
+  // External callers (FullscreenLiveView, VideoSourcePicker) never pass it — they always
+  // start from 0.
+  const loadOnlineUrl = useCallback((url: string, resumeAt?: number): void => {
     const video = videoRef.current;
     if (!video) return;
     if (video.src?.startsWith('blob:')) URL.revokeObjectURL(video.src);
@@ -249,6 +346,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     video.removeAttribute('crossorigin');
     video.src = `/api/video-stream?url=${encodeURIComponent(url)}`;
     pendingPlayRef.current = true;
+    resumeTimeRef.current = resumeAt ?? null;
     video.load();
 
     setLoadError(null);
@@ -257,8 +355,15 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
+    setEffectiveUrl(url);
     // Proxy URL is same-origin → canvas compositor can draw it safely.
     setCorsAvailable(true);
+    // Persist for page-reload auto-restore.
+    try {
+      const saved: SavedSource = { type: 'online-url', effectiveUrl: url };
+      localStorage.setItem(LAST_SOURCE_KEY, JSON.stringify(saved));
+      if (resumeAt === undefined) localStorage.removeItem(LAST_TIME_KEY);
+    } catch { /* ignore */ }
 
     const entry: RecentSource = { id: url, type: 'online-url', name: url, url };
     setRecentSources((prev) => {
@@ -267,6 +372,35 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
       persistUrls(next);
       return next;
     });
+  }, []);
+
+  /**
+   * Swap to a new online URL while keeping `isPlaying` stable in the UI.
+   * Use for quality/resolution switches — the `pause` event fired by video.load()
+   * is suppressed so the "paused" overlay and viewer-black warning do not appear.
+   * `isQualitySwitching` is set true until `loadeddata` fires.
+   */
+  const switchOnlineUrl = useCallback((url: string): void => {
+    const video = videoRef.current;
+    if (!video) return;
+    // Persist position so onLoadedData can seek back after the source reloads.
+    resumeTimeRef.current = video.currentTime > 0 ? video.currentTime : null;
+    if (video.src?.startsWith('blob:')) URL.revokeObjectURL(video.src);
+    video.removeAttribute('crossorigin');
+    video.src = `/api/video-stream?url=${encodeURIComponent(url)}`;
+    pendingPlayRef.current = true;
+    isSwitchingQualityRef.current = true;
+    setIsQualitySwitching(true);
+    setLoadError(null);
+    setEffectiveUrl(url);
+    setCorsAvailable(true);
+    setBufferedRanges([]);
+    video.load();
+    // Update persisted source with new quality URL.
+    try {
+      const saved: SavedSource = { type: 'online-url', effectiveUrl: url };
+      localStorage.setItem(LAST_SOURCE_KEY, JSON.stringify(saved));
+    } catch { /* ignore */ }
   }, []);
 
   const switchToCamera = useCallback((): void => {
@@ -285,6 +419,12 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
+    setEffectiveUrl(null);
+    // Clear persisted source so reload goes back to camera, not last URL.
+    try {
+      localStorage.removeItem(LAST_SOURCE_KEY);
+      localStorage.removeItem(LAST_TIME_KEY);
+    } catch { /* ignore */ }
   }, []);
 
   const play = useCallback((): void => {
@@ -312,6 +452,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   const setAllowViewerControl = useCallback((allow: boolean): void => {
     allowViewerControlRef.current = allow;
     setAllowViewerControlState(allow);
+    try { localStorage.setItem(ALLOW_VIEWER_CTRL_KEY, String(allow)); } catch { /* ignore */ }
   }, []);
 
   const setVideoVolume = useCallback((volume: number): void => {
@@ -322,6 +463,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     if (video) {
       video.volume = clamped / 100;
     }
+    try { localStorage.setItem(VOLUME_KEY, String(clamped)); } catch { /* ignore */ }
   }, []);
 
   // Register as streamer and handle incoming viewer control commands.
@@ -370,6 +512,18 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, sourceType, isPlaying, duration, allowViewerControl]);
 
+  // Auto-restore the last played source after a page reload.
+  // This runs on mount only. If FullscreenLiveView also applies a preSource (first go-live),
+  // that effect runs after this one and overwrites with the new source (starting from 0).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = readSavedSource();
+    if (!saved) return;
+    const savedTime = readSavedTime();
+    loadOnlineUrl(saved.effectiveUrl, savedTime > 0 ? savedTime : undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return {
     videoRef,
     sourceType,
@@ -378,6 +532,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     duration,
     allowViewerControl,
     isVideoLoaded,
+    isQualitySwitching,
     // Proactive check: show as buffering whenever the lookahead drops below 5 s while
     // playing and there is still meaningful content ahead (avoids false positives near EOF).
     isBuffering:
@@ -387,11 +542,13 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
       duration - currentTime > 5 &&
       bufferedAhead < 5,
     bufferedAhead,
+    bufferedRanges,
     loadError,
     recentSources,
     videoVolume,
     loadLocalFile,
     loadOnlineUrl,
+    switchOnlineUrl,
     switchToCamera,
     play,
     pause,
@@ -403,5 +560,6 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     getAudioTrack,
     videoLoadKey,
     isCorsAvailable: corsAvailable,
+    effectiveUrl,
   };
 }

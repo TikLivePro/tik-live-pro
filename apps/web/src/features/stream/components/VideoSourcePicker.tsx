@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import type { VideoSourceType, RecentSource } from '../interfaces/video-share.interfaces';
@@ -10,6 +10,13 @@ import { resolveVideoProxyUrl, API_BASE } from '@/lib/api';
 const INITIAL_SHOWN = 3;
 const PAGE_SIZE = 5;
 
+export interface ResolvedPlatformContext {
+  platformUrl: string;
+  availableHeights: number[];
+  selectedHeight: number;
+  effectiveUrl: string;
+}
+
 interface Props {
   sourceType: VideoSourceType;
   recentSources?: RecentSource[];
@@ -17,7 +24,19 @@ interface Props {
   onSelectCamera: () => void;
   onSelectLocalFile: (file: File) => void;
   onSelectOnlineUrl: (url: string) => void;
+  /**
+   * Called when the user switches to a different quality of the *already-playing* video.
+   * Should use `switchOnlineUrl` (not `loadOnlineUrl`) so playback continues from the
+   * current timestamp instead of restarting.
+   */
+  onSwitchQuality?: (url: string) => void;
   onSelectRecentSource?: (source: RecentSource) => void;
+  /** Called after a platform URL is successfully resolved, with the full resolution context. */
+  onResolved?: (ctx: ResolvedPlatformContext) => void;
+  /** Filename of the currently loaded local file — shown next to the "Load file" button. */
+  currentFileName?: string | undefined;
+  /** Currently loaded URL — pre-fills the URL input when the online-url tab opens. */
+  currentUrl?: string | undefined;
 }
 
 function RecentIcon({ type }: { type: RecentSource['type'] }): React.ReactElement {
@@ -45,11 +64,15 @@ export function VideoSourcePicker({
   onSelectCamera,
   onSelectLocalFile,
   onSelectOnlineUrl,
+  onSwitchQuality,
   onSelectRecentSource,
+  onResolved,
+  currentFileName,
+  currentUrl,
 }: Props): React.ReactElement {
   const t = useTranslations('stream');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [urlInput, setUrlInput] = useState('');
+  const [urlInput, setUrlInput] = useState(currentUrl ?? '');
   const [pendingTab, setPendingTab] = useState<VideoSourceType>(sourceType);
   const [urlUnsafe, setUrlUnsafe] = useState(false);
   const [urlPlatform, setUrlPlatform] = useState<string | null>(null);
@@ -67,6 +90,23 @@ export function VideoSourcePicker({
   const pagedSources = recentSources.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const previewSources = recentSources.slice(0, INITIAL_SHOWN);
   const hiddenCount = recentSources.length - INITIAL_SHOWN;
+
+  // Run platform detection on the initial URL (pre-filled from currentUrl prop).
+  useEffect(() => {
+    if (!currentUrl) return;
+    const trimmed = currentUrl.trim();
+    if (!trimmed) return;
+    setUrlUnsafe(isUnsafeVideoUrl(trimmed));
+    setUrlPlatform(detectVideoPlatform(trimmed));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // When switching to online-url tab with no input yet and a currentUrl is available, fill it.
+  useEffect(() => {
+    if (pendingTab !== 'online-url' || urlInput || !currentUrl) return;
+    handleUrlChange(currentUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingTab]);
 
   function handleTabClick(tab: VideoSourceType): void {
     if (tab === 'camera' && cameraDisabled) return;
@@ -129,9 +169,26 @@ export function VideoSourcePicker({
           `?v=${encodeURIComponent(result.resolvedUrl)}&a=${encodeURIComponent(result.audioUrl)}`
         : result.resolvedUrl;
 
-      setUrlInput(effectiveUrl);
-      setUrlPlatform(null);
-      onSelectOnlineUrl(effectiveUrl);
+      if (height !== undefined) {
+        // Quality switch — don't reset the URL input; continue from current position.
+        onSwitchQuality?.(effectiveUrl);
+      } else {
+        setUrlInput(effectiveUrl);
+        setUrlPlatform(null);
+        onSelectOnlineUrl(effectiveUrl);
+      }
+
+      const heights = result.availableHeights.length > 0
+        ? result.availableHeights
+        : (availableHeights ?? []);
+      if (heights.length > 0) {
+        onResolved?.({
+          platformUrl,
+          availableHeights: heights,
+          selectedHeight: height ?? heights[0] ?? 0,
+          effectiveUrl,
+        });
+      }
     } catch (err) {
       setResolveError(err instanceof Error ? err.message : t('videoShare.urlResolveFailed'));
     } finally {
@@ -216,24 +273,28 @@ export function VideoSourcePicker({
 
         {/* Contextual input */}
         {pendingTab === 'local-file' && (
-          <div>
+          <div className="flex flex-col gap-1.5">
             <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={handleFileChange} />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               className={cn(
-                'flex w-full items-center justify-center gap-2 rounded-xl border py-2 text-xs font-semibold transition-colors',
-                sourceType === 'local-file'
+                'flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors',
+                sourceType === 'local-file' && currentFileName
                   ? 'border-brand/40 bg-brand/20 text-brand'
                   : 'border-white/15 bg-white/5 text-white/60 hover:bg-white/10 hover:text-white',
               )}
             >
-              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
-              {t('videoShare.loadFile')}
+              {sourceType === 'local-file' && currentFileName ? (
+                <span className="min-w-0 truncate">{currentFileName}</span>
+              ) : (
+                <span className="flex-1 text-center">{t('videoShare.loadFile')}</span>
+              )}
             </button>
           </div>
         )}

@@ -10,7 +10,9 @@ interface Props {
   allowViewerControl: boolean;
   isVideoLoaded: boolean;
   isBuffering: boolean;
+  isQualitySwitching?: boolean;
   bufferedAhead: number;
+  bufferedRanges: Array<{ start: number; end: number }>;
   loadError: string | null;
   videoVolume: number;
   onPlay: () => void;
@@ -36,7 +38,9 @@ export function VideoSharePlayer({
   allowViewerControl,
   isVideoLoaded,
   isBuffering,
+  isQualitySwitching = false,
   bufferedAhead,
+  bufferedRanges,
   loadError,
   videoVolume,
   onPlay,
@@ -65,13 +69,20 @@ export function VideoSharePlayer({
             className="h-1 w-full cursor-pointer accent-brand"
           />
 
-          {/* Buffer-ahead track — gray fill showing how far the browser has pre-fetched */}
+          {/* Buffer track — each segment the browser has pre-fetched is shown separately */}
           {duration > 0 && (
-            <div className="h-px w-full overflow-hidden rounded-full bg-white/10">
-              <div
-                className="h-full bg-white/30 transition-[width] duration-500"
-                style={{ width: `${Math.min(100, ((currentTime + bufferedAhead) / duration) * 100)}%` }}
-              />
+            <div className="relative h-px w-full rounded-full bg-white/10">
+              {bufferedRanges.map((range) => {
+                const left = (range.start / duration) * 100;
+                const width = ((range.end - range.start) / duration) * 100;
+                return (
+                  <div
+                    key={range.start}
+                    className="absolute h-full bg-white/30 transition-[left,width] duration-300"
+                    style={{ left: `${left}%`, width: `${width}%` }}
+                  />
+                );
+              })}
             </div>
           )}
 
@@ -81,8 +92,13 @@ export function VideoSharePlayer({
             <span>{formatTime(duration)}</span>
           </div>
 
-          {/* Buffering indicator */}
-          {isBuffering && (
+          {/* Quality-switch indicator — takes priority over buffering since the source is reloading */}
+          {isQualitySwitching ? (
+            <div className="flex items-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-900/20 px-2.5 py-1 text-[10px] font-semibold text-blue-300">
+              <span className="h-2.5 w-2.5 animate-spin rounded-full border border-blue-300 border-t-transparent" />
+              {t('videoShare.sourceQualityChanging')}
+            </div>
+          ) : isBuffering && (
             <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-900/20 px-2.5 py-1 text-[10px] font-semibold text-amber-300">
               <span className="h-2.5 w-2.5 animate-spin rounded-full border border-amber-300 border-t-transparent" />
               {t('videoShare.buffering')}

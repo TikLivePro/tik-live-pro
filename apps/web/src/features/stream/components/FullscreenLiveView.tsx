@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import { API_BASE, apiFetch } from '@/lib/api';
+import { API_BASE, apiFetch, resolveVideoProxyUrl } from '@/lib/api';
 import { useStream } from '../hooks/useStream';
 import { useElapsedTime } from '../hooks/useElapsedTime';
 import { useCameraStream } from '../hooks/useCameraStream';
@@ -45,6 +45,9 @@ export function FullscreenLiveView(): React.ReactElement {
     setVideoQualityId,
     preSource,
     setPreSource,
+    platformVideoContext,
+    setPlatformVideoContext,
+    hydratePlatformVideoContext,
   } = useStreamStore();
   const isPaused = currentSession?.status === 'paused';
   const { hasWebcam } = useWebcamAvailability();
@@ -80,6 +83,8 @@ export function FullscreenLiveView(): React.ReactElement {
     isToggling: isTogglingRecording,
     toggle: toggleRecording,
   } = useRecording((currentSession?.id as LiveSessionId) ?? null);
+
+  const [whipRetryTrigger, setWhipRetryTrigger] = useState(0);
 
   const isLive = currentSession?.status === 'live';
   const isStarting = currentSession?.status === 'starting';
@@ -200,7 +205,7 @@ export function FullscreenLiveView(): React.ReactElement {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSession?.id, currentSession?.status]);
+  }, [currentSession?.id, currentSession?.status, whipRetryTrigger]);
 
   // Reset WHIP tracking when session ends so it can restart on re-use.
   useEffect(() => {
@@ -210,6 +215,25 @@ export function FullscreenLiveView(): React.ReactElement {
       disconnectWhip();
     }
   }, [currentSession?.status, disconnectWhip]);
+
+  // Auto-reconnect WHIP when the connection drops mid-stream.
+  // Resets whipStartedRef so the start effect can retry, then increments a trigger counter
+  // to force the start effect to re-run (its session deps haven't changed).
+  useEffect(() => {
+    if (whipState !== 'failed') return;
+    if (!currentSession?.id) return;
+    if (currentSession.status !== 'live' && currentSession.status !== 'starting') return;
+    whipStartedRef.current = false;
+    const timer = setTimeout(() => setWhipRetryTrigger((n) => n + 1), 3000);
+    return () => clearTimeout(timer);
+  }, [whipState, currentSession?.id, currentSession?.status]);
+
+  // Restore platformVideoContext from localStorage after a page reload.
+  // Must run before the preSource effect so the quality picker and CDN re-resolve work.
+  useEffect(() => {
+    hydratePlatformVideoContext();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Apply pre-selected source (set in GoLiveForm dashboard) once the video share hook is ready.
   useEffect(() => {
@@ -319,6 +343,112 @@ export function FullscreenLiveView(): React.ReactElement {
     [currentSession?.id, videoShare],
   );
 
+  // ── Stream output quality (bitrate + canvas resolution) — no WHIP restart ──
+  // Updates the RTCRtpSender bitrate via setParameters() and rebuilds the compositor
+  // canvas at the new dimensions. Both operations work on the live sender; no
+  // SDP renegotiation (and therefore no stream reconnect) is required.
+  const handleStreamQualityChange = useCallback(
+    async (preset: import('../consts/stream.consts').VideoQualityPreset): Promise<void> => {
+      setVideoQualityId(preset.id);
+      compositorResRef.current = { width: preset.width, height: preset.height };
+      await setVideoBitrate(preset.bitrate);
+      if (whipState !== 'connected') return;
+      if (shareSourceType !== 'camera') {
+        // Compositor or raw video track — rebuild at new resolution then replace.
+        if (webcamPipVisibleRef.current && !isCameraOffRef.current) {
+          const track = startCompositorRef.current?.();
+          if (track) await replaceVideoTrack(track);
+        } else {
+          const rawTrack = videoShare.getVideoTrack();
+          if (rawTrack) await replaceVideoTrack(rawTrack);
+        }
+      } else {
+        // Camera-only: apply resolution constraints on the existing track (no restart).
+        const cameraTrack = getStream()?.getVideoTracks()[0];
+        if (cameraTrack) {
+          await cameraTrack
+            .applyConstraints({ width: preset.width, height: preset.height })
+            .catch(() => {/* device may not support the exact size — ignore */});
+          await replaceVideoTrack(cameraTrack);
+        }
+      }
+    },
+    [
+      setVideoQualityId,
+      setVideoBitrate,
+      whipState,
+      shareSourceType,
+      replaceVideoTrack,
+      videoShare,
+      getStream,
+    ],
+  );
+
+  // ── Platform source quality switching ──────────────────────
+  const [isResolvingQuality, setIsResolvingQuality] = useState(false);
+
+  const handleSourceQualitySwitch = useCallback(
+    async (height: number): Promise<void> => {
+      if (!platformVideoContext || isResolvingQuality) return;
+      setIsResolvingQuality(true);
+      try {
+        const result = await resolveVideoProxyUrl(platformVideoContext.platformUrl, height);
+        const effectiveUrl = result.audioUrl
+          ? `${API_BASE}/stream-orchestrator/video-proxy/merge-stream` +
+            `?v=${encodeURIComponent(result.resolvedUrl)}&a=${encodeURIComponent(result.audioUrl)}`
+          : result.resolvedUrl;
+        setPlatformVideoContext({
+          platformUrl: platformVideoContext.platformUrl,
+          availableHeights:
+            result.availableHeights.length > 0
+              ? result.availableHeights
+              : platformVideoContext.availableHeights,
+          selectedHeight: height,
+        });
+        videoShare.switchOnlineUrl(effectiveUrl);
+      } catch {
+        // keep current source — VideoSharePlayer will show loadError if needed
+      } finally {
+        setIsResolvingQuality(false);
+      }
+    },
+    [platformVideoContext, isResolvingQuality, setPlatformVideoContext, videoShare],
+  );
+
+  // Auto-re-resolve when the CDN URL expires mid-session (YouTube URLs are time-limited).
+  const cdnRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!videoShare.loadError || !platformVideoContext) return;
+    if (cdnRetryTimerRef.current) clearTimeout(cdnRetryTimerRef.current);
+    cdnRetryTimerRef.current = setTimeout(async () => {
+      try {
+        const result = await resolveVideoProxyUrl(
+          platformVideoContext.platformUrl,
+          platformVideoContext.selectedHeight || undefined,
+        );
+        const effectiveUrl = result.audioUrl
+          ? `${API_BASE}/stream-orchestrator/video-proxy/merge-stream` +
+            `?v=${encodeURIComponent(result.resolvedUrl)}&a=${encodeURIComponent(result.audioUrl)}`
+          : result.resolvedUrl;
+        setPlatformVideoContext({
+          platformUrl: platformVideoContext.platformUrl,
+          availableHeights:
+            result.availableHeights.length > 0
+              ? result.availableHeights
+              : platformVideoContext.availableHeights,
+          selectedHeight: platformVideoContext.selectedHeight,
+        });
+        videoShare.switchOnlineUrl(effectiveUrl);
+      } catch {
+        // silent — VideoSharePlayer already shows the loadError to the streamer
+      }
+    }, 3000);
+    return () => {
+      if (cdnRetryTimerRef.current) clearTimeout(cdnRetryTimerRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoShare.loadError]);
+
   const setMinimizedInStore = useStreamStore((s) => s.setMinimized);
 
   // When the user returns to the live page, always show the full view
@@ -335,6 +465,13 @@ export function FullscreenLiveView(): React.ReactElement {
   const [videoSourceOpen, setVideoSourceOpen] = useState(false);
   const [bottomControlsVisible, setBottomControlsVisible] = useState(true);
   const bottomHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Compositor output resolution — kept in sync with the stream quality preset ──
+  // Initialized from the persisted quality preset so it survives page refreshes.
+  const compositorResRef = useRef({
+    width: getVideoQualityPreset(videoQualityId).width,
+    height: getVideoQualityPreset(videoQualityId).height,
+  });
 
   // ── Webcam PiP overlay ──────────────────────────────────────
   // Shows the streamer's webcam in a small rounded inset (draggable)
@@ -430,8 +567,7 @@ export function FullscreenLiveView(): React.ReactElement {
     const camEl = videoRef.current; // the full-screen camera video element
     if (!mainEl) return null;
 
-    const W = 1280;
-    const H = 720;
+    const { width: W, height: H } = compositorResRef.current;
     const canvas = document.createElement('canvas');
     canvas.width = W;
     canvas.height = H;
@@ -1040,9 +1176,38 @@ export function FullscreenLiveView(): React.ReactElement {
               sourceType={videoShare.sourceType}
               recentSources={videoShare.recentSources}
               cameraDisabled={!hasWebcam && cameraState !== 'active'}
-              onSelectCamera={() => videoShare.switchToCamera()}
-              onSelectLocalFile={(file) => videoShare.loadLocalFile(file)}
-              onSelectOnlineUrl={(url) => videoShare.loadOnlineUrl(url)}
+              currentFileName={
+                videoShare.sourceType === 'local-file'
+                  ? videoShare.recentSources.find((s) => s.type === 'local-file')?.name
+                  : undefined
+              }
+              currentUrl={
+                videoShare.sourceType === 'online-url'
+                  ? (platformVideoContext?.platformUrl ?? videoShare.effectiveUrl ?? undefined)
+                  : undefined
+              }
+              onSelectCamera={() => {
+                videoShare.switchToCamera();
+                setPlatformVideoContext(null);
+              }}
+              onSelectLocalFile={(file) => {
+                videoShare.loadLocalFile(file);
+                setPlatformVideoContext(null);
+              }}
+              onSelectOnlineUrl={(url) => {
+                videoShare.loadOnlineUrl(url);
+                // Context will be refreshed via onResolved if this came from a resolve;
+                // for direct URLs (no resolve), clear stale context.
+                setPlatformVideoContext(null);
+              }}
+              onSwitchQuality={(url) => videoShare.switchOnlineUrl(url)}
+              onResolved={(ctx) =>
+                setPlatformVideoContext({
+                  platformUrl: ctx.platformUrl,
+                  availableHeights: ctx.availableHeights,
+                  selectedHeight: ctx.selectedHeight,
+                })
+              }
             />
             {videoShare.sourceType !== 'camera' && (
               <VideoSharePlayer
@@ -1052,7 +1217,9 @@ export function FullscreenLiveView(): React.ReactElement {
                 allowViewerControl={videoShare.allowViewerControl}
                 isVideoLoaded={videoShare.isVideoLoaded}
                 isBuffering={videoShare.isBuffering}
+                isQualitySwitching={videoShare.isQualitySwitching}
                 bufferedAhead={videoShare.bufferedAhead}
+                bufferedRanges={videoShare.bufferedRanges}
                 loadError={videoShare.loadError}
                 videoVolume={videoShare.videoVolume}
                 onPlay={() => videoShare.play()}
@@ -1062,6 +1229,43 @@ export function FullscreenLiveView(): React.ReactElement {
                 onToggleViewerControl={(allow) => void updateAllowViewerVideoControl(allow)}
                 onSetVideoVolume={(vol) => videoShare.setVideoVolume(vol)}
               />
+            )}
+
+            {/* Source quality picker — shown when a platform URL has been resolved */}
+            {videoShare.sourceType === 'online-url' && platformVideoContext && platformVideoContext.availableHeights.length > 0 && (
+              <div className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/5 p-3">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-white/50">
+                  {t('videoShare.sourceQualityLabel')}
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {platformVideoContext.availableHeights.map((h) => {
+                    const isActive = platformVideoContext.selectedHeight === h;
+                    return (
+                      <button
+                        key={h}
+                        type="button"
+                        disabled={isResolvingQuality}
+                        onClick={() => void handleSourceQualitySwitch(h)}
+                        className={cn(
+                          'rounded-lg border px-2.5 py-1 text-[10px] font-semibold transition-colors disabled:opacity-40',
+                          isActive
+                            ? 'border-brand/60 bg-brand/20 text-brand'
+                            : 'border-white/15 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white',
+                        )}
+                      >
+                        {isResolvingQuality && isActive ? (
+                          <span className="flex items-center gap-1">
+                            <span className="h-2 w-2 animate-spin rounded-full border border-current border-t-transparent" />
+                            {h}p
+                          </span>
+                        ) : (
+                          `${h}p`
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
 
             {/* Stream quality selector */}
@@ -1076,10 +1280,7 @@ export function FullscreenLiveView(): React.ReactElement {
                     <button
                       key={preset.id}
                       type="button"
-                      onClick={() => {
-                        setVideoQualityId(preset.id);
-                        void setVideoBitrate(preset.bitrate);
-                      }}
+                      onClick={() => void handleStreamQualityChange(preset)}
                       className={cn(
                         'flex flex-col items-center rounded-xl border px-1.5 py-2 text-center text-[10px] transition-colors',
                         isSelected

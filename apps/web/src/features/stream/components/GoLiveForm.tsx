@@ -22,7 +22,7 @@ interface Props {
 export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
   const t = useTranslations('stream');
   const { data: accounts = [] } = useSocialAccounts();
-  const { videoQualityId, setVideoQualityId, hydrateVideoQuality, setPreSource, preSource } = useStreamStore();
+  const { videoQualityId, setVideoQualityId, hydrateVideoQuality, setPreSource, preSource, setPlatformVideoContext } = useStreamStore();
   const { hasWebcam, checked: webcamChecked } = useWebcamAvailability();
 
   const [title, setTitle] = useState('');
@@ -121,6 +121,19 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
       setUrlPlatform(null);
       setSourceTab('online-url');
       setPreSource({ type: 'online-url', url: effectiveUrl });
+
+      // Persist platform context to the Zustand store so the live dashboard
+      // can show the quality picker and auto-re-resolve on CDN URL expiry.
+      const heights = result.availableHeights.length > 0
+        ? result.availableHeights
+        : (availableHeights ?? []);
+      if (heights.length > 0) {
+        setPlatformVideoContext({
+          platformUrl,
+          availableHeights: heights,
+          selectedHeight: height ?? heights[0] ?? 0,
+        });
+      }
     } catch (err) {
       setResolveError(err instanceof Error ? err.message : t('videoShare.urlResolveFailed'));
     } finally {
