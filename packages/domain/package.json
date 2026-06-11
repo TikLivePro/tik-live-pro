@@ -21,8 +21,8 @@
     "@tik-live-pro/shared-types": "workspace:*"
   },
   "devDependencies": {
-    "@types/jest": "^29.0.0",
-    "jest": "^29.0.0",
+    "@types/jest": "^30.0.0",
+    "jest": "^30.4.2",
     "ts-jest": "^29.0.0",
     "typescript": "*"
   }
