@@ -16,7 +16,7 @@ ARG NODE_VERSION=22
 ARG PNPM_VERSION=9.15.0
 # Bump YTDLP_VERSION when platforms change their extraction logic.
 # Latest releases: https://github.com/yt-dlp/yt-dlp/releases
-ARG YTDLP_VERSION=2025.07.07
+ARG YTDLP_VERSION=2026.06.09
 
 # ── Stage 1: base ─────────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-alpine AS base

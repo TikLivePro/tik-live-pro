@@ -1,4 +1,8 @@
 import { spawn } from 'node:child_process';
+import { copyFileSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { Logger } from '@tik-live-pro/logger';
 
 const ALLOWED_HOSTNAMES = new Set([
@@ -106,9 +110,16 @@ export function resolveWithYtDlp(
     // authenticates the request and bypasses the restriction.
     // Set YTDLP_COOKIES_FILE=/app/youtube-cookies.txt in the container env
     // and bind-mount the file to enable this.
+    //
+    // The source file may be mounted read-only. yt-dlp always tries to save
+    // the cookiejar back to the path it was given, which would fail on a
+    // read-only mount. We copy to a writable temp path instead.
     const cookiesFile = process.env['YTDLP_COOKIES_FILE'];
+    let tmpCookiesPath: string | null = null;
     if (cookiesFile) {
-      args.push('--cookies', cookiesFile);
+      tmpCookiesPath = join(tmpdir(), `yt-cookies-${randomUUID()}.txt`);
+      copyFileSync(cookiesFile, tmpCookiesPath);
+      args.push('--cookies', tmpCookiesPath);
     }
 
     args.push('--', platformUrl);
@@ -117,6 +128,7 @@ export function resolveWithYtDlp(
     try {
       proc = spawn('yt-dlp', args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch {
+      if (tmpCookiesPath) { try { unlinkSync(tmpCookiesPath); } catch { /* ignore */ } }
       reject(new YtDlpError('yt-dlp is not installed', 'NOT_INSTALLED'));
       return;
     }
@@ -129,11 +141,17 @@ export function resolveWithYtDlp(
 
     const timer = setTimeout(() => {
       proc.kill('SIGKILL');
+      if (tmpCookiesPath) { try { unlinkSync(tmpCookiesPath); } catch { /* ignore */ } }
       reject(new YtDlpError('yt-dlp timed out after 30 s', 'TIMEOUT'));
     }, TIMEOUT_MS);
 
+    const cleanupTmpCookies = (): void => {
+      if (tmpCookiesPath) { try { unlinkSync(tmpCookiesPath); } catch { /* ignore */ } }
+    };
+
     proc.on('error', (err: NodeJS.ErrnoException) => {
       clearTimeout(timer);
+      cleanupTmpCookies();
       if (err.code === 'ENOENT') {
         reject(new YtDlpError('yt-dlp is not installed', 'NOT_INSTALLED'));
       } else {
@@ -143,6 +161,7 @@ export function resolveWithYtDlp(
 
     proc.on('close', (exitCode) => {
       clearTimeout(timer);
+      cleanupTmpCookies();
 
       if (exitCode !== 0) {
         logger.warn({ platformUrl, exitCode, stderr }, 'yt-dlp exited non-zero');
