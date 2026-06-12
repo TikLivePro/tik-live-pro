@@ -201,9 +201,24 @@ services:
   # serves HLS to browser viewers on port 8888 (proxied by Caddy → hls.tiklivepro.me).
   # Port 1936 is exposed only inside the Docker network — no public access needed.
 
+  # Ensures /recordings inside the named volume is owned by UID 1001 (nodeuser)
+  # so that mediamtx (running as 1001) can write to it and stream-orchestrator
+  # (also nodeuser:1001) can delete files after upload.
+  mediamtx-init:
+    image: alpine:3.19
+    command: ["sh", "-c", "chown -R 1001:1001 /recordings && chmod 755 /recordings"]
+    volumes:
+      - mediamtx_recordings:/recordings
+    networks:
+      - tik-live-pro
+
   mediamtx:
     <<: *service-defaults
     image: bluenviron/mediamtx:latest
+    user: "1001:1001"
+    depends_on:
+      mediamtx-init:
+        condition: service_completed_successfully
     volumes:
       - ./infra/mediamtx/mediamtx.prod.yml:/mediamtx.yml:ro
       - mediamtx_recordings:/recordings          # shared with stream-orchestrator for upload
@@ -490,6 +505,13 @@ services:
       MEDIAMTX_API_PASS: ${MEDIAMTX_API_PASS:-}
       # Recording upload — optional. Omit RECORDING_STORAGE_PROVIDER to disable.
       # See docs/recording.md for setup instructions (DO Spaces or Cloudflare R2).
+      # yt-dlp auto-update: fetches latest extractor on every container start.
+      # Keeps URL resolution working even between image rebuilds.
+      YTDLP_AUTO_UPDATE: "true"
+      # Optional: path to a Netscape-format cookies file inside the container.
+      # Required for YouTube on datacenter IPs (DigitalOcean, AWS, etc.) — see docs/video-proxy.md.
+      # Set to /app/youtube-cookies.txt and uncomment the volume below when the file is present.
+      YTDLP_COOKIES_FILE: ${YTDLP_COOKIES_FILE:-}
       RECORDINGS_DIR: /recordings
       RECORDING_STORAGE_PROVIDER: ${RECORDING_STORAGE_PROVIDER:-}
       RECORDING_STORAGE_BUCKET: ${RECORDING_STORAGE_BUCKET:-}
@@ -501,6 +523,10 @@ services:
       NODE_OPTIONS: "--max-old-space-size=192"
     volumes:
       - mediamtx_recordings:/recordings            # uploader reads .fmp4 files and deletes after upload
+      # Optional: YouTube cookies for datacenter-IP bot-detection bypass.
+      # 1. Export cookies to /opt/tiklivepro/youtube-cookies.txt on the server (Netscape format).
+      # 2. Uncomment the line below and set YTDLP_COOKIES_FILE=/app/youtube-cookies.txt in .env.
+      # - /opt/tiklivepro/youtube-cookies.txt:/app/youtube-cookies.txt:ro
     ports:
       - "3009:3009"
       - "1935:1935"

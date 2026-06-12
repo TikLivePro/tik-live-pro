@@ -1,6 +1,6 @@
 # TikLivePro — Setup Guide
 
-> **Last updated:** 2026-06-10 (yt-dlp baked into Docker image; document YTDLP_VERSION ARG and YTDLP_AUTO_UPDATE)
+> **Last updated:** 2026-06-11 (add NEXT_PUBLIC_MEDIAMTX_WEBRTC_URL to env table)
 > Update this file whenever prerequisites, ports, environment variables, or workflow steps change.
 
 ## Prerequisites
@@ -121,6 +121,7 @@ Update values as needed — critical variables:
 | `AUTH_SERVICE_INTERNAL_URL` | apps/web | Internal URL NextAuth uses to call the auth service |
 | `NEXT_PUBLIC_API_URL` | apps/web | **Build-time** — public URL of the API gateway. See note below. |
 | `NEXT_PUBLIC_COMMENTS_WS_URL` | apps/web | **Build-time** — base URL for the comments socket.io WebSocket. In prod: `https://api.tiklivepro.me` (Caddy routes `/socket.io/*` to the comments service). See note below. |
+| `NEXT_PUBLIC_MEDIAMTX_WEBRTC_URL` | apps/web | **Build-time** — public WebRTC/WHIP base URL used by the browser to push video. Must match `MEDIAMTX_WEBRTC_URL` in `stream-orchestrator`. Default: `http://localhost:8889` (dev) · `https://webrtc.tiklivepro.me` (prod). Must be HTTPS in production for `captureStream()` to work in browsers. |
 | `NEXT_PUBLIC_GIPHY_API_KEY` | apps/web | **Build-time** — optional; from developers.giphy.com |
 | `API_GATEWAY_URL` | apps/status | Internal URL to check API Gateway health. Default: `http://api-gateway:3000` |
 | `AUTH_SERVICE_URL` … `STREAM_ORCHESTRATOR_URL` | apps/status | Internal health-check URLs for each backend service. All default to `http://<service>:<port>` (Docker bridge hostnames). Only override in unusual topologies. |

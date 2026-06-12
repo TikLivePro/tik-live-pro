@@ -547,7 +547,9 @@
     "quality": {
       "label": "Quality",
       "auto": "Auto",
-      "open": "Stream quality"
+      "open": "Stream quality",
+      "hd": "HD · Live",
+      "saveData": "Saves bandwidth"
     }
   },
   "notFound": {

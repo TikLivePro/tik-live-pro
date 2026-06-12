@@ -547,7 +547,9 @@
     "quality": {
       "label": "Qualité",
       "auto": "Auto",
-      "open": "Qualité du flux"
+      "open": "Qualité du flux",
+      "hd": "HD · En direct",
+      "saveData": "Économise la bande passante"
     }
   },
   "notFound": {

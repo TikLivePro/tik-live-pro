@@ -16,7 +16,7 @@ ARG NODE_VERSION=22
 ARG PNPM_VERSION=9.15.0
 # Bump YTDLP_VERSION when platforms change their extraction logic.
 # Latest releases: https://github.com/yt-dlp/yt-dlp/releases
-ARG YTDLP_VERSION=2024.12.13
+ARG YTDLP_VERSION=2025.07.07
 
 # ── Stage 1: base ─────────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-alpine AS base
@@ -84,7 +84,7 @@ ARG YTDLP_VERSION
 RUN addgroup --system --gid 1001 nodejs \
  && adduser  --system --uid 1001 nodeuser \
  # ffmpeg must be in the runtime image — fluent-ffmpeg shells out to it
- && apk add --no-cache dumb-init ffmpeg wget \
+ && apk add --no-cache dumb-init ffmpeg wget python3 \
  # /app/bin is owned by nodeuser so yt-dlp can self-update when YTDLP_AUTO_UPDATE=true
  && mkdir -p /app/bin \
  && wget -qO /app/bin/yt-dlp \

@@ -356,10 +356,12 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const [whepFailed, setWhepFailed] = useState(false);
   const [whepKey, setWhepKey] = useState(0);
 
-  // Viewer quality selection — only active when HLS is used (not WHEP)
+  // Viewer quality selection
   const [hlsLevels, setHlsLevels] = useState<HlsQualityLevel[]>([]);
   const [hlsQualityLevel, setHlsQualityLevel] = useState(-1); // -1 = auto
   const [qualityPickerOpen, setQualityPickerOpen] = useState(false);
+  // When true, skip WHEP and use HLS (lets viewer reduce bandwidth on slow connections)
+  const [forceLowBandwidth, setForceLowBandwidth] = useState(false);
 
   // Panel visibility
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -699,7 +701,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     if (!session.platformHlsUrl) return null;
     const whepUrl = toWhepUrl(session.platformHlsUrl);
     const useWhep =
-      !!whepUrl && !whepFailed && typeof RTCPeerConnection !== 'undefined';
+      !!whepUrl && !whepFailed && !forceLowBandwidth && typeof RTCPeerConnection !== 'undefined';
     return useWhep ? (
       <WhepPlayer
         key={whepKey}
@@ -819,8 +821,8 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
             {session.viewerCount ?? 0}
           </button>
 
-          {/* Quality picker — only shown when HLS has multiple levels (not WHEP) */}
-          {isLive && hlsLevels.length > 0 && (
+          {/* Quality picker — always shown when live */}
+          {isLive && (
             <div className="relative">
               <button
                 type="button"
@@ -838,46 +840,78 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                   <line x1="8" y1="21" x2="16" y2="21" />
                   <line x1="12" y1="17" x2="12" y2="21" />
                 </svg>
-                {hlsQualityLevel === -1
-                  ? t('quality.auto')
-                  : `${hlsLevels.find((l) => l.index === hlsQualityLevel)?.height ?? '?'}p`}
+                {!forceLowBandwidth && !whepFailed
+                  ? t('quality.hd')
+                  : hlsQualityLevel === -1
+                    ? t('quality.auto')
+                    : `${hlsLevels.find((l) => l.index === hlsQualityLevel)?.height ?? '?'}p`}
               </button>
 
               {qualityPickerOpen && (
-                <div className="absolute right-0 top-full mt-1.5 z-30 min-w-[120px] rounded-xl border border-white/15 bg-black/90 p-1 shadow-2xl backdrop-blur-2xl">
-                  {/* Auto option */}
+                <div className="absolute right-0 top-full mt-1.5 z-30 min-w-[140px] rounded-xl border border-white/15 bg-black/90 p-1 shadow-2xl backdrop-blur-2xl">
+                  {/* HD / WebRTC option */}
                   <button
                     type="button"
-                    onClick={() => { setHlsQualityLevel(-1); setQualityPickerOpen(false); }}
+                    onClick={() => {
+                      setForceLowBandwidth(false);
+                      setWhepFailed(false);
+                      setWhepKey((k) => k + 1);
+                      setQualityPickerOpen(false);
+                    }}
                     className={cn(
                       'flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
-                      hlsQualityLevel === -1
+                      !forceLowBandwidth && !whepFailed
                         ? 'bg-brand/30 text-brand'
                         : 'text-white/70 hover:bg-white/10 hover:text-white',
                     )}
                   >
-                    {t('quality.auto')}
-                    {hlsQualityLevel === -1 && (
+                    {t('quality.hd')}
+                    {!forceLowBandwidth && !whepFailed && (
                       <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
                     )}
                   </button>
-                  {/* Level options, sorted highest first */}
-                  {[...hlsLevels].sort((a, b) => b.height - a.height).map((level) => (
+
+                  <div className="my-1 h-px bg-white/10" />
+
+                  {/* Auto HLS — saves bandwidth */}
+                  <button
+                    type="button"
+                    onClick={() => { setForceLowBandwidth(true); setHlsQualityLevel(-1); setQualityPickerOpen(false); }}
+                    className={cn(
+                      'flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                      (forceLowBandwidth || whepFailed) && hlsQualityLevel === -1
+                        ? 'bg-brand/30 text-brand'
+                        : 'text-white/70 hover:bg-white/10 hover:text-white',
+                    )}
+                  >
+                    <span className="flex flex-col items-start gap-0.5">
+                      {t('quality.auto')}
+                      <span className="text-[9px] font-normal opacity-60">{t('quality.saveData')}</span>
+                    </span>
+                    {(forceLowBandwidth || whepFailed) && hlsQualityLevel === -1 && (
+                      <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </button>
+
+                  {/* Specific HLS levels, sorted highest first */}
+                  {hlsLevels.length > 0 && [...hlsLevels].sort((a, b) => b.height - a.height).map((level) => (
                     <button
                       key={level.index}
                       type="button"
-                      onClick={() => { setHlsQualityLevel(level.index); setQualityPickerOpen(false); }}
+                      onClick={() => { setForceLowBandwidth(true); setHlsQualityLevel(level.index); setQualityPickerOpen(false); }}
                       className={cn(
                         'flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
-                        hlsQualityLevel === level.index
+                        (forceLowBandwidth || whepFailed) && hlsQualityLevel === level.index
                           ? 'bg-brand/30 text-brand'
                           : 'text-white/70 hover:bg-white/10 hover:text-white',
                       )}
                     >
                       {level.height}p
-                      {hlsQualityLevel === level.index && (
+                      {(forceLowBandwidth || whepFailed) && hlsQualityLevel === level.index && (
                         <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>

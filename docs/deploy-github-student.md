@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-06-03 (add status.tiklivepro.me DNS + Caddyfile block; recording now per-session via API; recording download route exposed under /stream-orchestrator/*)
+> Dernière mise à jour : 2026-06-12 (yt-dlp fixes: python3 now in runtime image, YTDLP_AUTO_UPDATE enabled by default, YouTube cookie bypass for datacenter IPs auto-activated by deploy workflow)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -750,3 +750,35 @@ df -h
 docker system df
 docker system prune -f   # nettoie les images inutilisées
 ```
+
+### La résolution YouTube échoue avec `RESOLVE_FAILED` ou "Sign in to confirm you're not a bot"
+
+Les IP DigitalOcean sont des plages datacenter que YouTube bloque systématiquement. Aucun paramètre yt-dlp (player client iOS, etc.) ne contourne cette restriction sans cookies.
+
+**Fix — uploader des cookies YouTube (une seule fois) :**
+
+1. Installez l'extension Chrome [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
+2. Ouvrez YouTube en étant connecté à votre compte Google, exportez les cookies → `youtube-cookies.txt`
+3. Uploadez sur le serveur :
+   ```bash
+   scp youtube-cookies.txt root@188.166.197.25:/opt/tiklivepro/youtube-cookies.txt
+   ```
+4. Activez immédiatement (sans rebuild) :
+   ```bash
+   ssh root@188.166.197.25
+   cd /opt/tiklivepro
+   echo "YTDLP_COOKIES_FILE=/app/youtube-cookies.txt" >> .env
+   sed -i 's|      # - /opt/tiklivepro/youtube-cookies.txt:/app/youtube-cookies.txt:ro|      - /opt/tiklivepro/youtube-cookies.txt:/app/youtube-cookies.txt:ro|' docker-compose.prod.managed.yml
+   docker compose -f docker-compose.prod.managed.yml up -d stream-orchestrator
+   ```
+
+À partir du déploiement suivant, le workflow CI détecte automatiquement la présence du fichier et l'active sans intervention manuelle.
+
+**Quand les cookies expirent** (symptôme : `RESOLVE_FAILED` qui réapparaît après une période de bon fonctionnement) :
+```bash
+# Ré-exporter depuis le navigateur → télécharger youtube-cookies.txt
+scp youtube-cookies.txt root@188.166.197.25:/opt/tiklivepro/youtube-cookies.txt
+docker compose -f /opt/tiklivepro/docker-compose.prod.managed.yml restart stream-orchestrator
+```
+
+Voir `docs/video-proxy.md § YouTube on datacenter IPs` pour la documentation complète.

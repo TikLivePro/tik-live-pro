@@ -15,8 +15,8 @@ export const VIDEO_QUALITY_PRESETS: readonly VideoQualityPreset[] = [
   { id: '1080p', label: '1080p', subLabel: 'Full HD · ~5 Mbps', width: 1920, height: 1080, bitrate: 5_000_000 },
 ];
 
-export const DEFAULT_VIDEO_QUALITY_ID = '720p';
+export const DEFAULT_VIDEO_QUALITY_ID = '1080p';
 
 export function getVideoQualityPreset(id: string): VideoQualityPreset {
-  return VIDEO_QUALITY_PRESETS.find((p) => p.id === id) ?? VIDEO_QUALITY_PRESETS[1]!;
+  return VIDEO_QUALITY_PRESETS.find((p) => p.id === id) ?? VIDEO_QUALITY_PRESETS[2]!;
 }

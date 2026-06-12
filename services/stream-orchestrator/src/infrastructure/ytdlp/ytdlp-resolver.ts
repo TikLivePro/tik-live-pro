@@ -93,10 +93,25 @@ export function resolveWithYtDlp(
       '--no-warnings',
       '--no-check-certificate',
       '--dump-json',
+      // Use the Node.js runtime already in the container instead of looking for deno.
+      '--js-runtimes', 'nodejs',
+      // iOS player client gives broader format availability even when cookies are present.
+      // The "youtube:" prefix scopes this arg to YouTube only; other platforms ignore it.
+      '--extractor-args', 'youtube:player_client=ios,web',
       '-f', formatSelector,
-      '--',
-      platformUrl,
     ];
+
+    // Datacenter IPs (e.g. DigitalOcean) are blocked by YouTube's bot detection.
+    // Mounting a Netscape-format cookies file from a logged-in browser session
+    // authenticates the request and bypasses the restriction.
+    // Set YTDLP_COOKIES_FILE=/app/youtube-cookies.txt in the container env
+    // and bind-mount the file to enable this.
+    const cookiesFile = process.env['YTDLP_COOKIES_FILE'];
+    if (cookiesFile) {
+      args.push('--cookies', cookiesFile);
+    }
+
+    args.push('--', platformUrl);
 
     let proc: ReturnType<typeof spawn>;
     try {

@@ -54,6 +54,10 @@ export class RecordingUploader {
   // Tracks files that have been successfully uploaded (even if local unlink failed).
   // Prevents re-uploading files that can't be deleted (e.g. root-owned on Docker bind-mount).
   private readonly uploaded = new Set<string>();
+  // Tracks NONE/orphan files where unlink failed so we don't retry every scan interval.
+  // Cleared on restart — a restart (after deploying the mediamtx-init fix) will chown
+  // existing files, making them deletable on the next attempt.
+  private readonly unlinkFailed = new Set<string>();
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -105,7 +109,7 @@ export class RecordingUploader {
       }
 
       if (!entry.endsWith('.mp4')) continue;
-      if (this.uploading.has(fullPath) || this.uploaded.has(fullPath)) continue;
+      if (this.uploading.has(fullPath) || this.uploaded.has(fullPath) || this.unlinkFailed.has(fullPath)) continue;
 
       // Gate upload on explicit user intent.
       // MediaMTX records to disk from the first frame (path config has record:yes),
@@ -122,14 +126,17 @@ export class RecordingUploader {
             const session = await this.sessionRepo.findByIngestKey(ingestKey);
             if (!session) {
               // No session found for this file — clean up
-              await unlink(fullPath).catch(() => {});
+              await unlink(fullPath).catch(() => {
+                this.unlinkFailed.add(fullPath);
+              });
               continue;
             }
             if (session.recordingStatus === RecordingStatus.NONE) {
               // User never started recording — delete the file (produced by MediaMTX
               // path config, not by user intent)
               await unlink(fullPath).catch((err: unknown) => {
-                this.logger.warn({ err, fullPath }, 'Could not delete unused recording file');
+                this.unlinkFailed.add(fullPath);
+                this.logger.warn({ err, fullPath }, 'Could not delete unused recording file — will not retry until restart');
               });
               continue;
             }

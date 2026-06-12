@@ -151,11 +151,17 @@ export function VideoSourcePicker({
     setIsResolving(true);
     setResolveError(null);
     try {
-      const result = await resolveVideoProxyUrl(platformUrl, height);
+      // Cap at 1080p on first resolve; explicit height is used for quality switches
+    const result = await resolveVideoProxyUrl(platformUrl, height ?? 1080);
+
+      // Prefer 1080p as default; fall back to best available if 1080p isn't in the list
+      const resolvedHeight = height ?? (
+        result.availableHeights.includes(1080) ? 1080 : (result.availableHeights[0] ?? null)
+      );
 
       if (height === undefined) {
         setAvailableHeights(result.availableHeights);
-        setSelectedHeight(result.availableHeights[0] ?? null);
+        setSelectedHeight(resolvedHeight);
         setResolvedPlatformUrl(platformUrl);
       } else {
         setSelectedHeight(height);
@@ -185,7 +191,7 @@ export function VideoSourcePicker({
         onResolved?.({
           platformUrl,
           availableHeights: heights,
-          selectedHeight: height ?? heights[0] ?? 0,
+          selectedHeight: resolvedHeight ?? heights[0] ?? 0,
           effectiveUrl,
         });
       }
