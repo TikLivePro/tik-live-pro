@@ -69,7 +69,7 @@ jobs:
             type=sha,prefix=sha-,format=short
 
       - name: Build & push ${{ matrix.service.name }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/docker/${{ matrix.service.dockerfile }}
@@ -113,7 +113,7 @@ jobs:
             type=sha,prefix=sha-,format=short
 
       - name: Build & push web
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/docker/Dockerfile.web
@@ -159,7 +159,7 @@ jobs:
             type=sha,prefix=sha-,format=short
 
       - name: Build & push status
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infra/docker/Dockerfile.status
