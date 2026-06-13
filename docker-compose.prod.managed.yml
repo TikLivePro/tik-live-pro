@@ -510,6 +510,9 @@ services:
       YTDLP_AUTO_UPDATE: "true"
       # PO token sidecar — bypasses YouTube datacenter bot detection without session cookies.
       BGUTIL_POT_SERVER_URL: http://bgutil-pot-provider:4416
+      # bgutil yt-dlp plugin — tells the native Python plugin where the HTTP server lives.
+      # The plugin auto-generates context-specific PO tokens (GVS, player, subs) during extraction.
+      YT_DLP_BGUTIL_POT_PROVIDER_BASE_URL: http://bgutil-pot-provider:4416
       RECORDINGS_DIR: /recordings
       RECORDING_STORAGE_PROVIDER: ${RECORDING_STORAGE_PROVIDER:-}
       RECORDING_STORAGE_BUCKET: ${RECORDING_STORAGE_BUCKET:-}

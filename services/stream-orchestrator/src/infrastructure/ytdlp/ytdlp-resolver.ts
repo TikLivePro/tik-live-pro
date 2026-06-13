@@ -75,73 +75,6 @@ function extractVideoHeights(formats: RawFormat[]): number[] {
   return [...seen].sort((a, b) => b - a);
 }
 
-// ---------------------------------------------------------------------------
-// PO Token support (bgutil-ytdlp-pot-provider sidecar)
-//
-// YouTube blocks datacenter IPs even with session cookies. PO (Proof-of-Origin)
-// tokens are a newer mechanism that doesn't get rotated the way browser cookies
-// do.  The bgutil sidecar generates them on demand; we cache each token until
-// the server-provided expiry (bgutil v1.3+ returns expiresAt in the response).
-//
-// bgutil v1.3+ renamed the response field: visitor_data → contentBinding, and
-// now accepts an optional contentBinding in the request body to generate a
-// content-specific token (stronger bypass). Generic tokens (no request body)
-// are no longer sufficient — YouTube requires tokens bound to the specific
-// video being fetched. Cache per-video-ID so we avoid a round-trip to bgutil
-// for each yt-dlp quality re-resolution of the same video.
-// ---------------------------------------------------------------------------
-interface PotEntry {
-  poToken: string;
-  visitorData: string;
-  expiresAt: number;
-}
-const _potCache = new Map<string, PotEntry>();
-
-function extractYouTubeVideoId(url: string): string | null {
-  try {
-    const u = new URL(url);
-    if (u.hostname === 'youtu.be') return u.pathname.slice(1).split('/')[0] ?? null;
-    return u.searchParams.get('v');
-  } catch {
-    return null;
-  }
-}
-
-async function fetchPoToken(
-  serverUrl: string,
-  platformUrl: string,
-): Promise<{ poToken: string; visitorData: string }> {
-  const videoId = extractYouTubeVideoId(platformUrl);
-  const cacheKey = videoId ?? 'generic';
-
-  const cached = _potCache.get(cacheKey);
-  if (cached && Date.now() < cached.expiresAt) return cached;
-
-  // Pass the video URL as contentBinding so bgutil generates a content-specific
-  // token — generic tokens (empty body) no longer bypass bot detection.
-  const fetchInit: RequestInit = {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  };
-  if (videoId) {
-    fetchInit.body = JSON.stringify({
-      contentBinding: `https://www.youtube.com/watch?v=${videoId}`,
-    });
-  }
-
-  const res = await fetch(`${serverUrl}/get_pot`, fetchInit);
-  if (!res.ok) throw new Error(`bgutil POT server returned HTTP ${res.status}`);
-  const body = (await res.json()) as { poToken: string; contentBinding: string; expiresAt: string };
-  const entry: PotEntry = {
-    poToken: body.poToken,
-    // bgutil returns URL-encoded base64 — decode so yt-dlp receives a valid proto
-    visitorData: decodeURIComponent(body.contentBinding),
-    expiresAt: new Date(body.expiresAt).getTime(),
-  };
-  _potCache.set(cacheKey, entry);
-  return entry;
-}
-
 /**
  * Resolves a platform URL to the best available video (and optional separate
  * audio) CDN URL using yt-dlp.
@@ -153,6 +86,13 @@ async function fetchPoToken(
  *
  * When `maxHeight` is supplied the video is capped at that height so the
  * quality-picker re-resolution produces the correct rendition.
+ *
+ * PO Token handling is delegated to the bgutil-ytdlp-pot-provider yt-dlp
+ * plugin (installed via pip in the Dockerfile). The plugin automatically
+ * generates context-specific PO tokens (GVS, player, subs) during extraction
+ * by communicating with the bgutil-pot-provider sidecar container. The
+ * sidecar URL is configured via the YT_DLP_BGUTIL_POT_PROVIDER_BASE_URL
+ * environment variable which yt-dlp reads at startup.
  */
 export async function resolveWithYtDlp(
   platformUrl: string,
@@ -178,36 +118,35 @@ export async function resolveWithYtDlp(
     formatSelector,
   ];
 
-  let tmpCookiesPath: string | null = null;
+  // ---------------------------------------------------------------------------
+  // bgutil PO Token Plugin (automatic)
+  //
+  // The bgutil-ytdlp-pot-provider yt-dlp plugin is installed in the container
+  // (see Dockerfile.stream-orchestrator). It hooks into yt-dlp's PO Token
+  // Provider Framework and automatically generates context-specific PO tokens
+  // (GVS, player, subs) by communicating with the bgutil sidecar HTTP server.
+  //
+  // The plugin discovers the server URL via the env var
+  // YT_DLP_BGUTIL_POT_PROVIDER_BASE_URL (set in docker-compose). If the env
+  // var is not set, we pass the URL explicitly via --extractor-args.
+  // ---------------------------------------------------------------------------
   const bgutilUrl = process.env['BGUTIL_POT_SERVER_URL'];
-  const cookiesFile = process.env['YTDLP_COOKIES_FILE'];
-
-  if (bgutilUrl) {
-    // PO token path: bypasses datacenter bot detection without session cookies.
-    try {
-      const { poToken, visitorData } = await fetchPoToken(bgutilUrl, platformUrl);
-      // Use web client first with PO token. If YouTube still demands sign-in (bot detection),
-      // fallback to android/ios clients which currently have different/looser bot detection heuristics.
-      // visitor_data ties yt-dlp's YouTube session to the browser session that bgutil used.
-      args.push(
-        '--extractor-args',
-        `youtube:player_client=web,android,ios;visitor_data=${visitorData};po_token=web+${poToken}`,
-      );
-    } catch (err) {
-      logger.warn(
-        { err },
-        'bgutil PO token fetch failed — falling back to android/ios client + cookies',
-      );
-      args.push('--extractor-args', 'youtube:player_client=android,ios,web');
-    }
-  } else {
-    // No bgutil: android/iOS clients gives broader format availability and bypass bot detection better.
-    args.push('--extractor-args', 'youtube:player_client=android,ios,web');
+  if (bgutilUrl && !process.env['YT_DLP_BGUTIL_POT_PROVIDER_BASE_URL']) {
+    // Plugin env var not set — pass the base URL explicitly so the plugin
+    // can reach the bgutil sidecar from inside the Docker network.
+    args.push(
+      '--extractor-args',
+      `youtubepot-bgutilhttp:base_url=${bgutilUrl}`,
+    );
   }
 
-  // Cookies are ALWAYS used if available. A PO token alone is often no longer
-  // sufficient to bypass YouTube's datacenter bot detection ('Sign in to confirm...').
-  // Providing cookies alongside the PO token (or instead of it) is required for HD streams.
+  // Cookies provide an additional authentication signal alongside PO tokens.
+  // On datacenter IPs the combination of plugin-generated PO tokens + cookies
+  // provides the strongest possible bypass. The source file may be mounted :ro
+  // so we copy to a writable temp path — yt-dlp always tries to save the
+  // updated cookiejar back after each run.
+  let tmpCookiesPath: string | null = null;
+  const cookiesFile = process.env['YTDLP_COOKIES_FILE'];
   if (cookiesFile) {
     tmpCookiesPath = join(tmpdir(), `yt-cookies-${randomUUID()}.txt`);
     copyFileSync(cookiesFile, tmpCookiesPath);
