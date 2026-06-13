@@ -181,7 +181,6 @@ export async function resolveWithYtDlp(
   let tmpCookiesPath: string | null = null;
   const bgutilUrl = process.env['BGUTIL_POT_SERVER_URL'];
   const cookiesFile = process.env['YTDLP_COOKIES_FILE'];
-  let usedBgutil = false;
 
   if (bgutilUrl) {
     // PO token path: bypasses datacenter bot detection without session cookies.
@@ -194,7 +193,6 @@ export async function resolveWithYtDlp(
         '--extractor-args',
         `youtube:player_client=web,android,ios;visitor_data=${visitorData};po_token=web+${poToken}`,
       );
-      usedBgutil = true;
     } catch (err) {
       logger.warn(
         { err },
