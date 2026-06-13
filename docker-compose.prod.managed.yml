@@ -508,10 +508,14 @@ services:
       # yt-dlp auto-update: fetches latest extractor on every container start.
       # Keeps URL resolution working even between image rebuilds.
       YTDLP_AUTO_UPDATE: "true"
-      # PO token sidecar — bypasses YouTube datacenter bot detection without session cookies.
+      # YouTube cookies — strongest bypass for datacenter IP bot-detection.
+      # Export once from a private browser window (see docs/setup.md) and place
+      # the Netscape-format file at /opt/tiklivepro/yt-cookies.txt on the server.
+      # The container path is fixed; the code skips cookies if the file is absent.
+      YTDLP_COOKIES_FILE: /run/secrets/yt-cookies.txt
+      # PO token sidecar — secondary bypass used alongside cookies.
       BGUTIL_POT_SERVER_URL: http://bgutil-pot-provider:4416
       # bgutil yt-dlp plugin — tells the native Python plugin where the HTTP server lives.
-      # The plugin auto-generates context-specific PO tokens (GVS, player, subs) during extraction.
       YT_DLP_BGUTIL_POT_PROVIDER_BASE_URL: http://bgutil-pot-provider:4416
       RECORDINGS_DIR: /recordings
       RECORDING_STORAGE_PROVIDER: ${RECORDING_STORAGE_PROVIDER:-}
@@ -524,6 +528,9 @@ services:
       NODE_OPTIONS: "--max-old-space-size=192"
     volumes:
       - mediamtx_recordings:/recordings            # uploader reads .fmp4 files and deletes after upload
+      # YouTube cookies file — create an empty file first so Docker doesn't
+      # create a directory here; populate it per docs/setup.md.
+      - /opt/tiklivepro/yt-cookies.txt:/run/secrets/yt-cookies.txt:ro
     ports:
       - "3009:3009"
       - "1935:1935"

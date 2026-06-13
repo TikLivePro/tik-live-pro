@@ -1,6 +1,6 @@
 # TikLivePro — Setup Guide
 
-> **Last updated:** 2026-06-11 (add NEXT_PUBLIC_MEDIAMTX_WEBRTC_URL to env table)
+> **Last updated:** 2026-06-13 (add YouTube cookies setup for bot-detection bypass)
 > Update this file whenever prerequisites, ports, environment variables, or workflow steps change.
 
 ## Prerequisites
@@ -383,3 +383,56 @@ If no paths appear, the stream hasn't arrived at MediaMTX yet. Common causes:
 2. In production: `MEDIAMTX_API_URL=http://mediamtx:9997` (the watcher must reach the mediamtx container, not its own localhost).
 3. `SERVER_PUBLIC_IP` is set and MediaMTX is advertising the correct public IP in ICE candidates (see above).
 4. Retrieve the ingest URLs from `GET /stream-orchestrator/sessions/<id>/ingest` — the response includes `ingestUrl` (RTMP/OBS), `whipUrl` (browser WHIP endpoint), `hlsUrl` (viewer), and `status`.
+
+---
+
+## YouTube cookies (bot-detection bypass)
+
+YouTube blocks URL resolution from datacenter IPs with "Sign in to confirm you're not a bot" unless a real browser session cookie is supplied. Export cookies once and mount them into the `stream-orchestrator` container.
+
+### Export (one-time, on your own computer)
+
+Follow the [yt-dlp Extractors guide](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies) exactly — the private-window method prevents YouTube from rotating the session:
+
+1. Open a **private / incognito** browser window.
+2. Sign in to YouTube.
+3. Navigate to `https://www.youtube.com/robots.txt` in the **same tab** (keep it as the only private tab).
+4. Export cookies using one of these extensions:
+   - **Firefox**: [cookies.txt](https://addons.mozilla.org/en-US/firefox/addon/cookies-txt/)
+   - **Chrome**: [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) (use LOCALLY, not the original — the original was reported as malware)
+5. Save the exported file as **`cookies.txt`** (Netscape / Mozilla format, `LF` line endings).
+6. **Close the private window immediately** — leaving it open allows YouTube to rotate the session cookie, invalidating the export.
+
+### Deploy to the server
+
+```bash
+# 1. Copy to the server
+scp cookies.txt root@<server>:/opt/tiklivepro/yt-cookies.txt
+
+# 2. Create the file first if it doesn't exist (Docker requires the source
+#    to exist before mounting; an empty file is fine — code skips empty files)
+ssh root@<server> "touch /opt/tiklivepro/yt-cookies.txt"
+
+# 3. Then overwrite with the real cookies
+scp cookies.txt root@<server>:/opt/tiklivepro/yt-cookies.txt
+
+# 4. Restart stream-orchestrator to pick up the new file
+ssh root@<server> "cd /opt/tiklivepro && \
+  docker compose -f docker-compose.prod.managed.yml \
+  up -d --no-deps stream-orchestrator"
+```
+
+### Verify
+
+```bash
+# Inside the container, yt-dlp should resolve a public video without error:
+docker exec tiklivepro-stream-orchestrator-1 yt-dlp \
+  --cookies /run/secrets/yt-cookies.txt \
+  --no-playlist --dump-json -f best \
+  -- "https://www.youtube.com/watch?v=jNQXAC9IVRw" \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print('OK:', d['title'])"
+```
+
+### Refresh cadence
+
+YouTube sessions last roughly **2–4 weeks** before the cookies expire. When yt-dlp starts failing again with the bot error, repeat the export and deploy steps above. No image rebuild needed — the file is bind-mounted at runtime.

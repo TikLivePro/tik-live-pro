@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { copyFileSync, unlinkSync } from 'node:fs';
+import { copyFileSync, statSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -140,17 +140,28 @@ export async function resolveWithYtDlp(
     );
   }
 
-  // Cookies provide an additional authentication signal alongside PO tokens.
-  // On datacenter IPs the combination of plugin-generated PO tokens + cookies
-  // provides the strongest possible bypass. The source file may be mounted :ro
-  // so we copy to a writable temp path — yt-dlp always tries to save the
-  // updated cookiejar back after each run.
+  // Cookies are the primary bot-detection bypass for datacenter IPs.
+  // Export them from a private YouTube browser session and mount the file read-only
+  // (see docs/setup.md — "YouTube cookies"). We copy to a writable tmp path because
+  // yt-dlp attempts to write the updated cookiejar back after each run.
+  // Guards: the file must exist, be a regular file, and have content — a missing
+  // file (Docker creates a directory for absent bind-mounts) is silently skipped.
   let tmpCookiesPath: string | null = null;
   const cookiesFile = process.env['YTDLP_COOKIES_FILE'];
   if (cookiesFile) {
-    tmpCookiesPath = join(tmpdir(), `yt-cookies-${randomUUID()}.txt`);
-    copyFileSync(cookiesFile, tmpCookiesPath);
-    args.push('--cookies', tmpCookiesPath);
+    try {
+      const st = statSync(cookiesFile);
+      if (st.isFile() && st.size > 0) {
+        tmpCookiesPath = join(tmpdir(), `yt-cookies-${randomUUID()}.txt`);
+        copyFileSync(cookiesFile, tmpCookiesPath);
+        args.push('--cookies', tmpCookiesPath);
+        logger.debug({ cookiesFile }, 'yt-dlp: using cookies file');
+      } else {
+        logger.warn({ cookiesFile }, 'yt-dlp: cookies file is empty or not a regular file, skipping');
+      }
+    } catch {
+      logger.warn({ cookiesFile }, 'yt-dlp: cookies file not accessible, running without cookies');
+    }
   }
 
   args.push('--', platformUrl);
