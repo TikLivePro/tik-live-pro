@@ -6,10 +6,18 @@ import { randomUUID } from 'node:crypto';
 import type { Logger } from '@tik-live-pro/logger';
 
 const ALLOWED_HOSTNAMES = new Set([
-  'youtube.com', 'www.youtube.com', 'youtu.be', 'm.youtube.com',
-  'twitch.tv', 'www.twitch.tv', 'clips.twitch.tv',
-  'vimeo.com', 'www.vimeo.com', 'player.vimeo.com',
-  'dailymotion.com', 'www.dailymotion.com',
+  'youtube.com',
+  'www.youtube.com',
+  'youtu.be',
+  'm.youtube.com',
+  'twitch.tv',
+  'www.twitch.tv',
+  'clips.twitch.tv',
+  'vimeo.com',
+  'www.vimeo.com',
+  'player.vimeo.com',
+  'dailymotion.com',
+  'www.dailymotion.com',
 ]);
 
 const TIMEOUT_MS = 30_000;
@@ -82,7 +90,11 @@ function extractVideoHeights(formats: RawFormat[]): number[] {
 // video being fetched. Cache per-video-ID so we avoid a round-trip to bgutil
 // for each yt-dlp quality re-resolution of the same video.
 // ---------------------------------------------------------------------------
-interface PotEntry { poToken: string; visitorData: string; expiresAt: number }
+interface PotEntry {
+  poToken: string;
+  visitorData: string;
+  expiresAt: number;
+}
 const _potCache = new Map<string, PotEntry>();
 
 function extractYouTubeVideoId(url: string): string | null {
@@ -90,7 +102,9 @@ function extractYouTubeVideoId(url: string): string | null {
     const u = new URL(url);
     if (u.hostname === 'youtu.be') return u.pathname.slice(1).split('/')[0] ?? null;
     return u.searchParams.get('v');
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 async function fetchPoToken(
@@ -105,14 +119,19 @@ async function fetchPoToken(
 
   // Pass the video URL as contentBinding so bgutil generates a content-specific
   // token — generic tokens (empty body) no longer bypass bot detection.
-  const fetchInit: RequestInit = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
+  const fetchInit: RequestInit = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  };
   if (videoId) {
-    fetchInit.body = JSON.stringify({ contentBinding: `https://www.youtube.com/watch?v=${videoId}` });
+    fetchInit.body = JSON.stringify({
+      contentBinding: `https://www.youtube.com/watch?v=${videoId}`,
+    });
   }
 
   const res = await fetch(`${serverUrl}/get_pot`, fetchInit);
   if (!res.ok) throw new Error(`bgutil POT server returned HTTP ${res.status}`);
-  const body = await res.json() as { poToken: string; contentBinding: string; expiresAt: string };
+  const body = (await res.json()) as { poToken: string; contentBinding: string; expiresAt: string };
   const entry: PotEntry = {
     poToken: body.poToken,
     // bgutil returns URL-encoded base64 — decode so yt-dlp receives a valid proto
@@ -153,8 +172,10 @@ export async function resolveWithYtDlp(
     '--no-check-certificate',
     '--dump-json',
     // 'node' is the correct runtime name in yt-dlp ≥2024; older builds used 'nodejs'.
-    '--js-runtimes', 'node',
-    '-f', formatSelector,
+    '--js-runtimes',
+    'node',
+    '-f',
+    formatSelector,
   ];
 
   let tmpCookiesPath: string | null = null;
@@ -166,19 +187,24 @@ export async function resolveWithYtDlp(
     // PO token path: bypasses datacenter bot detection without session cookies.
     try {
       const { poToken, visitorData } = await fetchPoToken(bgutilUrl, platformUrl);
-      // Use web client only — ios fallback has no PO token and gets bot-checked
-      // on datacenter IPs. visitor_data ties yt-dlp's YouTube session to the
-      // same browser session that bgutil used to generate the PO token; without
-      // it YouTube sees a mismatched session and rejects the token.
-      args.push('--extractor-args', `youtube:player_client=web;visitor_data=${visitorData};po_token=web+${poToken}`);
+      // Use web client first with PO token. If YouTube still demands sign-in (bot detection),
+      // fallback to android/ios clients which currently have different/looser bot detection heuristics.
+      // visitor_data ties yt-dlp's YouTube session to the browser session that bgutil used.
+      args.push(
+        '--extractor-args',
+        `youtube:player_client=web,android,ios;visitor_data=${visitorData};po_token=web+${poToken}`,
+      );
       usedBgutil = true;
     } catch (err) {
-      logger.warn({ err }, 'bgutil PO token fetch failed — falling back to ios client + cookies');
-      args.push('--extractor-args', 'youtube:player_client=ios,web');
+      logger.warn(
+        { err },
+        'bgutil PO token fetch failed — falling back to android/ios client + cookies',
+      );
+      args.push('--extractor-args', 'youtube:player_client=android,ios,web');
     }
   } else {
-    // No bgutil: iOS client gives broader format availability.
-    args.push('--extractor-args', 'youtube:player_client=ios,web');
+    // No bgutil: android/iOS clients gives broader format availability and bypass bot detection better.
+    args.push('--extractor-args', 'youtube:player_client=android,ios,web');
   }
 
   // Cookies are used when bgutil is absent or failed. The source file may be
@@ -197,7 +223,13 @@ export async function resolveWithYtDlp(
     try {
       proc = spawn('yt-dlp', args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch {
-      if (tmpCookiesPath) { try { unlinkSync(tmpCookiesPath); } catch { /* ignore */ } }
+      if (tmpCookiesPath) {
+        try {
+          unlinkSync(tmpCookiesPath);
+        } catch {
+          /* ignore */
+        }
+      }
       reject(new YtDlpError('yt-dlp is not installed', 'NOT_INSTALLED'));
       return;
     }
@@ -205,11 +237,21 @@ export async function resolveWithYtDlp(
     const chunks: string[] = [];
     let stderr = '';
 
-    proc.stdout!.on('data', (chunk: Buffer) => { chunks.push(chunk.toString()); });
-    proc.stderr!.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+    proc.stdout!.on('data', (chunk: Buffer) => {
+      chunks.push(chunk.toString());
+    });
+    proc.stderr!.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
 
     const cleanupTmpCookies = (): void => {
-      if (tmpCookiesPath) { try { unlinkSync(tmpCookiesPath); } catch { /* ignore */ } }
+      if (tmpCookiesPath) {
+        try {
+          unlinkSync(tmpCookiesPath);
+        } catch {
+          /* ignore */
+        }
+      }
     };
 
     const timer = setTimeout(() => {
@@ -291,9 +333,7 @@ export async function resolveWithYtDlp(
         return;
       }
 
-      const formats = Array.isArray(data['formats'])
-        ? (data['formats'] as RawFormat[])
-        : [];
+      const formats = Array.isArray(data['formats']) ? (data['formats'] as RawFormat[]) : [];
       const availableHeights = extractVideoHeights(formats);
 
       logger.info(
