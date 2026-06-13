@@ -343,8 +343,12 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     // Direct cross-origin URLs produce opaque (black) video tracks and silent audio
     // tracks in Chromium; the proxy makes the resource appear same-origin, which
     // removes the browser's taint restriction and enables the canvas compositor too.
+    // URLs that already start with '/' are relative same-origin paths (e.g.
+    // /api/video-proxy/merge-stream) and must NOT be wrapped again.
     video.removeAttribute('crossorigin');
-    video.src = `/api/video-stream?url=${encodeURIComponent(url)}`;
+    video.src = url.startsWith('/')
+      ? url
+      : `/api/video-stream?url=${encodeURIComponent(url)}`;
     pendingPlayRef.current = true;
     resumeTimeRef.current = resumeAt ?? null;
     video.load();
@@ -387,7 +391,9 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     resumeTimeRef.current = video.currentTime > 0 ? video.currentTime : null;
     if (video.src?.startsWith('blob:')) URL.revokeObjectURL(video.src);
     video.removeAttribute('crossorigin');
-    video.src = `/api/video-stream?url=${encodeURIComponent(url)}`;
+    video.src = url.startsWith('/')
+      ? url
+      : `/api/video-stream?url=${encodeURIComponent(url)}`;
     pendingPlayRef.current = true;
     isSwitchingQualityRef.current = true;
     setIsQualitySwitching(true);

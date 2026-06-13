@@ -77,16 +77,23 @@ function extractVideoHeights(formats: RawFormat[]): number[] {
 // ---------------------------------------------------------------------------
 interface PotCache { poToken: string; visitorData: string; expiresAt: number }
 let _potCache: PotCache | null = null;
-const POT_TTL_MS = 5 * 60 * 60 * 1000;
 
 async function fetchPoToken(serverUrl: string): Promise<{ poToken: string; visitorData: string }> {
   if (_potCache && Date.now() < _potCache.expiresAt) {
     return _potCache;
   }
-  const res = await fetch(`${serverUrl}/get-pot`);
+  // v1.3+ API: POST /get_pot returns { poToken, contentBinding, expiresAt }
+  const res = await fetch(`${serverUrl}/get_pot`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
   if (!res.ok) throw new Error(`bgutil POT server returned HTTP ${res.status}`);
-  const body = await res.json() as { po_token: string; visitor_data: string };
-  _potCache = { poToken: body.po_token, visitorData: body.visitor_data, expiresAt: Date.now() + POT_TTL_MS };
+  const body = await res.json() as { poToken: string; contentBinding: string; expiresAt: string };
+  _potCache = {
+    poToken: body.poToken,
+    visitorData: body.contentBinding,
+    expiresAt: new Date(body.expiresAt).getTime(),
+  };
   return _potCache;
 }
 
