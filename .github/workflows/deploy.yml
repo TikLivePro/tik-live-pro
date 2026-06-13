@@ -57,7 +57,7 @@ jobs:
       #   push v1.2.3 → ghcr.io/.../package:1.2.3, :1.2, :1, :latest
       - name: Generate image tags
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}/${{ matrix.service.package }}
           tags: |
@@ -101,7 +101,7 @@ jobs:
 
       - name: Generate image tags
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}/web
           tags: |
@@ -147,7 +147,7 @@ jobs:
 
       - name: Generate image tags
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}/status
           tags: |
