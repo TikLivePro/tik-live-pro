@@ -207,10 +207,10 @@ export async function resolveWithYtDlp(
     args.push('--extractor-args', 'youtube:player_client=android,ios,web');
   }
 
-  // Cookies are used when bgutil is absent or failed. The source file may be
-  // mounted :ro so we copy to a writable temp path — yt-dlp always tries to
-  // save the updated cookiejar back after each run.
-  if (!usedBgutil && cookiesFile) {
+  // Cookies are ALWAYS used if available. A PO token alone is often no longer
+  // sufficient to bypass YouTube's datacenter bot detection ('Sign in to confirm...').
+  // Providing cookies alongside the PO token (or instead of it) is required for HD streams.
+  if (cookiesFile) {
     tmpCookiesPath = join(tmpdir(), `yt-cookies-${randomUUID()}.txt`);
     copyFileSync(cookiesFile, tmpCookiesPath);
     args.push('--cookies', tmpCookiesPath);
