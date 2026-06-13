@@ -119,21 +119,19 @@ export async function resolveWithYtDlp(
   ];
 
   // ---------------------------------------------------------------------------
-  // bgutil PO Token Plugin (automatic)
+  // bgutil PO Token Plugin
   //
   // The bgutil-ytdlp-pot-provider yt-dlp plugin is installed in the container
   // (see Dockerfile.stream-orchestrator). It hooks into yt-dlp's PO Token
-  // Provider Framework and automatically generates context-specific PO tokens
-  // (GVS, player, subs) by communicating with the bgutil sidecar HTTP server.
+  // Provider Framework and generates context-specific PO tokens (GVS, player,
+  // subs) by communicating with the bgutil sidecar HTTP server.
   //
-  // The plugin discovers the server URL via the env var
-  // YT_DLP_BGUTIL_POT_PROVIDER_BASE_URL (set in docker-compose). If the env
-  // var is not set, we pass the URL explicitly via --extractor-args.
+  // Always pass the URL via --extractor-args so the plugin never falls back
+  // to its localhost default (127.0.0.1:4416), regardless of which env var
+  // name the installed plugin version reads.
   // ---------------------------------------------------------------------------
   const bgutilUrl = process.env['BGUTIL_POT_SERVER_URL'];
-  if (bgutilUrl && !process.env['YT_DLP_BGUTIL_POT_PROVIDER_BASE_URL']) {
-    // Plugin env var not set — pass the base URL explicitly so the plugin
-    // can reach the bgutil sidecar from inside the Docker network.
+  if (bgutilUrl) {
     args.push(
       '--extractor-args',
       `youtubepot-bgutilhttp:base_url=${bgutilUrl}`,

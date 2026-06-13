@@ -88,9 +88,11 @@ RUN addgroup --system --gid 1001 nodejs \
  # Install yt-dlp as a pip package (not standalone binary) so that the
  # bgutil-ytdlp-pot-provider pip plugin is auto-discovered at runtime.
  # The standalone binary ignores Python site-packages and would silently skip
- # the plugin, leaving YT_DLP_BGUTIL_POT_PROVIDER_BASE_URL unused.
+ # the plugin. The [default] extra bundles yt-dlp-ejs — the External JavaScript
+ # Scripts required to solve YouTube's n-challenge (nsig); without it yt-dlp
+ # can only return obfuscated/broken CDN URLs.
  && pip install --break-system-packages --no-cache-dir \
-      "yt-dlp==${YTDLP_VERSION}" \
+      "yt-dlp[default]==${YTDLP_VERSION}" \
       bgutil-ytdlp-pot-provider \
  # Entrypoint: optionally update yt-dlp + plugin before the node process starts
  && printf '%s\n' \
@@ -98,7 +100,7 @@ RUN addgroup --system --gid 1001 nodejs \
       'set -e' \
       'if [ "${YTDLP_AUTO_UPDATE:-false}" = "true" ]; then' \
       '  echo "Updating yt-dlp..."' \
-      '  pip install --break-system-packages --no-cache-dir -U yt-dlp bgutil-ytdlp-pot-provider || echo "yt-dlp update failed (continuing anyway)"' \
+      '  pip install --break-system-packages --no-cache-dir -U "yt-dlp[default]" bgutil-ytdlp-pot-provider || echo "yt-dlp update failed (continuing anyway)"' \
       'fi' \
       'exec "$@"' \
     > /usr/local/bin/docker-entrypoint.sh \
