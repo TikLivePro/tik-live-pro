@@ -511,7 +511,7 @@ services:
       # Optional: path to a Netscape-format cookies file inside the container.
       # Required for YouTube on datacenter IPs (DigitalOcean, AWS, etc.) — see docs/video-proxy.md.
       # Set to /app/youtube-cookies.txt and uncomment the volume below when the file is present.
-      YTDLP_COOKIES_FILE: ${YTDLP_COOKIES_FILE:-}
+      YTDLP_COOKIES_FILE: /app/youtube-cookies.txt
       RECORDINGS_DIR: /recordings
       RECORDING_STORAGE_PROVIDER: ${RECORDING_STORAGE_PROVIDER:-}
       RECORDING_STORAGE_BUCKET: ${RECORDING_STORAGE_BUCKET:-}
@@ -523,10 +523,7 @@ services:
       NODE_OPTIONS: "--max-old-space-size=192"
     volumes:
       - mediamtx_recordings:/recordings            # uploader reads .fmp4 files and deletes after upload
-      # Optional: YouTube cookies for datacenter-IP bot-detection bypass.
-      # 1. Export cookies to /opt/tiklivepro/youtube-cookies.txt on the server (Netscape format).
-      # 2. Uncomment the line below and set YTDLP_COOKIES_FILE=/app/youtube-cookies.txt in .env.
-      # - /opt/tiklivepro/youtube-cookies.txt:/app/youtube-cookies.txt:ro
+      - /opt/tiklivepro/youtube-cookies.txt:/app/youtube-cookies.txt:ro
     ports:
       - "3009:3009"
       - "1935:1935"
