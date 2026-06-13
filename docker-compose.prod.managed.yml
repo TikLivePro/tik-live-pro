@@ -548,6 +548,13 @@ services:
   bgutil-pot-provider:
     image: brainicism/bgutil-ytdlp-pot-provider:latest
     restart: unless-stopped
+    networks:
+      - tik-live-pro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     deploy:
       resources:
         limits:
