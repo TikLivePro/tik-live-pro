@@ -345,15 +345,6 @@ jobs:
               "NEXT_PUBLIC_GIPHY_API_KEY=$NEXT_PUBLIC_GIPHY_API_KEY" \
               > .env
 
-            # Auto-activate YouTube cookies if the file is present on the server.
-            # Upload the file once: scp youtube-cookies.txt root@<IP>:/opt/tiklivepro/youtube-cookies.txt
-            # Every subsequent deploy picks it up automatically — see docs/video-proxy.md.
-            if [ -f /opt/tiklivepro/youtube-cookies.txt ]; then
-              echo "YTDLP_COOKIES_FILE=/app/youtube-cookies.txt" >> .env
-              sed -i 's|      # - /opt/tiklivepro/youtube-cookies.txt:/app/youtube-cookies.txt:ro|      - /opt/tiklivepro/youtube-cookies.txt:/app/youtube-cookies.txt:ro|' docker-compose.prod.managed.yml
-              echo "==> YouTube cookies file found — activating YTDLP_COOKIES_FILE"
-            fi
-
             n=0
             until docker compose -f docker-compose.prod.managed.yml pull; do
               n=$((n+1))
