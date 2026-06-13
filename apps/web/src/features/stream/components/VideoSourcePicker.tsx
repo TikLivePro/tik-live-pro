@@ -178,7 +178,7 @@ export function VideoSourcePicker({
         // Quality switch — don't reset the URL input; continue from current position.
         onSwitchQuality?.(effectiveUrl);
       } else {
-        setUrlInput(effectiveUrl);
+        setUrlInput(platformUrl);
         setUrlPlatform(null);
         onSelectOnlineUrl(effectiveUrl);
       }

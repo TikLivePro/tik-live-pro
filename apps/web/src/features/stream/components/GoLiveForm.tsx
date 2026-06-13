@@ -116,7 +116,7 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
         ? buildMergeStreamUrl(result.resolvedUrl, result.audioUrl)
         : result.resolvedUrl;
 
-      setUrlInput(effectiveUrl);
+      setUrlInput(platformUrl);
       setUrlPlatform(null);
       setSourceTab('online-url');
       setPreSource({ type: 'online-url', url: effectiveUrl });
