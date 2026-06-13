@@ -105,15 +105,12 @@ async function fetchPoToken(
 
   // Pass the video URL as contentBinding so bgutil generates a content-specific
   // token — generic tokens (empty body) no longer bypass bot detection.
-  const requestBody = videoId
-    ? JSON.stringify({ contentBinding: `https://www.youtube.com/watch?v=${videoId}` })
-    : undefined;
+  const fetchInit: RequestInit = { method: 'POST', headers: { 'Content-Type': 'application/json' } };
+  if (videoId) {
+    fetchInit.body = JSON.stringify({ contentBinding: `https://www.youtube.com/watch?v=${videoId}` });
+  }
 
-  const res = await fetch(`${serverUrl}/get_pot`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: requestBody,
-  });
+  const res = await fetch(`${serverUrl}/get_pot`, fetchInit);
   if (!res.ok) throw new Error(`bgutil POT server returned HTTP ${res.status}`);
   const body = await res.json() as { poToken: string; contentBinding: string; expiresAt: string };
   const entry: PotEntry = {
