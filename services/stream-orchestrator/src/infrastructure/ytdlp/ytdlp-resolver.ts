@@ -67,6 +67,29 @@ function extractVideoHeights(formats: RawFormat[]): number[] {
   return [...seen].sort((a, b) => b - a);
 }
 
+// ---------------------------------------------------------------------------
+// PO Token support (bgutil-ytdlp-pot-provider sidecar)
+//
+// YouTube blocks datacenter IPs even with session cookies. PO (Proof-of-Origin)
+// tokens are a newer mechanism that doesn't get rotated the way browser cookies
+// do.  The bgutil sidecar generates them on demand; we cache each token for
+// 5 hours (YouTube rotates them every ~6 h).
+// ---------------------------------------------------------------------------
+interface PotCache { poToken: string; visitorData: string; expiresAt: number }
+let _potCache: PotCache | null = null;
+const POT_TTL_MS = 5 * 60 * 60 * 1000;
+
+async function fetchPoToken(serverUrl: string): Promise<{ poToken: string; visitorData: string }> {
+  if (_potCache && Date.now() < _potCache.expiresAt) {
+    return _potCache;
+  }
+  const res = await fetch(`${serverUrl}/get-pot`);
+  if (!res.ok) throw new Error(`bgutil POT server returned HTTP ${res.status}`);
+  const body = await res.json() as { po_token: string; visitor_data: string };
+  _potCache = { poToken: body.po_token, visitorData: body.visitor_data, expiresAt: Date.now() + POT_TTL_MS };
+  return _potCache;
+}
+
 /**
  * Resolves a platform URL to the best available video (and optional separate
  * audio) CDN URL using yt-dlp.
@@ -79,51 +102,57 @@ function extractVideoHeights(formats: RawFormat[]): number[] {
  * When `maxHeight` is supplied the video is capped at that height so the
  * quality-picker re-resolution produces the correct rendition.
  */
-export function resolveWithYtDlp(
+export async function resolveWithYtDlp(
   platformUrl: string,
   logger: Logger,
   maxHeight?: number,
 ): Promise<YtDlpResult> {
-  return new Promise((resolve, reject) => {
-    // Prefer H.264+AAC DASH streams for maximum quality without transcoding.
-    // Fall back to any DASH, then to a combined progressive format.
-    const h = maxHeight ? `[height<=${maxHeight}]` : '';
-    const formatSelector = maxHeight
-      ? `bestvideo${h}[ext=mp4]+bestaudio[ext=m4a]/bestvideo${h}+bestaudio/best${h}[vcodec!=none][acodec!=none]/best${h}`
-      : 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[vcodec!=none][acodec!=none]/best';
+  // Prefer H.264+AAC DASH streams for maximum quality without transcoding.
+  // Fall back to any DASH, then to a combined progressive format.
+  const h = maxHeight ? `[height<=${maxHeight}]` : '';
+  const formatSelector = maxHeight
+    ? `bestvideo${h}[ext=mp4]+bestaudio[ext=m4a]/bestvideo${h}+bestaudio/best${h}[vcodec!=none][acodec!=none]/best${h}`
+    : 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[vcodec!=none][acodec!=none]/best';
 
-    const args = [
-      '--no-playlist',
-      '--no-warnings',
-      '--no-check-certificate',
-      '--dump-json',
-      // Use the Node.js runtime already in the container instead of looking for deno.
-      '--js-runtimes', 'nodejs',
-      // iOS player client gives broader format availability even when cookies are present.
-      // The "youtube:" prefix scopes this arg to YouTube only; other platforms ignore it.
-      '--extractor-args', 'youtube:player_client=ios,web',
-      '-f', formatSelector,
-    ];
+  const args = [
+    '--no-playlist',
+    '--no-warnings',
+    '--no-check-certificate',
+    '--dump-json',
+    // 'node' is the correct runtime name in yt-dlp ≥2024; older builds used 'nodejs'.
+    '--js-runtimes', 'node',
+    '-f', formatSelector,
+  ];
 
-    // Datacenter IPs (e.g. DigitalOcean) are blocked by YouTube's bot detection.
-    // Mounting a Netscape-format cookies file from a logged-in browser session
-    // authenticates the request and bypasses the restriction.
-    // Set YTDLP_COOKIES_FILE=/app/youtube-cookies.txt in the container env
-    // and bind-mount the file to enable this.
-    //
-    // The source file may be mounted read-only. yt-dlp always tries to save
-    // the cookiejar back to the path it was given, which would fail on a
-    // read-only mount. We copy to a writable temp path instead.
+  let tmpCookiesPath: string | null = null;
+  const bgutilUrl = process.env['BGUTIL_POT_SERVER_URL'];
+
+  if (bgutilUrl) {
+    // PO token path: bypasses datacenter bot detection without session cookies.
+    try {
+      const { poToken, visitorData } = await fetchPoToken(bgutilUrl);
+      args.push('--extractor-args', `youtube:player_client=web;visitor_data=${visitorData};po_token=web+${poToken}`);
+    } catch (err) {
+      logger.warn({ err }, 'bgutil PO token fetch failed — falling back to ios client');
+      args.push('--extractor-args', 'youtube:player_client=ios,web');
+    }
+  } else {
+    // No bgutil: iOS client gives broader format availability.
+    args.push('--extractor-args', 'youtube:player_client=ios,web');
+
+    // Cookie-based auth fallback.  Source file may be mounted :ro so we copy to
+    // a writable temp path — yt-dlp always tries to save the cookiejar back.
     const cookiesFile = process.env['YTDLP_COOKIES_FILE'];
-    let tmpCookiesPath: string | null = null;
     if (cookiesFile) {
       tmpCookiesPath = join(tmpdir(), `yt-cookies-${randomUUID()}.txt`);
       copyFileSync(cookiesFile, tmpCookiesPath);
       args.push('--cookies', tmpCookiesPath);
     }
+  }
 
-    args.push('--', platformUrl);
+  args.push('--', platformUrl);
 
+  return new Promise((resolve, reject) => {
     let proc: ReturnType<typeof spawn>;
     try {
       proc = spawn('yt-dlp', args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -139,15 +168,15 @@ export function resolveWithYtDlp(
     proc.stdout!.on('data', (chunk: Buffer) => { chunks.push(chunk.toString()); });
     proc.stderr!.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
 
-    const timer = setTimeout(() => {
-      proc.kill('SIGKILL');
-      if (tmpCookiesPath) { try { unlinkSync(tmpCookiesPath); } catch { /* ignore */ } }
-      reject(new YtDlpError('yt-dlp timed out after 30 s', 'TIMEOUT'));
-    }, TIMEOUT_MS);
-
     const cleanupTmpCookies = (): void => {
       if (tmpCookiesPath) { try { unlinkSync(tmpCookiesPath); } catch { /* ignore */ } }
     };
+
+    const timer = setTimeout(() => {
+      proc.kill('SIGKILL');
+      cleanupTmpCookies();
+      reject(new YtDlpError('yt-dlp timed out after 30 s', 'TIMEOUT'));
+    }, TIMEOUT_MS);
 
     proc.on('error', (err: NodeJS.ErrnoException) => {
       clearTimeout(timer);

@@ -508,10 +508,8 @@ services:
       # yt-dlp auto-update: fetches latest extractor on every container start.
       # Keeps URL resolution working even between image rebuilds.
       YTDLP_AUTO_UPDATE: "true"
-      # Optional: path to a Netscape-format cookies file inside the container.
-      # Required for YouTube on datacenter IPs (DigitalOcean, AWS, etc.) — see docs/video-proxy.md.
-      # Set to /app/youtube-cookies.txt and uncomment the volume below when the file is present.
-      YTDLP_COOKIES_FILE: /app/youtube-cookies.txt
+      # PO token sidecar — bypasses YouTube datacenter bot detection without session cookies.
+      BGUTIL_POT_SERVER_URL: http://bgutil-pot-provider:4416
       RECORDINGS_DIR: /recordings
       RECORDING_STORAGE_PROVIDER: ${RECORDING_STORAGE_PROVIDER:-}
       RECORDING_STORAGE_BUCKET: ${RECORDING_STORAGE_BUCKET:-}
@@ -523,7 +521,6 @@ services:
       NODE_OPTIONS: "--max-old-space-size=192"
     volumes:
       - mediamtx_recordings:/recordings            # uploader reads .fmp4 files and deletes after upload
-      - /opt/tiklivepro/youtube-cookies.txt:/app/youtube-cookies.txt:ro
     ports:
       - "3009:3009"
       - "1935:1935"
@@ -532,6 +529,8 @@ services:
         condition: service_healthy
       mediamtx:
         condition: service_started
+      bgutil-pot-provider:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -542,6 +541,23 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  # ── bgutil PO token provider ─────────────────────────────────────────────────
+  # Generates YouTube Proof-of-Origin tokens so yt-dlp can resolve URLs from
+  # datacenter IPs without session cookies (which YouTube rotates on IP change).
+  bgutil-pot-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4416/get-pot"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   # ── Status page — https://status.tiklivepro.me ───────────────────────────────
   # Lightweight Next.js app. Pings every service /health endpoint from the server
