@@ -85,29 +85,24 @@ RUN addgroup --system --gid 1001 nodejs \
  && adduser  --system --uid 1001 nodeuser \
  # ffmpeg must be in the runtime image — fluent-ffmpeg shells out to it
  && apk add --no-cache dumb-init ffmpeg wget python3 py3-pip \
- # /app/bin is owned by nodeuser so yt-dlp can self-update when YTDLP_AUTO_UPDATE=true
- && mkdir -p /app/bin \
- && wget -qO /app/bin/yt-dlp \
-      "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp" \
- && chmod +x /app/bin/yt-dlp \
- && chown -R nodeuser:nodejs /app/bin \
- # Install bgutil yt-dlp plugin — lets yt-dlp natively generate PO tokens via
- # the bgutil-pot-provider sidecar. This replaces manual --extractor-args token passing.
- && pip install --break-system-packages --no-cache-dir bgutil-ytdlp-pot-provider \
- # Entrypoint: optionally run yt-dlp -U before the node process starts
+ # Install yt-dlp as a pip package (not standalone binary) so that the
+ # bgutil-ytdlp-pot-provider pip plugin is auto-discovered at runtime.
+ # The standalone binary ignores Python site-packages and would silently skip
+ # the plugin, leaving YT_DLP_BGUTIL_POT_PROVIDER_BASE_URL unused.
+ && pip install --break-system-packages --no-cache-dir \
+      "yt-dlp==${YTDLP_VERSION}" \
+      bgutil-ytdlp-pot-provider \
+ # Entrypoint: optionally update yt-dlp + plugin before the node process starts
  && printf '%s\n' \
       '#!/bin/sh' \
       'set -e' \
       'if [ "${YTDLP_AUTO_UPDATE:-false}" = "true" ]; then' \
       '  echo "Updating yt-dlp..."' \
-      '  yt-dlp -U || echo "yt-dlp update failed (continuing anyway)"' \
-      '  pip install --break-system-packages --no-cache-dir -U bgutil-ytdlp-pot-provider || echo "bgutil plugin update failed (continuing anyway)"' \
+      '  pip install --break-system-packages --no-cache-dir -U yt-dlp bgutil-ytdlp-pot-provider || echo "yt-dlp update failed (continuing anyway)"' \
       'fi' \
       'exec "$@"' \
     > /usr/local/bin/docker-entrypoint.sh \
  && chmod +x /usr/local/bin/docker-entrypoint.sh
-
-ENV PATH="/app/bin:${PATH}"
 
 WORKDIR /app
 
