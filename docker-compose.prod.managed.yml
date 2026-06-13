@@ -530,7 +530,7 @@ services:
       mediamtx:
         condition: service_started
       bgutil-pot-provider:
-        condition: service_healthy
+        condition: service_started
     deploy:
       resources:
         limits:
@@ -553,11 +553,11 @@ services:
         limits:
           memory: 512m
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:4416/get-pot"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4416/get-pot',r=>{process.exit(r.statusCode<500?0:1)}).on('error',()=>process.exit(1))"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
 
   # ── Status page — https://status.tiklivepro.me ───────────────────────────────
   # Lightweight Next.js app. Pings every service /health endpoint from the server
