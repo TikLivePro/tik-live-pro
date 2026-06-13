@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import type { VideoSourceType, RecentSource } from '../interfaces/video-share.interfaces';
 import { detectVideoPlatform, isUnsafeVideoUrl } from '../consts/video-url.utils';
-import { resolveVideoProxyUrl, API_BASE } from '@/lib/api';
+import { resolveVideoProxyUrl, buildMergeStreamUrl } from '@/lib/api';
 
 const INITIAL_SHOWN = 3;
 const PAGE_SIZE = 5;
@@ -171,8 +171,7 @@ export function VideoSourcePicker({
       // the server-side merge endpoint so the browser gets a single MP4 stream
       // and captureStream() can capture full-quality video.
       const effectiveUrl = result.audioUrl
-        ? `${API_BASE}/stream-orchestrator/video-proxy/merge-stream` +
-          `?v=${encodeURIComponent(result.resolvedUrl)}&a=${encodeURIComponent(result.audioUrl)}`
+        ? buildMergeStreamUrl(result.resolvedUrl, result.audioUrl)
         : result.resolvedUrl;
 
       if (height !== undefined) {

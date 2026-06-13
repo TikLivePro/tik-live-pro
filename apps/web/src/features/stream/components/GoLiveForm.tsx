@@ -12,7 +12,7 @@ import { useStreamStore } from '../store/stream.store';
 import type { PreSourceType } from '../store/stream.store';
 import { useWebcamAvailability } from '../hooks/useWebcamAvailability';
 import { isUnsafeVideoUrl, detectVideoPlatform } from '../consts/video-url.utils';
-import { resolveVideoProxyUrl, API_BASE } from '@/lib/api';
+import { resolveVideoProxyUrl, API_BASE, buildMergeStreamUrl } from '@/lib/api';
 
 interface Props {
   onSubmit: (params: { title: string; description?: string; destinationIds: SocialAccountId[] }) => void;
@@ -113,8 +113,7 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
       }
 
       const effectiveUrl = result.audioUrl
-        ? `${API_BASE}/stream-orchestrator/video-proxy/merge-stream` +
-          `?v=${encodeURIComponent(result.resolvedUrl)}&a=${encodeURIComponent(result.audioUrl)}`
+        ? buildMergeStreamUrl(result.resolvedUrl, result.audioUrl)
         : result.resolvedUrl;
 
       setUrlInput(effectiveUrl);

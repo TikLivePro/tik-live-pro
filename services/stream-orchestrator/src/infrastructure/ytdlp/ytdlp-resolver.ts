@@ -131,7 +131,9 @@ export async function resolveWithYtDlp(
     // PO token path: bypasses datacenter bot detection without session cookies.
     try {
       const { poToken, visitorData } = await fetchPoToken(bgutilUrl);
-      args.push('--extractor-args', `youtube:player_client=web;visitor_data=${visitorData};po_token=web+${poToken}`);
+      // Include ios as fallback so yt-dlp can fall back to higher-quality DASH
+      // formats when the web client only returns a low-quality combined stream.
+      args.push('--extractor-args', `youtube:player_client=web,ios;visitor_data=${visitorData};po_token=web+${poToken}`);
     } catch (err) {
       logger.warn({ err }, 'bgutil PO token fetch failed — falling back to ios client');
       args.push('--extractor-args', 'youtube:player_client=ios,web');

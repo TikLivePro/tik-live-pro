@@ -33,6 +33,18 @@ export async function resolveVideoProxyUrl(
 }
 export const COMMENTS_WS_URL = process.env['NEXT_PUBLIC_COMMENTS_WS_URL'] ?? 'http://localhost:3006';
 
+/**
+ * Constructs the URL the browser uses to play a DASH (separate video+audio) stream.
+ * Routes through the same-origin Next.js /api/video-stream proxy so captureStream()
+ * works and the URL is never localhost-dependent on the client.
+ */
+export function buildMergeStreamUrl(resolvedUrl: string, audioUrl: string): string {
+  const backendUrl =
+    `${API_BASE}/stream-orchestrator/video-proxy/merge-stream` +
+    `?v=${encodeURIComponent(resolvedUrl)}&a=${encodeURIComponent(audioUrl)}`;
+  return `/api/video-stream?url=${encodeURIComponent(backendUrl)}`;
+}
+
 // Deduplicates concurrent refresh calls so only one refresh request is in-flight at a time.
 // Token rotation means replaying an old refresh token returns 401, so serializing is required.
 let refreshPromise: Promise<string | null> | null = null;

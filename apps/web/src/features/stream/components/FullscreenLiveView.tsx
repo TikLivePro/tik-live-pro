@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import { API_BASE, apiFetch, resolveVideoProxyUrl } from '@/lib/api';
+import { API_BASE, apiFetch, buildMergeStreamUrl, resolveVideoProxyUrl } from '@/lib/api';
 import { useStream } from '../hooks/useStream';
 import { useElapsedTime } from '../hooks/useElapsedTime';
 import { useCameraStream } from '../hooks/useCameraStream';
@@ -394,8 +394,7 @@ export function FullscreenLiveView(): React.ReactElement {
       try {
         const result = await resolveVideoProxyUrl(platformVideoContext.platformUrl, height);
         const effectiveUrl = result.audioUrl
-          ? `${API_BASE}/stream-orchestrator/video-proxy/merge-stream` +
-            `?v=${encodeURIComponent(result.resolvedUrl)}&a=${encodeURIComponent(result.audioUrl)}`
+          ? buildMergeStreamUrl(result.resolvedUrl, result.audioUrl)
           : result.resolvedUrl;
         setPlatformVideoContext({
           platformUrl: platformVideoContext.platformUrl,
@@ -427,8 +426,7 @@ export function FullscreenLiveView(): React.ReactElement {
           platformVideoContext.selectedHeight || undefined,
         );
         const effectiveUrl = result.audioUrl
-          ? `${API_BASE}/stream-orchestrator/video-proxy/merge-stream` +
-            `?v=${encodeURIComponent(result.resolvedUrl)}&a=${encodeURIComponent(result.audioUrl)}`
+          ? buildMergeStreamUrl(result.resolvedUrl, result.audioUrl)
           : result.resolvedUrl;
         setPlatformVideoContext({
           platformUrl: platformVideoContext.platformUrl,
