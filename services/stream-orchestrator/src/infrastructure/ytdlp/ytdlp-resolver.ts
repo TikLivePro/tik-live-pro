@@ -75,33 +75,55 @@ function extractVideoHeights(formats: RawFormat[]): number[] {
 // do.  The bgutil sidecar generates them on demand; we cache each token until
 // the server-provided expiry (bgutil v1.3+ returns expiresAt in the response).
 //
-// bgutil v1.3+ renamed the response field: visitor_data → contentBinding.
-// The value is URL-encoded base64 (YouTube/bgutil uses %3D instead of =).
-// yt-dlp cannot decode URL-encoded base64, so we must call decodeURIComponent
-// before passing it as visitor_data — otherwise yt-dlp falls back to a fresh
-// session that doesn't match the PO token, and YouTube rejects the request.
+// bgutil v1.3+ renamed the response field: visitor_data → contentBinding, and
+// now accepts an optional contentBinding in the request body to generate a
+// content-specific token (stronger bypass). Generic tokens (no request body)
+// are no longer sufficient — YouTube requires tokens bound to the specific
+// video being fetched. Cache per-video-ID so we avoid a round-trip to bgutil
+// for each yt-dlp quality re-resolution of the same video.
 // ---------------------------------------------------------------------------
-interface PotCache { poToken: string; visitorData: string; expiresAt: number }
-let _potCache: PotCache | null = null;
+interface PotEntry { poToken: string; visitorData: string; expiresAt: number }
+const _potCache = new Map<string, PotEntry>();
 
-async function fetchPoToken(serverUrl: string): Promise<{ poToken: string; visitorData: string }> {
-  if (_potCache && Date.now() < _potCache.expiresAt) {
-    return _potCache;
-  }
-  // v1.3+ API: POST /get_pot returns { poToken, contentBinding, expiresAt }
+function extractYouTubeVideoId(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.hostname === 'youtu.be') return u.pathname.slice(1).split('/')[0] ?? null;
+    return u.searchParams.get('v');
+  } catch { return null; }
+}
+
+async function fetchPoToken(
+  serverUrl: string,
+  platformUrl: string,
+): Promise<{ poToken: string; visitorData: string }> {
+  const videoId = extractYouTubeVideoId(platformUrl);
+  const cacheKey = videoId ?? 'generic';
+
+  const cached = _potCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) return cached;
+
+  // Pass the video URL as contentBinding so bgutil generates a content-specific
+  // token — generic tokens (empty body) no longer bypass bot detection.
+  const requestBody = videoId
+    ? JSON.stringify({ contentBinding: `https://www.youtube.com/watch?v=${videoId}` })
+    : undefined;
+
   const res = await fetch(`${serverUrl}/get_pot`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: requestBody,
   });
   if (!res.ok) throw new Error(`bgutil POT server returned HTTP ${res.status}`);
   const body = await res.json() as { poToken: string; contentBinding: string; expiresAt: string };
-  _potCache = {
+  const entry: PotEntry = {
     poToken: body.poToken,
     // bgutil returns URL-encoded base64 — decode so yt-dlp receives a valid proto
     visitorData: decodeURIComponent(body.contentBinding),
     expiresAt: new Date(body.expiresAt).getTime(),
   };
-  return _potCache;
+  _potCache.set(cacheKey, entry);
+  return entry;
 }
 
 /**
@@ -146,7 +168,7 @@ export async function resolveWithYtDlp(
   if (bgutilUrl) {
     // PO token path: bypasses datacenter bot detection without session cookies.
     try {
-      const { poToken, visitorData } = await fetchPoToken(bgutilUrl);
+      const { poToken, visitorData } = await fetchPoToken(bgutilUrl, platformUrl);
       // Use web client only — ios fallback has no PO token and gets bot-checked
       // on datacenter IPs. visitor_data ties yt-dlp's YouTube session to the
       // same browser session that bgutil used to generate the PO token; without
