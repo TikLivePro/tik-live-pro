@@ -75,15 +75,16 @@ function extractVideoHeights(formats: RawFormat[]): number[] {
 // do.  The bgutil sidecar generates them on demand; we cache each token until
 // the server-provided expiry (bgutil v1.3+ returns expiresAt in the response).
 //
-// bgutil v1.3+ change: visitor_data is no longer required — the poToken alone
-// is sufficient. Passing contentBinding as visitor_data breaks token validation
-// because the value is URL-encoded (contains %3D instead of =), making the
-// base64 proto malformed when yt-dlp tries to decode it.
+// bgutil v1.3+ renamed the response field: visitor_data → contentBinding.
+// The value is URL-encoded base64 (YouTube/bgutil uses %3D instead of =).
+// yt-dlp cannot decode URL-encoded base64, so we must call decodeURIComponent
+// before passing it as visitor_data — otherwise yt-dlp falls back to a fresh
+// session that doesn't match the PO token, and YouTube rejects the request.
 // ---------------------------------------------------------------------------
-interface PotCache { poToken: string; expiresAt: number }
+interface PotCache { poToken: string; visitorData: string; expiresAt: number }
 let _potCache: PotCache | null = null;
 
-async function fetchPoToken(serverUrl: string): Promise<{ poToken: string }> {
+async function fetchPoToken(serverUrl: string): Promise<{ poToken: string; visitorData: string }> {
   if (_potCache && Date.now() < _potCache.expiresAt) {
     return _potCache;
   }
@@ -93,9 +94,11 @@ async function fetchPoToken(serverUrl: string): Promise<{ poToken: string }> {
     headers: { 'Content-Type': 'application/json' },
   });
   if (!res.ok) throw new Error(`bgutil POT server returned HTTP ${res.status}`);
-  const body = await res.json() as { poToken: string; expiresAt: string };
+  const body = await res.json() as { poToken: string; contentBinding: string; expiresAt: string };
   _potCache = {
     poToken: body.poToken,
+    // bgutil returns URL-encoded base64 — decode so yt-dlp receives a valid proto
+    visitorData: decodeURIComponent(body.contentBinding),
     expiresAt: new Date(body.expiresAt).getTime(),
   };
   return _potCache;
@@ -143,13 +146,12 @@ export async function resolveWithYtDlp(
   if (bgutilUrl) {
     // PO token path: bypasses datacenter bot detection without session cookies.
     try {
-      const { poToken } = await fetchPoToken(bgutilUrl);
-      // v1.3+: use web client only so the PO token is always applied.
-      // web,ios would fall back to ios (no PO token) if web fails, causing a
-      // bot-check on datacenter IPs. visitor_data is omitted — it's no longer
-      // needed and passing contentBinding from the response breaks base64 decoding
-      // (the value is URL-encoded with %3D instead of the standard = padding).
-      args.push('--extractor-args', `youtube:player_client=web;po_token=web+${poToken}`);
+      const { poToken, visitorData } = await fetchPoToken(bgutilUrl);
+      // Use web client only — ios fallback has no PO token and gets bot-checked
+      // on datacenter IPs. visitor_data ties yt-dlp's YouTube session to the
+      // same browser session that bgutil used to generate the PO token; without
+      // it YouTube sees a mismatched session and rejects the token.
+      args.push('--extractor-args', `youtube:player_client=web;visitor_data=${visitorData};po_token=web+${poToken}`);
       usedBgutil = true;
     } catch (err) {
       logger.warn({ err }, 'bgutil PO token fetch failed — falling back to ios client + cookies');
