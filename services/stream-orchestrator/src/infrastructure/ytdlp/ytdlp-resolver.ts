@@ -72,13 +72,18 @@ function extractVideoHeights(formats: RawFormat[]): number[] {
 //
 // YouTube blocks datacenter IPs even with session cookies. PO (Proof-of-Origin)
 // tokens are a newer mechanism that doesn't get rotated the way browser cookies
-// do.  The bgutil sidecar generates them on demand; we cache each token for
-// 5 hours (YouTube rotates them every ~6 h).
+// do.  The bgutil sidecar generates them on demand; we cache each token until
+// the server-provided expiry (bgutil v1.3+ returns expiresAt in the response).
+//
+// bgutil v1.3+ change: visitor_data is no longer required — the poToken alone
+// is sufficient. Passing contentBinding as visitor_data breaks token validation
+// because the value is URL-encoded (contains %3D instead of =), making the
+// base64 proto malformed when yt-dlp tries to decode it.
 // ---------------------------------------------------------------------------
-interface PotCache { poToken: string; visitorData: string; expiresAt: number }
+interface PotCache { poToken: string; expiresAt: number }
 let _potCache: PotCache | null = null;
 
-async function fetchPoToken(serverUrl: string): Promise<{ poToken: string; visitorData: string }> {
+async function fetchPoToken(serverUrl: string): Promise<{ poToken: string }> {
   if (_potCache && Date.now() < _potCache.expiresAt) {
     return _potCache;
   }
@@ -88,10 +93,9 @@ async function fetchPoToken(serverUrl: string): Promise<{ poToken: string; visit
     headers: { 'Content-Type': 'application/json' },
   });
   if (!res.ok) throw new Error(`bgutil POT server returned HTTP ${res.status}`);
-  const body = await res.json() as { poToken: string; contentBinding: string; expiresAt: string };
+  const body = await res.json() as { poToken: string; expiresAt: string };
   _potCache = {
     poToken: body.poToken,
-    visitorData: body.contentBinding,
     expiresAt: new Date(body.expiresAt).getTime(),
   };
   return _potCache;
@@ -133,30 +137,36 @@ export async function resolveWithYtDlp(
 
   let tmpCookiesPath: string | null = null;
   const bgutilUrl = process.env['BGUTIL_POT_SERVER_URL'];
+  const cookiesFile = process.env['YTDLP_COOKIES_FILE'];
+  let usedBgutil = false;
 
   if (bgutilUrl) {
     // PO token path: bypasses datacenter bot detection without session cookies.
     try {
-      const { poToken, visitorData } = await fetchPoToken(bgutilUrl);
-      // Include ios as fallback so yt-dlp can fall back to higher-quality DASH
-      // formats when the web client only returns a low-quality combined stream.
-      args.push('--extractor-args', `youtube:player_client=web,ios;visitor_data=${visitorData};po_token=web+${poToken}`);
+      const { poToken } = await fetchPoToken(bgutilUrl);
+      // v1.3+: use web client only so the PO token is always applied.
+      // web,ios would fall back to ios (no PO token) if web fails, causing a
+      // bot-check on datacenter IPs. visitor_data is omitted — it's no longer
+      // needed and passing contentBinding from the response breaks base64 decoding
+      // (the value is URL-encoded with %3D instead of the standard = padding).
+      args.push('--extractor-args', `youtube:player_client=web;po_token=web+${poToken}`);
+      usedBgutil = true;
     } catch (err) {
-      logger.warn({ err }, 'bgutil PO token fetch failed — falling back to ios client');
+      logger.warn({ err }, 'bgutil PO token fetch failed — falling back to ios client + cookies');
       args.push('--extractor-args', 'youtube:player_client=ios,web');
     }
   } else {
     // No bgutil: iOS client gives broader format availability.
     args.push('--extractor-args', 'youtube:player_client=ios,web');
+  }
 
-    // Cookie-based auth fallback.  Source file may be mounted :ro so we copy to
-    // a writable temp path — yt-dlp always tries to save the cookiejar back.
-    const cookiesFile = process.env['YTDLP_COOKIES_FILE'];
-    if (cookiesFile) {
-      tmpCookiesPath = join(tmpdir(), `yt-cookies-${randomUUID()}.txt`);
-      copyFileSync(cookiesFile, tmpCookiesPath);
-      args.push('--cookies', tmpCookiesPath);
-    }
+  // Cookies are used when bgutil is absent or failed. The source file may be
+  // mounted :ro so we copy to a writable temp path — yt-dlp always tries to
+  // save the updated cookiejar back after each run.
+  if (!usedBgutil && cookiesFile) {
+    tmpCookiesPath = join(tmpdir(), `yt-cookies-${randomUUID()}.txt`);
+    copyFileSync(cookiesFile, tmpCookiesPath);
+    args.push('--cookies', tmpCookiesPath);
   }
 
   args.push('--', platformUrl);

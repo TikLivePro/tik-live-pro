@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-06-12 (yt-dlp fixes: python3 now in runtime image, YTDLP_AUTO_UPDATE enabled by default, YouTube cookie bypass for datacenter IPs auto-activated by deploy workflow)
+> Dernière mise à jour : 2026-06-13 (cookie export: incognito window + robots.txt step required to prevent YouTube cookie rotation; bgutil API updated to POST /get_pot for v1.3+)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -753,17 +753,24 @@ docker system prune -f   # nettoie les images inutilisées
 
 ### La résolution YouTube échoue avec `RESOLVE_FAILED` ou "Sign in to confirm you're not a bot"
 
-Les IP DigitalOcean sont des plages datacenter que YouTube bloque systématiquement. Aucun paramètre yt-dlp (player client iOS, etc.) ne contourne cette restriction sans cookies.
+Les IP DigitalOcean sont des plages datacenter que YouTube bloque systématiquement. Le sidecar bgutil génère des PO tokens pour contourner cette restriction — voir la section bgutil ci-dessous si c'est votre première approche. Si bgutil ne suffit pas (ou en complément), des cookies de session sont nécessaires.
 
-**Fix — uploader des cookies YouTube (une seule fois) :**
+> **Risque de compte** : utiliser votre compte Google avec yt-dlp depuis un datacenter peut entraîner une suspension temporaire ou permanente. Préférez un compte jetable dédié.
+
+**Fix — exporter et uploader des cookies YouTube :**
+
+Les cookies doivent impérativement être exportés depuis une **session privée/incognito** — YouTube fait tourner les cookies des sessions normales, ce qui les invalide rapidement ([source yt-dlp](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies)).
 
 1. Installez l'extension Chrome [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
-2. Ouvrez YouTube en étant connecté à votre compte Google, exportez les cookies → `youtube-cookies.txt`
-3. Uploadez sur le serveur :
+2. Ouvrez une **nouvelle fenêtre privée/incognito** et connectez-vous à YouTube avec votre compte Google
+3. Dans cette même fenêtre incognito, naviguez vers `https://www.youtube.com/robots.txt` (assure que les bons cookies sont chargés)
+4. Exportez les cookies `youtube.com` avec l'extension → `youtube-cookies.txt`
+5. **Fermez immédiatement la fenêtre incognito** (évite que YouTube invalide les cookies exportés)
+6. Uploadez sur le serveur :
    ```bash
    scp youtube-cookies.txt root@188.166.197.25:/opt/tiklivepro/youtube-cookies.txt
    ```
-4. Activez immédiatement (sans rebuild) :
+7. Activez immédiatement (sans rebuild) :
    ```bash
    ssh root@188.166.197.25
    cd /opt/tiklivepro
@@ -775,10 +782,13 @@ Les IP DigitalOcean sont des plages datacenter que YouTube bloque systématiquem
 À partir du déploiement suivant, le workflow CI détecte automatiquement la présence du fichier et l'active sans intervention manuelle.
 
 **Quand les cookies expirent** (symptôme : `RESOLVE_FAILED` qui réapparaît après une période de bon fonctionnement) :
+
+Répétez les étapes 2–6 ci-dessus (fenêtre incognito + robots.txt + export + fermer), puis :
 ```bash
-# Ré-exporter depuis le navigateur → télécharger youtube-cookies.txt
 scp youtube-cookies.txt root@188.166.197.25:/opt/tiklivepro/youtube-cookies.txt
 docker compose -f /opt/tiklivepro/docker-compose.prod.managed.yml restart stream-orchestrator
 ```
+
+> **Format du fichier cookie** : doit être au format Netscape/Mozilla (première ligne `# Netscape HTTP Cookie File`). L'extension "Get cookies.txt LOCALLY" produit ce format correctement. Un fichier mal formaté provoque une erreur HTTP 400 dans yt-dlp.
 
 Voir `docs/video-proxy.md § YouTube on datacenter IPs` pour la documentation complète.
