@@ -12,6 +12,9 @@ import { getInitials } from '@/lib/text.utils';
 import { API_BASE, COMMENTS_WS_URL, apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/features/auth/store/auth.store';
 import { InlineAuthModal } from '@/features/auth/components/InlineAuthModal';
+import { EmojiPickerPopover } from '@/features/comments/components/EmojiPickerPopover';
+import { GifPickerPopover } from '@/features/comments/components/GifPickerPopover';
+import { CommentReactionPicker } from '@/features/comments/components/CommentReactionPicker';
 import { useElapsedTime } from '../hooks/useElapsedTime';
 import { LiveReactionFloat } from './LiveReactionFloat';
 import { ViewersPanel } from './ViewersPanel';
@@ -245,19 +248,32 @@ const PLATFORM_DOT: Record<string, string> = {
   facebook: 'bg-[#1877f2]',
 };
 
+const IS_IMAGE_URL = (url: string) =>
+  url.startsWith('data:image') ||
+  url.includes('giphy.com') ||
+  /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(url);
+
 function CommentBubble({
   comment,
   animate,
+  onClick,
 }: {
   comment: Comment;
   animate?: boolean;
+  onClick?: () => void;
 }): React.ReactElement {
   const dot = PLATFORM_DOT[comment.platform] ?? 'bg-white/40';
+  const mediaUrls = comment.mediaUrls ?? [];
+  const imageUrl = mediaUrls.find(IS_IMAGE_URL);
+  const fileCount = mediaUrls.filter((u) => !IS_IMAGE_URL(u)).length;
+
   return (
     <div
+      onClick={onClick}
       className={cn(
         'flex max-w-[230px] items-start gap-2 rounded-2xl border border-white/15 bg-black/60 px-3 py-2 shadow-lg backdrop-blur-lg',
         animate && 'animate-float-comment',
+        onClick && 'cursor-pointer hover:bg-black/75 transition-colors',
       )}
     >
       <div className="relative mt-0.5 shrink-0">
@@ -275,9 +291,26 @@ function CommentBubble({
         <p className="truncate text-[11px] font-semibold text-white/80">
           {comment.authorName}
         </p>
+        {comment.replyToCommentId && (
+          <p className="text-[9px] text-white/40 leading-tight mb-0.5">↩ reply</p>
+        )}
         {comment.content && (
           <p className="line-clamp-2 break-words text-xs leading-snug text-white">
             {comment.content}
+          </p>
+        )}
+        {imageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imageUrl}
+            alt="attachment"
+            className="mt-1 rounded-lg max-h-20 max-w-[120px] object-cover"
+            loading="lazy"
+          />
+        )}
+        {fileCount > 0 && (
+          <p className="text-[9px] text-white/50 mt-0.5">
+            📎 {fileCount} file{fileCount > 1 ? 's' : ''}
           </p>
         )}
       </div>
@@ -378,14 +411,22 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
+  const [attachments, setAttachments] = useState<Array<{ url: string; name?: string }>>([]);
+  const [commentReactions, setCommentReactions] = useState<Record<string, Record<string, number>>>({});
+  const [myCommentReactions, setMyCommentReactions] = useState<Record<string, string>>({});
+  const myCommentReactionsRef = useRef(myCommentReactions);
+  myCommentReactionsRef.current = myCommentReactions;
 
   // Reactions
   const [liveReactions, setLiveReactions] = useState<LiveReaction[]>([]);
 
   const commentListRef = useRef<HTMLDivElement>(null);
   const commentInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const mountedAtRef = useRef(Date.now());
   const socketRef = useRef<Socket | null>(null);
+  const pendingScrollIdRef = useRef<string | null>(null);
 
   const [unreadCount, setUnreadCount] = useState(0);
   const prevCommentLenRef = useRef(0);
@@ -469,7 +510,10 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     });
 
     socket.on('comment', (comment: Comment) => {
-      setComments((prev) => [comment, ...prev].slice(0, 100));
+      setComments((prev) => {
+        if (prev.some((c) => c.id === comment.id)) return prev;
+        return [comment, ...prev].slice(0, 100);
+      });
       const key = crypto.randomUUID();
       setFloatingComments((prev) => [...prev, { comment, key }].slice(-MAX_FLOATING));
       const timer = setTimeout(() => {
@@ -623,31 +667,108 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     showControls();
   }
 
+  const handleCommentReact = useCallback((commentId: string, emoji: string) => {
+    const prevEmoji = myCommentReactionsRef.current[commentId];
+    setCommentReactions((prev) => {
+      const reactionMap = { ...(prev[commentId] ?? {}) };
+      if (prevEmoji === emoji) {
+        reactionMap[emoji] = Math.max(0, (reactionMap[emoji] ?? 1) - 1);
+        if (reactionMap[emoji] === 0) delete reactionMap[emoji];
+      } else {
+        if (prevEmoji) {
+          reactionMap[prevEmoji] = Math.max(0, (reactionMap[prevEmoji] ?? 1) - 1);
+          if (reactionMap[prevEmoji] === 0) delete reactionMap[prevEmoji];
+        }
+        reactionMap[emoji] = (reactionMap[emoji] ?? 0) + 1;
+      }
+      return { ...prev, [commentId]: reactionMap };
+    });
+    setMyCommentReactions((prev) => {
+      const updated = { ...prev };
+      if (prev[commentId] === emoji) delete updated[commentId];
+      else updated[commentId] = emoji;
+      return updated;
+    });
+  }, []);
+
+  const handleEmojiSelect = useCallback((emoji: string) => {
+    setCommentText((prev) => prev + emoji);
+    commentInputRef.current?.focus();
+  }, []);
+
+  const handleGifSelect = useCallback((gifUrl: string) => {
+    setAttachments((prev) => [...prev, { url: gifUrl, name: 'GIF' }]);
+    commentInputRef.current?.focus();
+  }, []);
+
+  const readFileAsDataUrl = (file: File): Promise<{ url: string; name: string }> =>
+    new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => resolve({ url: ev.target?.result as string, name: file.name });
+      reader.readAsDataURL(file);
+    });
+
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    const loaded = await Promise.all(files.map(readFileAsDataUrl));
+    setAttachments((prev) => [...prev, ...loaded]);
+    e.target.value = '';
+  }, []);
+
   const handleSendComment = useCallback(async () => {
     const trimmed = commentText.trim();
-    if (!trimmed || isSending) return;
+    if (!trimmed && attachments.length === 0) return;
+    if (isSending) return;
     if (!isAuthenticated) {
       setAuthGateOpen(true);
       return;
     }
     setIsSending(true);
+    const mediaUrls = attachments.length > 0 ? attachments.map((a) => a.url) : undefined;
     try {
-      await apiFetch(`${API_BASE}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: session.id,
-          content: trimmed,
-          ...(displayName ? { authorName: displayName } : {}),
-        }),
-      });
+      let res: Response;
+      if (replyingTo) {
+        res = await apiFetch(`${API_BASE}/comments/${replyingTo.id}/reply`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: trimmed, ...(mediaUrls ? { mediaUrls } : {}) }),
+        });
+        setReplyingTo(null);
+      } else {
+        res = await apiFetch(`${API_BASE}/comments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: session.id,
+            content: trimmed,
+            ...(displayName ? { authorName: displayName } : {}),
+            ...(mediaUrls ? { mediaUrls } : {}),
+          }),
+        });
+      }
+      // Optimistically add the created comment so GIFs/files appear immediately,
+      // before the socket echo (which may omit mediaUrls).
+      if (res.ok) {
+        try {
+          const body = (await res.json()) as { data: Comment };
+          const created = body?.data;
+          if (created?.id) {
+            setComments((prev) => {
+              if (prev.some((c) => c.id === created.id)) return prev;
+              return [created, ...prev].slice(0, 100);
+            });
+          }
+        } catch { /* ignore — socket will deliver the comment */ }
+      }
       setCommentText('');
+      setAttachments([]);
     } catch {
       // ignore
     } finally {
       setIsSending(false);
     }
-  }, [commentText, isSending, isAuthenticated, session.id, displayName]);
+  }, [commentText, attachments, isSending, isAuthenticated, session.id, displayName, replyingTo]);
 
   const sendVideoControl = useCallback((type: 'play' | 'pause' | 'seek', currentTime?: number) => {
     socketRef.current?.emit('video_control_request', { type, ...(currentTime !== undefined ? { currentTime } : {}) });
@@ -692,6 +813,17 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       commentListRef.current.scrollTop = 0;
     }
   }, [comments.length]);
+
+  // Scroll to a specific comment after the panel finishes opening
+  useEffect(() => {
+    if (!commentsOpen || !pendingScrollIdRef.current) return;
+    const id = pendingScrollIdRef.current;
+    const timer = setTimeout(() => {
+      document.getElementById(`comment-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      pendingScrollIdRef.current = null;
+    }, 520);
+    return () => clearTimeout(timer);
+  }, [commentsOpen]);
 
 
   const anyPanelOpen = viewersOpen;
@@ -1142,7 +1274,20 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
           {!commentsOpen && !anyPanelOpen && (
             <div className="absolute bottom-36 left-3 z-20 flex flex-col-reverse gap-1.5">
               {floatingComments.map(({ comment, key }) => (
-                <CommentBubble key={key} comment={comment} animate />
+                <CommentBubble
+                  key={key}
+                  comment={comment}
+                  animate
+                  onClick={() => {
+                    if (commentsOpen) {
+                      document.getElementById(`comment-${comment.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    } else {
+                      pendingScrollIdRef.current = comment.id;
+                      setCommentsOpen(true);
+                      setViewersOpen(false);
+                    }
+                  }}
+                />
               ))}
             </div>
           )}
@@ -1367,102 +1512,258 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
               </div>
             ) : (
               <div className="py-2">
-                {comments.map((c) => (
-                  <div
-                    key={c.id}
-                    className="group flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.03]"
-                  >
-                    <div className="relative mt-0.5 shrink-0">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-[9px] font-bold text-white">
-                        {getInitials(c.authorName)}
+                {comments.map((c) => {
+                  const cReactions = commentReactions[c.id];
+                  const myReaction = myCommentReactions[c.id] ?? null;
+                  const reactionEntries = cReactions
+                    ? Object.entries(cReactions).filter(([, n]) => n > 0)
+                    : [];
+                  const isReply = !!c.replyToCommentId;
+                  return (
+                    <div
+                      id={`comment-${c.id}`}
+                      key={c.id}
+                      className={cn(
+                        'group flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.03]',
+                        isReply && 'pl-8',
+                      )}
+                    >
+                      <div className="relative mt-0.5 shrink-0">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-[9px] font-bold text-white">
+                          {getInitials(c.authorName)}
+                        </div>
+                        <span
+                          className={cn(
+                            'absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-[#0a0b0f]',
+                            PLATFORM_DOT[c.platform] ?? 'bg-white/30',
+                          )}
+                        />
                       </div>
-                      <span
-                        className={cn(
-                          'absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-[#0a0b0f]',
-                          PLATFORM_DOT[c.platform] ?? 'bg-white/30',
+                      <div className="min-w-0 flex-1 pt-0.5">
+                        <p className="mb-0.5 text-[11px] font-semibold text-white/50">
+                          {c.authorName}
+                        </p>
+                        {isReply && (
+                          <p className="text-[9px] text-white/35 leading-tight mb-0.5">↩ reply</p>
                         )}
-                      />
+                        {c.content && (
+                          <p className="break-words text-xs leading-relaxed text-white/85">
+                            {c.content}
+                          </p>
+                        )}
+                        {c.mediaUrls && c.mediaUrls.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {c.mediaUrls.map((url, i) =>
+                              /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(url) ||
+                              url.startsWith('data:image') ||
+                              url.includes('giphy.com') ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  key={i}
+                                  src={url}
+                                  alt={`attachment ${i + 1}`}
+                                  className="max-h-32 max-w-full rounded-lg border border-white/10 object-cover"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <a
+                                  key={i}
+                                  href={url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-brand underline"
+                                >
+                                  Attachment {c.mediaUrls && c.mediaUrls.length > 1 ? i + 1 : ''}
+                                </a>
+                              ),
+                            )}
+                          </div>
+                        )}
+                        {/* Reaction pills */}
+                        {reactionEntries.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {reactionEntries.map(([emoji, count]) => (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => handleCommentReact(c.id, emoji)}
+                                className={cn(
+                                  'inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs transition-colors',
+                                  myReaction === emoji
+                                    ? 'border-brand/40 bg-brand/20 text-brand'
+                                    : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/80',
+                                )}
+                              >
+                                <span>{emoji}</span>
+                                <span className="tabular-nums">{count}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {/* Action buttons */}
+                      <div className="shrink-0 flex flex-col items-end gap-1 pt-0.5">
+                        <CommentReactionPicker
+                          commentId={c.id}
+                          myReaction={myReaction}
+                          onReact={handleCommentReact}
+                        />
+                        {!isReply && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReplyingTo(c);
+                              commentInputRef.current?.focus();
+                            }}
+                            className="text-[10px] text-white/30 opacity-100 transition-colors hover:text-white/70 sm:opacity-0 sm:group-hover:opacity-100"
+                          >
+                            {t('reply')}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1 pt-0.5">
-                      <p className="mb-0.5 text-[11px] font-semibold text-white/50">
-                        {c.authorName}
-                      </p>
-                      <p className="break-words text-xs leading-relaxed text-white/85">
-                        {c.content}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
 
-          {/* Input row */}
+          {/* Input area */}
           <div
-            className="shrink-0 border-t border-white/8 p-3"
-            style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))' }}
+            className="shrink-0 border-t border-white/8"
+            style={{ paddingBottom: 'max(0px, env(safe-area-inset-bottom, 0px))' }}
           >
             {isAuthenticated ? (
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/70 text-[10px] font-bold text-white">
-                  {getInitials(displayName ?? 'You')}
+              <div>
+                {/* Reply context */}
+                {replyingTo && (
+                  <div className="flex items-center justify-between px-4 py-1.5 bg-white/5 border-b border-white/8 text-[11px] text-white/40">
+                    <span>Replying to <span className="text-white/70 font-medium">{replyingTo.authorName}</span></span>
+                    <button
+                      type="button"
+                      onClick={() => setReplyingTo(null)}
+                      className="text-white/30 hover:text-white/60 ml-2 transition-colors"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                {/* Attachment previews */}
+                {attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 px-3 pt-2">
+                    {attachments.map((att, i) => {
+                      const isImg =
+                        att.url.startsWith('data:image') ||
+                        att.url.includes('giphy.com') ||
+                        /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(att.url);
+                      return isImg ? (
+                        <div key={i} className="relative">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={att.url}
+                            alt={att.name ?? 'attachment'}
+                            className="h-14 w-14 rounded-lg object-cover border border-white/10"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setAttachments((p) => p.filter((_, j) => j !== i))}
+                            className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/80 text-white/70 text-[9px] hover:text-white"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <div key={i} className="relative flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/60">
+                          <span className="truncate max-w-[80px]">{att.name ?? 'file'}</span>
+                          <button
+                            type="button"
+                            onClick={() => setAttachments((p) => p.filter((_, j) => j !== i))}
+                            className="text-white/30 hover:text-white/70"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Input row */}
+                <div className="flex items-center gap-2 px-3 pt-2">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand/70 text-[9px] font-bold text-white">
+                    {getInitials(displayName ?? 'You')}
+                  </div>
+                  <input
+                    ref={commentInputRef}
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        void handleSendComment();
+                      }
+                    }}
+                    placeholder={replyingTo ? `Reply to ${replyingTo.authorName}…` : t('commentPlaceholder')}
+                    className="flex-1 min-w-0 rounded-xl border border-white/15 bg-white/8 px-3 py-2 text-sm text-white placeholder-white/30 outline-none transition-colors focus:border-white/30 focus:bg-white/12"
+                  />
                 </div>
-                <input
-                  ref={commentInputRef}
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      void handleSendComment();
-                    }
-                  }}
-                  placeholder={t('commentPlaceholder')}
-                  className="flex-1 rounded-xl border border-white/15 bg-white/8 px-3 py-2 text-sm text-white placeholder-white/30 outline-none transition-colors focus:border-white/30 focus:bg-white/12"
-                />
-                <button
-                  type="button"
-                  onClick={() => void handleSendComment()}
-                  disabled={!commentText.trim() || isSending}
-                  aria-label={t('send')}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand/40 bg-brand/70 text-white backdrop-blur-xl transition-opacity disabled:opacity-40"
-                >
-                  {isSending ? (
-                    <svg
-                      className="h-4 w-4 animate-spin"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      aria-hidden="true"
-                    >
-                      <path d="M21 12a9 9 0 11-6.219-8.56" />
+
+                {/* Toolbar row */}
+                <div className="flex items-center gap-0.5 px-3 py-2">
+                  <EmojiPickerPopover onSelect={handleEmojiSelect} />
+                  <GifPickerPopover onSelect={handleGifSelect} />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="p-1.5 rounded-full text-white/40 hover:text-white/80 hover:bg-white/8 transition-colors"
+                    title="Attach file"
+                    aria-label="Attach file"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
                     </svg>
-                  ) : (
-                    <svg
-                      className="h-4 w-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <line x1="22" y1="2" x2="11" y2="13" />
-                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                    </svg>
-                  )}
-                </button>
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept="image/*,image/gif,.pdf,.doc,.docx,.txt"
+                    onChange={(e) => { void handleFileChange(e); }}
+                    className="hidden"
+                    aria-hidden
+                  />
+                  <div className="flex-1" />
+                  <button
+                    type="button"
+                    onClick={() => void handleSendComment()}
+                    disabled={!commentText.trim() && attachments.length === 0}
+                    aria-label={t('send')}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-brand/40 bg-brand/70 text-white backdrop-blur-xl transition-opacity disabled:opacity-40"
+                  >
+                    {isSending ? (
+                      <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                        <path d="M21 12a9 9 0 11-6.219-8.56" />
+                      </svg>
+                    ) : (
+                      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <line x1="22" y1="2" x2="11" y2="13" />
+                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => setAuthLoginOpen(true)}
-                className="w-full rounded-xl border border-white/10 bg-white/6 py-3 text-sm font-medium text-white/55 transition-colors hover:bg-white/10 hover:text-white"
-              >
-                {t('signInToInteract')}
-              </button>
+              <div className="p-3">
+                <button
+                  type="button"
+                  onClick={() => setAuthLoginOpen(true)}
+                  className="w-full rounded-xl border border-white/10 bg-white/6 py-3 text-sm font-medium text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  {t('signInToInteract')}
+                </button>
+              </div>
             )}
           </div>
         </div>

@@ -28,6 +28,8 @@ interface StreamState {
   comments: Comment[];
   liveReactions: LiveReaction[];
   replyingTo: Comment | null;
+  commentReactions: Record<string, Record<string, number>>;
+  myCommentReactions: Record<string, string>;
   isStarting: boolean;
   isEnding: boolean;
   isPausing: boolean;
@@ -42,6 +44,7 @@ interface StreamState {
   clearComments: () => void;
   addReaction: (reaction: LiveReaction) => void;
   removeReaction: (id: string) => void;
+  addCommentReaction: (commentId: string, emoji: string) => void;
   setReplyingTo: (comment: Comment | null) => void;
   setStarting: (value: boolean) => void;
   setEnding: (value: boolean) => void;
@@ -64,6 +67,8 @@ export const useStreamStore = create<StreamState>()((set, get) => ({
   comments: [],
   liveReactions: [],
   replyingTo: null,
+  commentReactions: {},
+  myCommentReactions: {},
   isStarting: false,
   isEnding: false,
   isPausing: false,
@@ -91,6 +96,12 @@ export const useStreamStore = create<StreamState>()((set, get) => ({
 
   addComment: (comment) =>
     set((state) => {
+      const existingIndex = state.comments.findIndex((c) => c.id === comment.id);
+      if (existingIndex >= 0) {
+        const comments = [...state.comments];
+        comments[existingIndex] = comment;
+        return { comments };
+      }
       const comments = [comment, ...state.comments].slice(0, MAX_COMMENTS);
       return { comments };
     }),
@@ -104,7 +115,32 @@ export const useStreamStore = create<StreamState>()((set, get) => ({
   removeComment: (id) =>
     set((state) => ({ comments: state.comments.filter((c) => c.id !== id) })),
 
-  clearComments: () => set({ comments: [] }),
+  clearComments: () => set({ comments: [], commentReactions: {}, myCommentReactions: {} }),
+
+  addCommentReaction: (commentId, emoji) =>
+    set((state) => {
+      const prev = state.myCommentReactions[commentId];
+      const reactionMap = { ...(state.commentReactions[commentId] ?? {}) };
+      const myReactions = { ...state.myCommentReactions };
+
+      if (prev === emoji) {
+        reactionMap[emoji] = Math.max(0, (reactionMap[emoji] ?? 1) - 1);
+        if (reactionMap[emoji] === 0) delete reactionMap[emoji];
+        delete myReactions[commentId];
+      } else {
+        if (prev) {
+          reactionMap[prev] = Math.max(0, (reactionMap[prev] ?? 1) - 1);
+          if (reactionMap[prev] === 0) delete reactionMap[prev];
+        }
+        reactionMap[emoji] = (reactionMap[emoji] ?? 0) + 1;
+        myReactions[commentId] = emoji;
+      }
+
+      return {
+        commentReactions: { ...state.commentReactions, [commentId]: reactionMap },
+        myCommentReactions: myReactions,
+      };
+    }),
 
   addReaction: (reaction) =>
     set((state) => ({

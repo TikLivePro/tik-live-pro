@@ -9,7 +9,13 @@ import type { Comment } from '@tik-live-pro/shared-types';
 
 export function CommentFeed() {
   const t = useTranslations('comments');
-  const { currentSession, comments } = useStreamStore();
+  const {
+    currentSession,
+    comments,
+    commentReactions,
+    myCommentReactions,
+    addCommentReaction,
+  } = useStreamStore();
   const { replyingTo, setReplyingTo, sendComment, replyToComment, isSending } =
     useComments(currentSession?.id ?? null);
 
@@ -35,7 +41,7 @@ export function CommentFeed() {
     : t('inputPlaceholder');
 
   return (
-    <div className="rounded-xl border border-border bg-background shadow-sm h-[600px] flex flex-col">
+    <div className="rounded-xl border border-border bg-background shadow-sm h-[480px] sm:h-[600px] flex flex-col">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border shrink-0">
         <h2 className="font-semibold">{t('title')}</h2>
@@ -48,7 +54,14 @@ export function CommentFeed() {
           <p className="text-center text-muted-foreground text-sm py-8">{t('noComments')}</p>
         ) : (
           comments.map((c) => (
-            <CommentItem key={c.id} comment={c} onReply={handleReply} />
+            <CommentItem
+              key={c.id}
+              comment={c}
+              reactions={commentReactions[c.id]}
+              myReaction={myCommentReactions[c.id] ?? null}
+              onReply={handleReply}
+              onReact={addCommentReaction}
+            />
           ))
         )}
       </div>

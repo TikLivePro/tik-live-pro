@@ -1,7 +1,7 @@
 import type { AdapterRegistry } from '@tik-live-pro/platform-adapters';
 import type { NatsJetStreamClient } from '@tik-live-pro/events';
 import { Subjects } from '@tik-live-pro/events';
-import type { Comment, LiveSessionId, SocialPlatform } from '@tik-live-pro/shared-types';
+import type { Comment, LiveSessionId, SocialAccountId, SocialPlatform } from '@tik-live-pro/shared-types';
 import type { Logger } from '@tik-live-pro/logger';
 import type { SessionRegistry } from './session-registry.js';
 
@@ -35,8 +35,9 @@ export class CommentPoster {
       const tokenInfo = tokenMap[account.socialAccountId];
       if (!tokenInfo) continue;
 
+      const platform = tokenInfo.platform as SocialPlatform;
       try {
-        const adapter = this.adapterRegistry.get(account.platform);
+        const adapter = this.adapterRegistry.get(platform);
         const comment = await adapter.postComment(
           tokenInfo.accessToken,
           sessionId,
@@ -46,13 +47,13 @@ export class CommentPoster {
         posted.push(comment);
         await this.nats.publish(Subjects.COMMENT_POSTED, {
           sessionId,
-          platform: account.platform,
+          platform,
           socialAccountId: account.socialAccountId,
           content,
           platformCommentId: comment.platformCommentId,
         });
       } catch (err) {
-        this.logger.error({ err, sessionId, platform: account.platform }, 'Failed to post comment to platform');
+        this.logger.error({ err, sessionId, platform }, 'Failed to post comment to platform');
       }
     }
 
@@ -67,24 +68,27 @@ export class CommentPoster {
     parentAuthorPlatformUserId: string,
     content: string,
   ): Promise<Comment | null> {
-    const account = this.sessionRegistry.getAccountForPlatform(sessionId, platform);
-    if (!account) {
-      this.logger.warn({ sessionId, platform }, 'No account for platform, cannot reply');
+    const accounts = this.sessionRegistry.getAccounts(sessionId);
+    if (accounts.length === 0) {
+      this.logger.warn({ sessionId, platform }, 'No accounts registered for session, cannot reply');
       return null;
     }
 
-    const tokenMap = await this.fetchTokens([account.socialAccountId]);
-    const tokenInfo = tokenMap[account.socialAccountId];
-    if (!tokenInfo) {
-      this.logger.warn({ sessionId, platform }, 'No token for account, cannot reply');
+    // Registry may store 'unknown' platform (session.created carries only account IDs).
+    // Resolve authoritative platform info from the integrations service via token fetch.
+    const tokenMap = await this.fetchTokens(accounts.map((a) => a.socialAccountId));
+    const matchingEntry = Object.entries(tokenMap).find(([, info]) => info.platform === platform);
+    if (!matchingEntry) {
+      this.logger.warn({ sessionId, platform }, 'No account for platform, cannot reply');
       return null;
     }
+    const [accountId, tokenInfo] = matchingEntry;
 
     const adapter = this.adapterRegistry.get(platform);
     const comment = await adapter.replyToComment(
       tokenInfo.accessToken,
       sessionId,
-      account.socialAccountId,
+      accountId as SocialAccountId,
       parentPlatformCommentId,
       parentAuthorPlatformUserId,
       content,
@@ -93,7 +97,7 @@ export class CommentPoster {
     await this.nats.publish(Subjects.COMMENT_REPLIED, {
       sessionId,
       platform,
-      socialAccountId: account.socialAccountId,
+      socialAccountId: accountId as SocialAccountId,
       content,
       platformCommentId: comment.platformCommentId,
       replyToCommentId: parentCommentId,

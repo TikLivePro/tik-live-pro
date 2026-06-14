@@ -244,7 +244,8 @@
     "insertLink": "Insert a link",
     "insertLinkConfirm": "Insert",
     "viewAttachment": "View attachment",
-    "dismissPreview": "Dismiss preview"
+    "dismissPreview": "Dismiss preview",
+    "addReaction": "Add reaction"
   },
   "accounts": {
     "title": "Connected Accounts",
@@ -532,6 +533,7 @@
     "noComments": "No comments yet",
     "commentPlaceholder": "Add a comment…",
     "send": "Send",
+    "reply": "Reply",
     "videoControls": {
       "label": "Video Controls",
       "play": "Play",

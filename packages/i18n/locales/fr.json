@@ -244,7 +244,8 @@
     "insertLink": "Insérer un lien",
     "insertLinkConfirm": "Insérer",
     "viewAttachment": "Voir la pièce jointe",
-    "dismissPreview": "Masquer l'aperçu"
+    "dismissPreview": "Masquer l'aperçu",
+    "addReaction": "Ajouter une réaction"
   },
   "accounts": {
     "title": "Comptes connectés",
@@ -532,6 +533,7 @@
     "noComments": "Aucun commentaire pour l'instant",
     "commentPlaceholder": "Ajouter un commentaire…",
     "send": "Envoyer",
+    "reply": "Répondre",
     "videoControls": {
       "label": "Contrôles vidéo",
       "play": "Lire",

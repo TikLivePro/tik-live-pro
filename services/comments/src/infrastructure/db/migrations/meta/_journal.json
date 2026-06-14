@@ -22,6 +22,20 @@
       "when": 1780881969351,
       "tag": "0002_aspiring_cannonball",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1749808800000,
+      "tag": "0003_add_media_urls",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781374693151,
+      "tag": "0004_silky_ogun",
+      "breakpoints": true
     }
   ]
 }

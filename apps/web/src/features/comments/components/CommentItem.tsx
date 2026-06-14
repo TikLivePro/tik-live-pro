@@ -8,11 +8,15 @@ import { PLATFORM_COLORS } from '../consts/comments.consts';
 import { useLinkPreview } from '../hooks/useLinkPreview';
 import { LinkPreviewCard } from './LinkPreviewCard';
 import { LinkPreviewSquare } from './LinkPreviewSquare';
+import { CommentReactionPicker } from './CommentReactionPicker';
 import type { Comment } from '@tik-live-pro/shared-types';
 
 interface CommentItemProps {
   comment: Comment;
+  reactions?: Record<string, number> | undefined;
+  myReaction?: string | null | undefined;
   onReply: (comment: Comment) => void;
+  onReact: (commentId: string, emoji: string) => void;
 }
 
 const URL_RE = /(https?:\/\/[^\s]+)/g;
@@ -46,12 +50,10 @@ const isImageUrl = (url: string) =>
   url.includes('giphy.com') ||
   /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(url);
 
-/** Isolated component so only comments that contain a URL mount the preview hook */
 function CommentLinkPreview({ text }: { text: string }) {
   const { items } = useLinkPreview(text);
   if (items.length === 0) return null;
 
-  // Multiple links → compact square tiles in a row with hover tooltips
   if (items.length > 1) {
     return (
       <div className="mt-1.5 flex flex-row flex-wrap gap-1.5">
@@ -64,7 +66,6 @@ function CommentLinkPreview({ text }: { text: string }) {
     );
   }
 
-  // Single link → full-width compact card
   const [single] = items;
   if (!single) return null;
   return (
@@ -78,13 +79,16 @@ function CommentLinkPreview({ text }: { text: string }) {
   );
 }
 
-export function CommentItem({ comment, onReply }: CommentItemProps) {
+export function CommentItem({ comment, reactions, myReaction = null, onReply, onReact }: CommentItemProps) {
   const t = useTranslations('comments');
   const isReply = !!comment.replyToCommentId;
   const mediaUrls = comment.mediaUrls ?? [];
   const hasUrl = comment.content ? URL_RE.test(comment.content) : false;
-  // Reset lastIndex after test()
   URL_RE.lastIndex = 0;
+
+  const reactionEntries = reactions
+    ? Object.entries(reactions).filter(([, count]) => count > 0)
+    : [];
 
   return (
     <div
@@ -111,18 +115,20 @@ export function CommentItem({ comment, onReply }: CommentItemProps) {
       <div className="min-w-0 flex-1">
         <span className="text-xs font-semibold truncate">{comment.authorName}</span>
 
+        {isReply && (
+          <p className="text-[10px] text-muted-foreground leading-tight mb-0.5">↩ reply</p>
+        )}
+
         {comment.content && (
           <p className="text-sm break-words">
             <ContentWithLinks text={comment.content} />
           </p>
         )}
 
-        {/* URL preview */}
         {hasUrl && comment.content && (
           <CommentLinkPreview text={comment.content} />
         )}
 
-        {/* Media grid */}
         {mediaUrls.length > 0 && (
           <div className={cn('mt-1.5 flex flex-wrap gap-1', mediaUrls.length === 1 && 'block')}>
             {mediaUrls.map((url, i) =>
@@ -152,16 +158,47 @@ export function CommentItem({ comment, onReply }: CommentItemProps) {
             )}
           </div>
         )}
+
+        {/* Reaction pills */}
+        {reactionEntries.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {reactionEntries.map(([emoji, count]) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => onReact(comment.id, emoji)}
+                className={cn(
+                  'inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full border transition-colors',
+                  myReaction === emoji
+                    ? 'bg-primary/10 border-primary/30 text-primary'
+                    : 'bg-muted/60 border-border text-muted-foreground hover:bg-muted hover:text-foreground',
+                )}
+                aria-label={`${count} ${emoji} reaction${count !== 1 ? 's' : ''}`}
+              >
+                <span>{emoji}</span>
+                <span className="tabular-nums">{count}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {!isReply && (
-        <button
-          onClick={() => onReply(comment)}
-          className="opacity-0 group-hover:opacity-100 shrink-0 self-start mt-0.5 text-xs text-muted-foreground hover:text-foreground transition-opacity px-1.5 py-0.5 rounded hover:bg-muted"
-        >
-          {t('reply')}
-        </button>
-      )}
+      {/* Action buttons — always visible on mobile, hover-only on sm+ */}
+      <div className="shrink-0 flex flex-col items-center gap-0.5 mt-0.5">
+        <CommentReactionPicker
+          commentId={comment.id}
+          myReaction={myReaction}
+          onReact={onReact}
+        />
+        {!isReply && (
+          <button
+            onClick={() => onReply(comment)}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-muted opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+          >
+            {t('reply')}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

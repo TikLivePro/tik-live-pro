@@ -1,5 +1,6 @@
 export { CommentFeed } from './components/CommentFeed';
 export { CommentItem } from './components/CommentItem';
+export { CommentReactionPicker } from './components/CommentReactionPicker';
 export { CommentInput } from './components/CommentInput';
 export { AttachmentPreview } from './components/AttachmentPreview';
 export { EmojiPickerPopover } from './components/EmojiPickerPopover';

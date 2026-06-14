@@ -68,6 +68,12 @@ const commentSchema = {
       description: 'Comment text content.',
       example: 'Great stream! Keep it up 🔥',
     },
+    mediaUrls: {
+      type: 'array',
+      items: { type: 'string', format: 'uri' },
+      nullable: true,
+      description: 'Optional list of image, GIF, or file URLs attached to the comment.',
+    },
     replyToCommentId: {
       type: 'string',
       format: 'uuid',
@@ -227,7 +233,7 @@ Supports an optional \`mediaUrl\` field to attach an image, GIF, or file URL alo
       },
     },
     async (request, reply) => {
-      const { sessionId, content, authorName: bodyAuthorName } = request.body;
+      const { sessionId, content, authorName: bodyAuthorName, mediaUrls } = request.body;
       const posted = await deps.poster.postToAllPlatforms(
         sessionId as Comment['sessionId'],
         content,
@@ -263,6 +269,7 @@ Supports an optional \`mediaUrl\` field to attach an image, GIF, or file URL alo
         authorPlatformUserId,
         authorAvatarUrl: null,
         content,
+        mediaUrls: mediaUrls ?? null,
         receivedAt: now,
       }).onConflictDoNothing();
 
@@ -275,6 +282,7 @@ Supports an optional \`mediaUrl\` field to attach an image, GIF, or file URL alo
         authorPlatformUserId,
         authorAvatarUrl: null,
         content,
+        ...(mediaUrls?.length ? { mediaUrls } : {}),
         receivedAt: now,
       };
 
@@ -337,7 +345,7 @@ Replies to a specific comment. The reply is sent to the platform where the origi
     },
     async (request, reply) => {
       const { commentId } = request.params;
-      const { content } = request.body;
+      const { content, mediaUrls } = request.body;
 
       const [parentComment] = await deps.db
         .select()
@@ -347,6 +355,49 @@ Replies to a specific comment. The reply is sent to the platform where the origi
 
       if (!parentComment) {
         return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Comment not found' } });
+      }
+
+      // Local comments are not routed through a social platform — persist a local reply directly.
+      if (parentComment.platform === 'local') {
+        let authorName = 'Streamer';
+        let authorPlatformUserId = 'local';
+        try {
+          await request.jwtVerify();
+          const user = request.user as { sub: string };
+          authorPlatformUserId = user.sub;
+        } catch { /* use defaults */ }
+
+        const id = randomUUID();
+        const now = new Date();
+        await deps.db.insert(comments).values({
+          id,
+          sessionId: parentComment.sessionId,
+          platform: 'local',
+          platformCommentId: id,
+          authorName,
+          authorPlatformUserId,
+          authorAvatarUrl: null,
+          content,
+          mediaUrls: mediaUrls ?? null,
+          replyToCommentId: commentId,
+          receivedAt: now,
+        }).onConflictDoNothing();
+
+        const localReply: Comment = {
+          id: id as Comment['id'],
+          sessionId: parentComment.sessionId as Comment['sessionId'],
+          platform: 'local',
+          platformCommentId: id,
+          authorName,
+          authorPlatformUserId,
+          authorAvatarUrl: null,
+          content,
+          ...(mediaUrls?.length ? { mediaUrls } : {}),
+          replyToCommentId: commentId as Comment['id'],
+          receivedAt: now,
+        };
+        broadcastComment(parentComment.sessionId, localReply);
+        return reply.status(201).send({ data: localReply });
       }
 
       const replyComment = await deps.poster.replyToPlatformComment(
@@ -375,11 +426,12 @@ Replies to a specific comment. The reply is sent to the platform where the origi
         authorPlatformUserId: replyComment.authorPlatformUserId,
         authorAvatarUrl: replyComment.authorAvatarUrl,
         content: replyComment.content,
+        mediaUrls: mediaUrls ?? null,
         replyToCommentId: commentId,
         receivedAt: replyComment.receivedAt,
       }).onConflictDoNothing();
 
-      const saved = { ...replyComment, id: id as Comment['id'], replyToCommentId: commentId as Comment['id'] };
+      const saved = { ...replyComment, id: id as Comment['id'], replyToCommentId: commentId as Comment['id'], ...(mediaUrls?.length ? { mediaUrls } : {}) };
       broadcastComment(parentComment.sessionId, saved);
 
       return reply.status(201).send({ data: saved });

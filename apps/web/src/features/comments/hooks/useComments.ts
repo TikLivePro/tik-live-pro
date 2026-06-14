@@ -74,7 +74,7 @@ export function useComments(sessionId: LiveSessionId | null): UseCommentsResult 
       setIsSending(true);
       setSendError(null);
       try {
-        await apiFetch(`${API_BASE}/comments`, {
+        const res = await apiFetch(`${API_BASE}/comments`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -84,29 +84,45 @@ export function useComments(sessionId: LiveSessionId | null): UseCommentsResult 
             ...(mediaUrls?.length ? { mediaUrls } : {}),
           }),
         });
+        if (res.ok) {
+          try {
+            const body = (await res.json()) as { data: Comment };
+            const created = body?.data;
+            if (created?.id) addComment(created);
+          } catch { /* ignore parse errors — socket will deliver the comment */ }
+        }
       } catch {
         setSendError('sendError');
       } finally {
         setIsSending(false);
       }
     },
-    [sessionId, displayName],
+    [sessionId, displayName, addComment],
   );
 
   const replyToComment = useCallback(
     async (commentId: string, content: string, mediaUrls?: string[]): Promise<void> => {
-      if (!content.trim() && !mediaUrls?.length) return;
+      if (!sessionId || (!content.trim() && !mediaUrls?.length)) return;
       setIsSending(true);
       setSendError(null);
       try {
-        await apiFetch(`${API_BASE}/comments/${commentId}/reply`, {
+        const res = await apiFetch(`${API_BASE}/comments/${commentId}/reply`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            sessionId,
             content: content.trim(),
+            ...(displayName ? { authorName: displayName } : {}),
             ...(mediaUrls?.length ? { mediaUrls } : {}),
           }),
         });
+        if (res.ok) {
+          try {
+            const body = (await res.json()) as { data: Comment };
+            const created = body?.data;
+            if (created?.id) addComment(created);
+          } catch { /* ignore parse errors — socket will deliver the comment */ }
+        }
         setReplyingTo(null);
       } catch {
         setSendError('sendError');
@@ -114,7 +130,7 @@ export function useComments(sessionId: LiveSessionId | null): UseCommentsResult 
         setIsSending(false);
       }
     },
-    [setReplyingTo],
+    [sessionId, displayName, setReplyingTo, addComment],
   );
 
   return { comments, replyingTo, setReplyingTo, sendComment, replyToComment, emitReaction, isSending, sendError, socketRef };
