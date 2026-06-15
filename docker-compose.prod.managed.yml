@@ -489,6 +489,7 @@ services:
     environment:
       <<: *backend-env
       PORT: "3009"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       DATABASE_URL: ${STREAM_DATABASE_URL:?STREAM_DATABASE_URL is required}
       RTMP_INGEST_PORT: "1935"
       RTMP_INGEST_HOST: "0.0.0.0"
