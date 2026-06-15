@@ -16,8 +16,11 @@ export class RtmpIngestServer {
         port,
         chunk_size: 60000,
         gop_cache: true,
-        ping: 30,
-        ping_timeout: 60,
+        // Detect silently-dead OBS connections faster: ping every 15s, disconnect
+        // after 30s without a pong. Default (ping:30 / timeout:60) leaves a dead
+        // publisher "live" for up to 90s, keeping the session in a stuck state.
+        ping: 15,
+        ping_timeout: 30,
       },
       logType: 0, // suppress NMS internal logging; we use our own logger
     });

@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-06-15 (Caddyfile: CORS headers with defer on /stream-orchestrator/* pour que les réponses 502 portent aussi les headers ACAO)
+> Dernière mise à jour : 2026-06-15 (streaming: deep optimisation anti-micro-coupures — MediaMTX buffer HLS 20s, writeQueueSize 2048, reconnexion auto ffmpeg ×3, mémoire MediaMTX 128m)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -37,7 +37,7 @@ Services externes gratuits
 | Conteneur | Limite mémoire |
 |-----------|---------------|
 | NATS | 128 m |
-| MediaMTX (relay HLS/WebRTC) | 64 m |
+| MediaMTX (relay HLS/WebRTC) | 128 m |
 | api-gateway | 192 m |
 | auth | 160 m |
 | users | 160 m |
@@ -49,10 +49,10 @@ Services externes gratuits
 | analytics | 128 m |
 | stream-orchestrator | 320 m |
 | web (Next.js) | 512 m |
-| **Total** | **~2 496 m** |
-| OS + marge | ~1 504 m |
+| **Total** | **~2 560 m** |
+| OS + marge | ~1 440 m |
 
-> **MediaMTX** (binaire Go) consomme ~10–30 MB en runtime — bien en dessous de la limite de 64 m. Aucun impact perceptible sur le Droplet 4 GB.
+> **MediaMTX** (binaire Go) consomme ~10–30 MB en runtime. La limite est portée à 128 m (était 64 m) pour couvrir les ring buffers `writeQueueSize: 2048` et la génération concurrente de segments HLS sous charge viewer sans risque d'OOM-kill.
 
 ---
 

@@ -234,7 +234,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 64m
+          # 128m (was 64m): the binary uses ~10–30 MB idle; the extra headroom covers
+          # the writeQueueSize:2048 ring buffers and concurrent HLS segment generation
+          # under viewer load without risking OOM-kill of the streaming relay.
+          memory: 128m
     healthcheck:
       disable: true
 

@@ -16,7 +16,21 @@ export class FfmpegStreamWorker implements IStreamWorker {
     if (destinations.length === 0) throw new Error('No destinations provided');
     this.logger.debug({ ingestRtmpUrl, destinationCount: destinations.length }, 'FfmpegWorker: starting');
 
-    const cmd = ffmpeg(ingestRtmpUrl);
+    const cmd = ffmpeg(ingestRtmpUrl)
+      .inputOptions([
+        // Generate PTS when missing — WebRTC→RTMP conversion in MediaMTX can
+        // produce frames without presentation timestamps, which ffmpeg then drops,
+        // causing pixelisation and frame gaps at the platform end.
+        '-fflags +genpts',
+        // Shift all timestamps so none are negative. Negative DTS/PTS from the
+        // WHIP→RTMP path cause ffmpeg to skip frames silently, producing a
+        // pixelised first few seconds or micro-cuts after a reconnect.
+        '-avoid_negative_ts make_zero',
+        // Probe only 0.5s / 500 KB of input before starting output (defaults are
+        // 5s / 5 MB). Reduces the dead time between WHIP arrival and relay start.
+        '-analyzeduration 500000',
+        '-probesize 500000',
+      ]);
 
     cmd.on('progress', (progress: { currentFps: number; currentKbps: number; frames: number }) => {
       this.logger.debug({ fps: progress.currentFps, kbps: progress.currentKbps, frames: progress.frames }, 'FfmpegWorker: progress');
@@ -60,6 +74,14 @@ export class FfmpegStreamWorker implements IStreamWorker {
           '-ar 44100',
           '-ac 2',
           '-f flv',
+          // Increase the mux queue from the default 128 packets to 1024. When video
+          // and audio timestamps momentarily diverge (common with WHIP sources), the
+          // default limit overflows and ffmpeg drops packets, causing pixelisation.
+          '-max_muxing_queue_size 1024',
+          // Don't write duration/filesize in the FLV header — they are meaningless
+          // for live streams and force a header seek that some RTMP ingest servers
+          // (TikTok, Facebook) reject or mishandle, causing a connection reset.
+          '-flvflags no_duration_filesize',
         ]);
     }
 

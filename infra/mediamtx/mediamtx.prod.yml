@@ -3,6 +3,15 @@
 logLevel: info
 logDestinations: [stdout]
 
+# ── Connection stability ──────────────────────────────────────────────────────
+# Disconnect stale TCP connections after 10s so crashed publishers/viewers free
+# file descriptors without waiting for the OS TCP keepalive timeout (minutes).
+readTimeout: 10s
+writeTimeout: 10s
+# Default 512 drops frames when viewers have transient network jitter; 2048
+# provides a 4× deeper per-reader queue to absorb bursts without packet loss.
+writeQueueSize: 2048
+
 # ── RTMP ─────────────────────────────────────────────────────────────────────
 rtmpAddress: :1936
 rtmpEncryption: "no"
@@ -12,9 +21,16 @@ hlsAddress: :8888
 hlsEncryption: false
 hlsAlwaysRemux: true
 hlsVariant: lowLatency
-hlsSegmentCount: 7
-hlsSegmentDuration: 1s
-hlsPartDuration: 350ms
+# 2s segments (was 1s) + 10-segment playlist (was 7) = 20s of pre-buffered video.
+# On a 4 GB Droplet under memory or CPU pressure, the extra buffer absorbs spikes
+# without the player stalling. LL-HLS parts keep latency low within each segment.
+hlsSegmentDuration: 2s
+hlsSegmentCount: 10
+# 500ms parts (was 350ms): gives MediaMTX more slack to flush each part without
+# racing the keyframe boundary. At 30fps with a 10-frame GOP (one keyframe every
+# 333ms), 500ms comfortably fits one keyframe per part and silences the iOS
+# "part duration changed" re-estimate loop seen with overly tight values.
+hlsPartDuration: 500ms
 
 # ── WebRTC ────────────────────────────────────────────────────────────────────
 webrtcAddress: :8889

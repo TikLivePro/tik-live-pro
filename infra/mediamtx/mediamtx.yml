@@ -15,6 +15,11 @@
 logLevel: info
 logDestinations: [stdout]
 
+# ── Connection stability ──────────────────────────────────────────────────────
+readTimeout: 10s
+writeTimeout: 10s
+writeQueueSize: 2048
+
 # ── RTMP ─────────────────────────────────────────────────────────────────────
 rtmpAddress: :1936
 rtmpEncryption: "no"
@@ -24,16 +29,13 @@ hlsAddress: :8888
 hlsEncryption: false
 hlsAlwaysRemux: true
 hlsVariant: lowLatency
-hlsSegmentCount: 7
-hlsSegmentDuration: 1s
-# LL-HLS parts are cut at keyframe boundaries, not on a timer. A 30fps stream
-# with a 10-frame GOP produces keyframes every ~333ms; setting the target below
-# that causes every part to overshoot, MediaMTX re-adapts its estimate each
-# time, and iOS clients see a mismatch between PART-TARGET and actual part
-# durations. 350ms matches observed part sizes (337-369ms) and silences the
-# iOS "part duration changed" error. If you change your encoder's keyframe
-# interval, update this value to match (keyframe_interval_frames / fps).
-hlsPartDuration: 350ms
+# 2s segments + 10-segment playlist = 20s buffer. Absorbs CPU/memory spikes
+# without the player stalling. Same values as prod for dev/prod parity.
+hlsSegmentDuration: 2s
+hlsSegmentCount: 10
+# 500ms parts: comfortably above the 333ms keyframe interval at 30fps/10-frame
+# GOP. Silences the iOS "part duration changed" re-estimate loop.
+hlsPartDuration: 500ms
 
 # ── WebRTC ────────────────────────────────────────────────────────────────────
 webrtcAddress: :8889
