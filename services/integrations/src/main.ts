@@ -22,7 +22,7 @@ const envSchema = baseEnvSchema.extend({
   FACEBOOK_APP_SECRET: z.string(),
   OAUTH_REDIRECT_BASE_URL: z.string().url(),
   FRONTEND_URL: z.string().url().default('http://localhost:3010'),
-  TOKEN_ENCRYPTION_KEY: z.string().min(32),
+  TOKEN_ENCRYPTION_KEY: z.string().regex(/^[0-9a-f]{64}$/i, 'TOKEN_ENCRYPTION_KEY must be a 64-character hexadecimal string (32 bytes)'),
   INTERNAL_API_KEY: z.string().min(32),
 });
 
@@ -45,7 +45,12 @@ async function bootstrap(): Promise<void> {
   });
 
   await fastify.register(fastifyHelmet);
-  await fastify.register(fastifyCors, { origin: true });
+  await fastify.register(fastifyCors, {
+    origin: env.NODE_ENV === 'production'
+      ? ['https://tiklivepro.me', 'https://app.tiklivepro.me']
+      : true,
+    credentials: true,
+  });
   await fastify.register(fastifyJwt, { secret: env.JWT_SECRET });
 
   // ---------------------------------------------------------------------------

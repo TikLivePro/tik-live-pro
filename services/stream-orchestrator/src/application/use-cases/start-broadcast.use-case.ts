@@ -36,8 +36,6 @@ export class StartBroadcastUseCase {
     const session = await this.sessionRepo.findBySessionId(input.sessionId);
     if (!session) throw new NotFoundError('StreamSession', input.sessionId);
 
-    console.log('session :>> ', JSON.stringify(session, null, 2));
-
     session.beginStartup();
 
     // Generate ingestKey early so the platform destination can use it as stream key

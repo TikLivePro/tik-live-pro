@@ -29,7 +29,14 @@ const env = parseEnv(envSchema);
 const logger = createLogger('live-session-service', { level: env.LOG_LEVEL });
 
 async function bootstrap(): Promise<void> {
-  const pool = new Pool({ connectionString: env.DATABASE_URL });
+  const pool = new Pool({
+    connectionString: env.DATABASE_URL,
+    max: 20,
+    min: 2,
+    idleTimeoutMillis: 60_000,
+    connectionTimeoutMillis: 5_000,
+    statement_timeout: 30_000,
+  });
   const db = drizzle(pool);
 
   const nats = new NatsJetStreamClient();
@@ -56,7 +63,12 @@ async function bootstrap(): Promise<void> {
   });
 
   await fastify.register(fastifyHelmet);
-  await fastify.register(fastifyCors, { origin: true });
+  await fastify.register(fastifyCors, {
+    origin: env.NODE_ENV === 'production'
+      ? ['https://tiklivepro.me', 'https://app.tiklivepro.me']
+      : true,
+    credentials: true,
+  });
   await fastify.register(fastifyJwt, { secret: env.JWT_SECRET });
 
   // ---------------------------------------------------------------------------

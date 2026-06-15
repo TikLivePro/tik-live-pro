@@ -819,6 +819,20 @@ export function FullscreenLiveView(): React.ReactElement {
 
   const [viewersVisible, setViewersVisible] = useState(false);
   const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
+  const [socketViewerCount, setSocketViewerCount] = useState(0);
+
+  // Track live viewer count from socket
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    const handler = (data: { viewers: { id: string; displayName: string }[] }) => {
+      setSocketViewerCount(data.viewers.length);
+    };
+    socket.on('viewers_update', handler);
+    return () => { socket.off('viewers_update', handler); };
+  // Re-attach when session changes (socket reconnects); socketRef is a stable ref
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSession?.id]);
 
   // Auto-open the viewers panel when the streamer enables viewer video control,
   // so they can immediately select which viewers to grant access.
@@ -1115,10 +1129,18 @@ export function FullscreenLiveView(): React.ReactElement {
 
             {/* Right: viewers · minimize · end */}
             <div className="flex items-center gap-2">
-              <span
+              <button
+                type="button"
+                onClick={() => {
+                  setViewersPanelOpen((o) => !o);
+                  setCommentsOpen(false);
+                  setVideoSourceOpen(false);
+                  setPlaylistOpen(false);
+                }}
                 className={cn(
                   GLASS_PILL,
-                  'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold',
+                  'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors hover:bg-white/20',
+                  viewersPanelOpen && 'bg-white/20',
                 )}
               >
                 <svg
@@ -1135,8 +1157,8 @@ export function FullscreenLiveView(): React.ReactElement {
                   <circle cx="9" cy="7" r="4" />
                   <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
                 </svg>
-                {liveCount}
-              </span>
+                {socketViewerCount}
+              </button>
 
               {(isLive || isPaused) && (
                 <button

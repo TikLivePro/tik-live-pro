@@ -77,8 +77,30 @@ async function bootstrap(): Promise<void> {
       policy: env.NODE_ENV === 'development' ? 'cross-origin' : 'same-origin',
     },
   });
-  await fastify.register(fastifyCors, { origin: true });
-  await fastify.register(fastifyRateLimit, { max: 500, timeWindow: '1 minute' });
+  await fastify.register(fastifyCors, {
+    origin: env.NODE_ENV === 'production'
+      ? ['https://tiklivepro.me', 'https://app.tiklivepro.me']
+      : true,
+    credentials: true,
+  });
+  // Global rate limit: 2000 req/min per IP (100 viewers × 12 session polls/min = 1200 req/min at peak)
+  await fastify.register(fastifyRateLimit, {
+    max: 2000,
+    timeWindow: '1 minute',
+    // Strict per-endpoint overrides for expensive/abusable routes
+    keyGenerator: (request) => {
+      // Rate-limit authenticated routes per user, unauthenticated routes per IP
+      const authHeader = request.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        // Use first 16 chars of token as a stable per-user bucket (not the full token)
+        return `user:${authHeader.slice(7, 23)}`;
+      }
+      return `ip:${request.ip}`;
+    },
+    errorResponseBuilder: () => ({
+      error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many requests, please try again later.' },
+    }),
+  });
   await fastify.register(fastifyJwt, { secret: env.JWT_SECRET });
 
   // ---------------------------------------------------------------------------
@@ -1179,6 +1201,16 @@ All error responses follow a consistent envelope:
   // ---------------------------------------------------------------------------
 
   // ---------------------------------------------------------------------------
+  // Block internal endpoints that must not be reachable via the public gateway
+  // ---------------------------------------------------------------------------
+  const notFound = async (_req: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) =>
+    reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Not found' } });
+
+  fastify.all('/integrations/internal', notFound);
+  fastify.all('/integrations/internal/*', notFound);
+  fastify.all('/auth/oauth/deletion', notFound);
+
+  // ---------------------------------------------------------------------------
   // Streaming passthrough — merge-stream (binary MP4, not JSON)
   // ---------------------------------------------------------------------------
   // The generic proxy below buffers via response.json() which cannot handle
@@ -1258,15 +1290,24 @@ All error responses follow a consistent envelope:
         fetchOptions.body = JSON.stringify(request.body);
       }
 
+      const proxyController = new AbortController();
+      const proxyTimeout = setTimeout(() => proxyController.abort(), 30_000);
+
       try {
-        const response = await fetch(targetUrl, fetchOptions);
+        const response = await fetch(targetUrl, { ...fetchOptions, signal: proxyController.signal });
+        clearTimeout(proxyTimeout);
         if (response.status === 204 || response.headers.get('content-length') === '0') {
           return reply.status(response.status).send();
         }
         const data = await response.json();
         return reply.status(response.status).send(data);
       } catch (err) {
-        logger.error({ err, targetUrl, method: request.method }, 'Proxy fetch failed');
+        clearTimeout(proxyTimeout);
+        const isTimeout = err instanceof Error && err.name === 'AbortError';
+        logger.error({ err, targetUrl, method: request.method, isTimeout }, 'Proxy fetch failed');
+        if (isTimeout) {
+          return reply.status(504).send({ error: { code: 'GATEWAY_TIMEOUT', message: 'Upstream service timed out' } });
+        }
         return reply.status(502).send({ error: { code: 'BAD_GATEWAY', message: 'Upstream service unavailable' } });
       }
     };

@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import fastifyJwt from '@fastify/jwt';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import fastifySwagger from '@fastify/swagger';
@@ -28,6 +29,7 @@ import { RecordingUploader } from './infrastructure/storage/recording-uploader.j
 
 const envSchema = baseEnvSchema.extend({
   DATABASE_URL: z.string().url(),
+  JWT_SECRET: z.string().min(64),
   RTMP_INGEST_PORT: z.coerce.number().default(1935),
   RTMP_INGEST_HOST: z.string().default('0.0.0.0'),
   INTEGRATIONS_SERVICE_URL: z.string().url(),
@@ -83,7 +85,14 @@ const logger = createLogger('stream-orchestrator', { level: env.LOG_LEVEL });
 
 async function main(): Promise<void> {
   // Database
-  const pool = new pg.Pool({ connectionString: env.DATABASE_URL });
+  const pool = new pg.Pool({
+    connectionString: env.DATABASE_URL,
+    max: 20,
+    min: 2,
+    idleTimeoutMillis: 60_000,
+    connectionTimeoutMillis: 5_000,
+    statement_timeout: 30_000,
+  });
   const db = drizzle(pool);
 
   // NATS
@@ -203,6 +212,26 @@ async function main(): Promise<void> {
     logger.info('RecordingUploader disabled — RECORDING_STORAGE_PROVIDER not set');
   }
 
+  // Crash recovery: find sessions that were LIVE when this process last crashed and
+  // attempt to re-attach FFmpeg workers to their ingest keys (if MediaMTX still has the stream).
+  try {
+    const { StreamSessionStatus } = await import('./domain/entities/stream-session.entity.js');
+    const liveSessions = await sessionRepo.findByStatuses([StreamSessionStatus.LIVE, StreamSessionStatus.WAITING_FOR_STREAM]);
+    if (liveSessions.length > 0) {
+      logger.info({ count: liveSessions.length }, 'Crash recovery: found sessions to recover');
+      for (const sess of liveSessions) {
+        if (!sess.ingestKey) continue;
+        logger.info({ sessionId: sess.sessionId, ingestKey: sess.ingestKey }, 'Crash recovery: re-attaching worker');
+        // Trigger the same flow as a normal stream arrival — no-op if ingestKey is not in MediaMTX
+        void streamArrivalHandler.execute(sess.ingestKey).catch((err: unknown) => {
+          logger.warn({ err, sessionId: sess.sessionId }, 'Crash recovery: worker re-attach failed');
+        });
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Crash recovery check failed — continuing without recovery');
+  }
+
   // NATS event consumer
   const consumer = new SessionEventConsumer(
     nats,
@@ -221,8 +250,14 @@ async function main(): Promise<void> {
     logger: false,
     ajv: { customOptions: { keywords: ['example'] } },
   });
-  await app.register(cors);
+  await app.register(cors, {
+    origin: env.NODE_ENV === 'production'
+      ? ['https://tiklivepro.me', 'https://app.tiklivepro.me']
+      : true,
+    credentials: true,
+  });
   await app.register(helmet);
+  await app.register(fastifyJwt, { secret: env.JWT_SECRET });
 
   // -------------------------------------------------------------------------
   // OpenAPI / Swagger — registered BEFORE routes

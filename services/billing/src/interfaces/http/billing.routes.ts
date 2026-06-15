@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import Stripe from 'stripe';
 
 // ---------------------------------------------------------------------------
 // Reusable schema fragments
@@ -145,7 +146,11 @@ const planSchema = {
   },
 };
 
-export function registerBillingRoutes(fastify: FastifyInstance, _deps: { db: NodePgDatabase }): void {
+export function registerBillingRoutes(
+  fastify: FastifyInstance,
+  _deps: { db: NodePgDatabase; stripeSecretKey: string; stripeWebhookSecret: string },
+): void {
+  const stripe = new Stripe(_deps.stripeSecretKey);
   // GET /billing/payment-methods ---------------------------------------------
   fastify.get(
     '/billing/payment-methods',
@@ -435,13 +440,20 @@ Schedules the user's Stripe subscription for cancellation at the end of the curr
   );
 
   // POST /billing/webhooks/stripe --------------------------------------------
-  fastify.post(
-    '/billing/webhooks/stripe',
-    {
-      schema: {
-        tags: ['Billing'],
-        summary: 'Stripe webhook receiver',
-        description: `
+  // Uses a scoped sub-plugin with a buffer content-type parser so the raw body
+  // is available for Stripe HMAC signature verification before JSON parsing.
+  void fastify.register(async (scope) => {
+    scope.addContentTypeParser('application/json', { parseAs: 'buffer' }, (_req, body, done) => {
+      done(null, body);
+    });
+
+    scope.post(
+      '/billing/webhooks/stripe',
+      {
+        schema: {
+          tags: ['Billing'],
+          summary: 'Stripe webhook receiver',
+          description: `
 Receives and processes Stripe webhook events. **Do not call this endpoint directly.**
 
 Stripe calls this endpoint automatically when subscription lifecycle events occur:
@@ -453,29 +465,59 @@ Stripe calls this endpoint automatically when subscription lifecycle events occu
 | \`customer.subscription.deleted\` | Downgrade to FREE, publish \`billing.entitlement.updated\` |
 
 **Security:** every incoming request is verified using the Stripe webhook signing secret (\`STRIPE_WEBHOOK_SECRET\`) before processing.
-        `.trim(),
-        headers: {
-          type: 'object',
-          required: ['stripe-signature'],
-          properties: {
-            'stripe-signature': {
-              type: 'string',
-              description: 'HMAC signature added by Stripe for payload verification.',
+          `.trim(),
+          headers: {
+            type: 'object',
+            required: ['stripe-signature'],
+            properties: {
+              'stripe-signature': {
+                type: 'string',
+                description: 'HMAC signature added by Stripe for payload verification.',
+              },
             },
           },
-        },
-        response: {
-          200: {
-            description: 'Event acknowledged by the billing service.',
-            type: 'object',
-            properties: { received: { type: 'boolean', example: true } },
+          response: {
+            200: {
+              description: 'Event acknowledged by the billing service.',
+              type: 'object',
+              properties: { received: { type: 'boolean', example: true } },
+            },
+            400: errorSchema('Stripe signature verification failed — payload may have been tampered with.'),
           },
-          400: errorSchema('Stripe signature verification failed — payload may have been tampered with.'),
         },
       },
-    },
-    async (_request, reply) => {
-      return reply.status(200).send({ received: true });
-    },
-  );
+      async (request, reply) => {
+        const sig = request.headers['stripe-signature'];
+        if (!sig) {
+          return reply.status(400).send({ error: { code: 'MISSING_SIGNATURE', message: 'stripe-signature header is required' } });
+        }
+
+        let event: Stripe.Event;
+        try {
+          event = await stripe.webhooks.constructEventAsync(
+            request.body as Buffer,
+            sig as string,
+            _deps.stripeWebhookSecret,
+          );
+        } catch {
+          return reply.status(400).send({ error: { code: 'INVALID_SIGNATURE', message: 'Stripe signature verification failed' } });
+        }
+
+        // Handle relevant subscription lifecycle events
+        switch (event.type) {
+          case 'checkout.session.completed':
+          case 'invoice.payment_succeeded':
+          case 'invoice.payment_failed':
+          case 'customer.subscription.deleted':
+          case 'customer.subscription.updated':
+            // TODO: implement entitlement update logic using event.data.object
+            break;
+          default:
+            break;
+        }
+
+        return reply.status(200).send({ received: true });
+      },
+    );
+  });
 }

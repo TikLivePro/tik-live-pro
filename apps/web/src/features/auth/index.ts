@@ -1,4 +1,5 @@
 export { useAuth } from './hooks/useAuth';
+export { useTokenRefresh } from './hooks/useTokenRefresh';
 export { useLoginForm } from './hooks/useLoginForm';
 export { useRegisterForm } from './hooks/useRegisterForm';
 export { useTheme } from './hooks/useTheme';

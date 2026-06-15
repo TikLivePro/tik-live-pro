@@ -24,7 +24,7 @@ const envSchema = baseEnvSchema.extend({
   DATABASE_URL: z.string().url(),
   JWT_SECRET: z.string().min(64),
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
-  JWT_REFRESH_EXPIRES_IN: z.string().default('30d'),
+  JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   // SMTP — optional; email is skipped when SMTP_USER is absent
   SMTP_PROVIDER: z.enum(['gmail', 'sendgrid', 'custom']).default('gmail'),
   SMTP_USER: z.string().optional(),
@@ -57,7 +57,12 @@ async function bootstrap(): Promise<void> {
   });
 
   await fastify.register(fastifyHelmet);
-  await fastify.register(fastifyCors, { origin: true });
+  await fastify.register(fastifyCors, {
+    origin: env.NODE_ENV === 'production'
+      ? ['https://tiklivepro.me', 'https://app.tiklivepro.me']
+      : true,
+    credentials: true,
+  });
   await fastify.register(fastifyRateLimit, { max: 100, timeWindow: '1 minute' });
   await fastify.register(fastifyJwt, { secret: env.JWT_SECRET });
 

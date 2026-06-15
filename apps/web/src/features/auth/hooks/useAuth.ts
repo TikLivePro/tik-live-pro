@@ -20,6 +20,14 @@ interface AuthResponse {
   email?: string;
 }
 
+async function persistRefreshCookie(refreshToken: string): Promise<void> {
+  await fetch('/api/auth/session/set', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
+  });
+}
+
 export function useAuth() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +67,7 @@ export function useAuth() {
           return;
         }
         const { data } = (await res.json()) as { data: AuthResponse };
+        await persistRefreshCookie(data.refreshToken);
         setAuth({ ...data, displayName: params.displayName, email: params.email });
         if (onSuccess) onSuccess();
         else router.push(callbackUrl ?? '/dashboard');
@@ -87,6 +96,7 @@ export function useAuth() {
           return;
         }
         const { data } = (await res.json()) as { data: AuthResponse };
+        await persistRefreshCookie(data.refreshToken);
         setAuth({ ...data, email: params.email });
         if (onSuccess) onSuccess();
         else router.push(callbackUrl ?? '/dashboard');
@@ -117,8 +127,9 @@ export function useAuth() {
     [tAuth],
   );
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     clearAuth();
+    await fetch('/api/auth/session/clear', { method: 'POST' });
     router.push('/auth/login');
   }, [clearAuth, router]);
 

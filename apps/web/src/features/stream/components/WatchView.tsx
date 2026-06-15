@@ -24,7 +24,11 @@ import type { Comment } from '@tik-live-pro/shared-types';
 
 const WEBRTC_BASE =
   process.env.NEXT_PUBLIC_MEDIAMTX_WEBRTC_URL ?? 'http://localhost:8889';
-const POLL_INTERVAL = 5000;
+// Adaptive polling: fast while stream is starting/transitioning, slow once stable.
+// 100 viewers × 4 polls/min (live) = 400 req/min vs 1200 req/min with a fixed 5s interval.
+const POLL_INTERVAL_STARTING_MS = 3000;
+const POLL_INTERVAL_LIVE_MS = 15000;
+const POLL_INTERVAL_MAX_MS = 30000;
 const REACTION_EMOJIS = ['❤️', '🔥', '😍', '👏', '💯', '🎉'];
 const MAX_FLOATING = 5;
 const MAX_REACTIONS = 20;
@@ -431,11 +435,12 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const tStream = useTranslations('stream');
 
   const pathname = usePathname();
-  const { isAuthenticated, accessToken, displayName } = useAuthStore();
+  const { isAuthenticated, accessToken, displayName, email } = useAuthStore();
 
   // Stable guest name for unauthenticated viewers, persisted per browser session
   const [guestName] = useState(() => getOrCreateGuestName());
-  const viewerDisplayName = displayName ?? guestName;
+  // Authenticated: use display name → email prefix; unauthenticated: random guest name
+  const viewerDisplayName = displayName ?? (email ? email.split('@')[0] : null) ?? guestName;
 
   const [session, setSession] = useState<PublicSession>(initialSession);
   // Live viewer count and public viewer list pushed from socket
@@ -526,21 +531,41 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     isLive && session.startedAt ? new Date(session.startedAt) : null,
   );
 
-  // Poll session status
+  // Poll session status with adaptive interval — fast while starting, slow once stable.
+  // This reduces load from 100 viewers × 12 req/min to 100 × 4 req/min when live.
   useEffect(() => {
     if (isEnded) return;
-    const interval = setInterval(async () => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let consecutiveUnchanged = 0;
+
+    const poll = async (): Promise<void> => {
       try {
         const res = await fetch(`${apiBase}/sessions/${session.id}/public`);
-        if (!res.ok) return;
-        const { data } = (await res.json()) as { data: PublicSession };
-        setSession(data);
+        if (res.ok) {
+          const { data } = (await res.json()) as { data: PublicSession };
+          const statusChanged = data.status !== session.status;
+          if (statusChanged) {
+            consecutiveUnchanged = 0;
+            setSession(data);
+          } else {
+            consecutiveUnchanged++;
+          }
+        }
       } catch {
         // ignore transient failures
       }
-    }, POLL_INTERVAL);
-    return () => clearInterval(interval);
-  }, [session.id, isEnded, apiBase]);
+
+      // Back off when the stream status is stable: starting polls quickly,
+      // live polls less frequently, and we cap at POLL_INTERVAL_MAX_MS.
+      const baseInterval = isLive ? POLL_INTERVAL_LIVE_MS : POLL_INTERVAL_STARTING_MS;
+      const delay = Math.min(baseInterval * Math.pow(1.5, Math.floor(consecutiveUnchanged / 3)), POLL_INTERVAL_MAX_MS);
+      timeoutId = setTimeout(() => { void poll(); }, delay);
+    };
+
+    timeoutId = setTimeout(() => { void poll(); }, isLive ? POLL_INTERVAL_LIVE_MS : POLL_INTERVAL_STARTING_MS);
+    return () => { if (timeoutId) clearTimeout(timeoutId); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.id, isEnded, isLive, apiBase]);
 
   // Load historical comments when the session goes live (or on first render if already live).
   // GET /comments is publicly readable so this works for unauthenticated viewers too.
@@ -569,8 +594,12 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       ...(token ? { auth: { token } } : {}),
       query: { sessionId: session.id },
       transports: ['websocket'],
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 8,
+      // Jitter spreads reconnect attempts across 3–9s so 100 viewers don't all
+      // hammer the server at the same instant after a restart.
       reconnectionDelay: 3000,
+      reconnectionDelayMax: 30000,
+      randomizationFactor: 0.5,
     });
 
     // Announce as viewer so the streamer can see us in the audience list

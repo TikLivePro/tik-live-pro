@@ -233,6 +233,8 @@ Supports an optional \`mediaUrl\` field to attach an image, GIF, or file URL alo
       },
     },
     async (request, reply) => {
+      await request.jwtVerify();
+      const user = request.user as { sub: string };
       const { sessionId, content, authorName: bodyAuthorName, mediaUrls } = request.body;
       const posted = await deps.poster.postToAllPlatforms(
         sessionId as Comment['sessionId'],
@@ -248,15 +250,8 @@ Supports an optional \`mediaUrl\` field to attach an image, GIF, or file URL alo
 
       // No linked platform accounts — persist and broadcast a local comment so it
       // appears instantly in the live dashboard.
-      let authorName = bodyAuthorName ?? 'Streamer';
-      let authorPlatformUserId = 'local';
-      try {
-        await request.jwtVerify();
-        const user = request.user as { sub: string };
-        authorPlatformUserId = user.sub;
-      } catch {
-        // No valid JWT — use defaults
-      }
+      const authorName = bodyAuthorName ?? 'Streamer';
+      const authorPlatformUserId = user.sub;
 
       const id = randomUUID();
       const now = new Date();
@@ -344,6 +339,8 @@ Replies to a specific comment. The reply is sent to the platform where the origi
       },
     },
     async (request, reply) => {
+      await request.jwtVerify();
+      const user = request.user as { sub: string };
       const { commentId } = request.params;
       const { content, mediaUrls } = request.body;
 
@@ -359,13 +356,8 @@ Replies to a specific comment. The reply is sent to the platform where the origi
 
       // Local comments are not routed through a social platform — persist a local reply directly.
       if (parentComment.platform === 'local') {
-        let authorName = 'Streamer';
-        let authorPlatformUserId = 'local';
-        try {
-          await request.jwtVerify();
-          const user = request.user as { sub: string };
-          authorPlatformUserId = user.sub;
-        } catch { /* use defaults */ }
+        const authorName = 'Streamer';
+        const authorPlatformUserId = user.sub;
 
         const id = randomUUID();
         const now = new Date();

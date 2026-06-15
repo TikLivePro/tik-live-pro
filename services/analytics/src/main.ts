@@ -36,7 +36,12 @@ async function bootstrap(): Promise<void> {
   });
 
   await fastify.register(fastifyHelmet);
-  await fastify.register(fastifyCors, { origin: true });
+  await fastify.register(fastifyCors, {
+    origin: env.NODE_ENV === 'production'
+      ? ['https://tiklivepro.me', 'https://app.tiklivepro.me']
+      : true,
+    credentials: true,
+  });
   await fastify.register(fastifyJwt, { secret: env.JWT_SECRET });
 
   // ---------------------------------------------------------------------------

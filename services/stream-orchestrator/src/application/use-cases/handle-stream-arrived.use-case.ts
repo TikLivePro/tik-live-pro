@@ -6,8 +6,15 @@ import { DestinationStatus, SocialPlatform as SP } from '@tik-live-pro/shared-ty
 import type { Logger } from '@tik-live-pro/logger';
 import { StreamSessionStatus } from '../../domain/entities/stream-session.entity.js';
 
+// Maximum number of FFmpeg workers that may START concurrently.
+// Spawning 50 FFmpeg processes simultaneously causes a CPU spike that can
+// crash the host. This semaphore serializes startup bursts.
+const MAX_CONCURRENT_WORKER_STARTS = 5;
+
 export class HandleStreamArrivedUseCase {
   private readonly workers = new Map<string, IStreamWorker>();
+  private activeStarts = 0;
+  private readonly startQueue: Array<() => void> = [];
 
   constructor(
     private readonly sessionRepo: IStreamSessionRepository,
@@ -174,9 +181,13 @@ export class HandleStreamArrivedUseCase {
     // ffmpeg reads from MediaMTX RTMP (the browser WHIP stream is already there).
     // Only register the worker after a successful start so a failed start doesn't
     // block future retries via the workers.has() guard.
+    // Acquire a start slot to prevent CPU spikes when many hosts go live at once.
+    await this.acquireStartSlot();
     try {
       await worker.start(`${this.mediaMtxRtmpBase}/live/${ingestKey}`, destConfigs);
+      this.releaseStartSlot();
     } catch (err) {
+      this.releaseStartSlot();
       cancelled = true;
       this.logger.error({ err, sessionId: session.sessionId }, 'Stream worker failed to start');
       for (const dest of session.destinations) {
@@ -207,6 +218,25 @@ export class HandleStreamArrivedUseCase {
       { sessionId: session.sessionId, destinationCount: destConfigs.length },
       'Stream worker started',
     );
+  }
+
+  private acquireStartSlot(): Promise<void> {
+    if (this.activeStarts < MAX_CONCURRENT_WORKER_STARTS) {
+      this.activeStarts++;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      this.startQueue.push(resolve);
+    });
+  }
+
+  private releaseStartSlot(): void {
+    const next = this.startQueue.shift();
+    if (next) {
+      next();
+    } else {
+      this.activeStarts--;
+    }
   }
 
   async stopWorker(ingestKey: string): Promise<void> {

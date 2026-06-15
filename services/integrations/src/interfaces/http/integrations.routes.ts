@@ -76,7 +76,8 @@ const socialAccountSchema = {
 // ---------------------------------------------------------------------------
 
 function encryptToken(plaintext: string, keyHex: string): string {
-  const key = Buffer.from(keyHex.padEnd(64, '0').slice(0, 64), 'hex');
+  if (!/^[0-9a-f]{64}$/i.test(keyHex)) throw new Error('TOKEN_ENCRYPTION_KEY must be a 64-character hex string');
+  const key = Buffer.from(keyHex, 'hex');
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
   const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
@@ -85,7 +86,8 @@ function encryptToken(plaintext: string, keyHex: string): string {
 }
 
 function decryptToken(encryptedHex: string, keyHex: string): string {
-  const key = Buffer.from(keyHex.padEnd(64, '0').slice(0, 64), 'hex');
+  if (!/^[0-9a-f]{64}$/i.test(keyHex)) throw new Error('TOKEN_ENCRYPTION_KEY must be a 64-character hex string');
+  const key = Buffer.from(keyHex, 'hex');
   const parts = encryptedHex.split(':');
   if (parts.length !== 3) throw new Error('Invalid encrypted token format');
   const iv = Buffer.from(parts[0]!, 'hex');

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { streamSessions, streamDestinations } from './schema.js';
 import type { IStreamSessionRepository } from '../../domain/repositories/stream-session.repository.js';
@@ -44,6 +44,23 @@ export class DrizzleStreamSessionRepository implements IStreamSessionRepository 
       .where(eq(streamDestinations.sessionId, row.sessionId));
 
     return this.mapToDomain(row, destRows);
+  }
+
+  async findByStatuses(statuses: StreamSessionStatus[]): Promise<StreamSession[]> {
+    const rows = await this.db
+      .select()
+      .from(streamSessions)
+      .where(inArray(streamSessions.status, statuses));
+
+    return Promise.all(
+      rows.map(async (row) => {
+        const destRows = await this.db
+          .select()
+          .from(streamDestinations)
+          .where(eq(streamDestinations.sessionId, row.sessionId));
+        return this.mapToDomain(row, destRows);
+      }),
+    );
   }
 
   async save(session: StreamSession): Promise<void> {

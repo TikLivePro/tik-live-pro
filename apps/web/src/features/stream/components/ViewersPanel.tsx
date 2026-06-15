@@ -62,11 +62,15 @@ export function ViewersPanel({
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(!showAudienceToggle && publicViewerNames === undefined);
 
-  // Subscribe to viewers_update from the socket (streamer only)
+  // Subscribe to viewers_update from the socket (streamer only).
+  // Re-emitting join_as_streamer here requests a fresh snapshot from the server immediately
+  // so the list isn't empty when the panel first opens.
   useEffect(() => {
     if (!showAudienceToggle || !socketRef) return;
     const socket = socketRef.current;
     if (!socket) return;
+
+    socket.emit('join_as_streamer');
 
     const handler = (data: { viewers: Viewer[] }) => {
       setSocketViewers(data.viewers ?? []);

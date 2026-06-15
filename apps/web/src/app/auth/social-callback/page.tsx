@@ -26,16 +26,27 @@ export default function SocialCallbackPage() {
     }
 
     if (session.appAccessToken && session.appUserId) {
-      setAuth({
-        userId: session.appUserId as UserId,
-        accessToken: session.appAccessToken,
-        refreshToken: session.appRefreshToken ?? '',
-        subscriptionTier: (session.appSubscriptionTier ?? 'free') as SubscriptionTier,
-        ...(session.appDisplayName !== undefined ? { displayName: session.appDisplayName } : {}),
-        ...(session.appEmail !== undefined ? { email: session.appEmail } : {}),
-      });
-      const next = searchParams.get('next') ?? '/dashboard';
-      router.replace(next);
+      const proceed = async () => {
+        // Write the httpOnly cookie before navigating away so it is available on the next request.
+        if (session.appRefreshToken) {
+          await fetch('/api/auth/session/set', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken: session.appRefreshToken }),
+          });
+        }
+        setAuth({
+          userId: session.appUserId as UserId,
+          accessToken: session.appAccessToken as string,
+          subscriptionTier: (session.appSubscriptionTier ?? 'free') as SubscriptionTier,
+          ...(session.appDisplayName !== undefined ? { displayName: session.appDisplayName as string } : {}),
+          ...(session.appEmail !== undefined ? { email: session.appEmail as string } : {}),
+        });
+        const rawNext = searchParams.get('next') ?? '/dashboard';
+        const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/dashboard';
+        router.replace(next);
+      };
+      void proceed();
       return;
     }
 

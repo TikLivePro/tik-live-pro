@@ -47,9 +47,42 @@ export function buildMergeStreamUrl(resolvedUrl: string, audioUrl: string): stri
   );
 }
 
-// Deduplicates concurrent refresh calls so only one refresh request is in-flight at a time.
+// Deduplicates concurrent refresh calls — only one request is ever in-flight at a time.
 // Token rotation means replaying an old refresh token returns 401, so serializing is required.
 let refreshPromise: Promise<string | null> | null = null;
+
+function redirectToLogin(): void {
+  if (typeof window !== 'undefined') {
+    const callbackUrl = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/auth/login?callbackUrl=${callbackUrl}`;
+  }
+}
+
+/**
+ * Silently obtain a new access token via the httpOnly refresh_token cookie.
+ * All callers share one in-flight request — token rotation is safe because
+ * concurrent calls wait for the same promise rather than each firing separately.
+ *
+ * Returns the new access token on success, or null when the cookie is absent,
+ * expired, or revoked (the caller should treat null as a logout signal).
+ */
+export function silentRefresh(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = fetch('/api/auth/session/refresh', { method: 'POST' })
+      .then(async (r) => {
+        if (!r.ok) return null;
+        const { accessToken } = (await r.json()) as { accessToken: string };
+        useAuthStore.getState().updateAccessToken(accessToken);
+        return accessToken;
+      })
+      .catch(() => null)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+
+  return refreshPromise;
+}
 
 export async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
   const makeRequest = (token: string | null): Promise<Response> => {
@@ -61,42 +94,11 @@ export async function apiFetch(input: string, init?: RequestInit): Promise<Respo
   const res = await makeRequest(useAuthStore.getState().accessToken);
   if (res.status !== 401) return res;
 
-  const { refreshToken } = useAuthStore.getState();
-  if (!refreshToken) {
-    useAuthStore.getState().clearAuth();
-    if (typeof window !== 'undefined') {
-      const callbackUrl = encodeURIComponent(window.location.pathname + window.location.search);
-      window.location.href = `/auth/login?callbackUrl=${callbackUrl}`;
-    }
-    return res;
-  }
-
-  if (!refreshPromise) {
-    refreshPromise = fetch(`${API_BASE}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
-    })
-      .then(async (r) => {
-        if (!r.ok) return null;
-        const { data } = (await r.json()) as { data: { accessToken: string; refreshToken: string } };
-        useAuthStore.getState().updateTokens(data.accessToken, data.refreshToken);
-        return data.accessToken;
-      })
-      .catch(() => null)
-      .finally(() => {
-        refreshPromise = null;
-      });
-  }
-
-  const newToken = await refreshPromise;
+  const newToken = await silentRefresh();
 
   if (!newToken) {
     useAuthStore.getState().clearAuth();
-    if (typeof window !== 'undefined') {
-      const callbackUrl = encodeURIComponent(window.location.pathname + window.location.search);
-      window.location.href = `/auth/login?callbackUrl=${callbackUrl}`;
-    }
+    redirectToLogin();
     return res;
   }
 

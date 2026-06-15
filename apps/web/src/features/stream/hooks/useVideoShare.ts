@@ -481,7 +481,9 @@ export function useVideoShare({ socketRef, sessionId, onVideoEnded }: UseVideoSh
   // Always register as streamer so the viewer list is received regardless of source type.
   useEffect(() => {
     const socket = socketRef.current;
+    console.debug('[useVideoShare] join_as_streamer effect — socket:', socket?.id ?? 'null', 'sessionId:', sessionId);
     if (!socket || !sessionId) return;
+    console.debug('[useVideoShare] emitting join_as_streamer');
     socket.emit('join_as_streamer');
   }, [socketRef, sessionId]);
 

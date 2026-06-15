@@ -121,6 +121,9 @@ export function registerAuthRoutes(
   fastify.post(
     '/auth/register',
     {
+      config: {
+        rateLimit: { max: 5, timeWindow: '1 minute' },
+      },
       schema: {
         tags: ['Authentication'],
         summary: 'Register a new user',
@@ -201,6 +204,9 @@ Creates a new user account and immediately returns a JWT access/refresh token pa
   fastify.post(
     '/auth/login',
     {
+      config: {
+        rateLimit: { max: 10, timeWindow: '1 minute' },
+      },
       schema: {
         tags: ['Authentication'],
         summary: 'Log in',

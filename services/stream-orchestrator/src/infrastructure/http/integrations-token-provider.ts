@@ -11,9 +11,18 @@ export class IntegrationsTokenProvider implements ITokenProvider {
   async getToken(socialAccountId: SocialAccountId): Promise<AccountToken> {
     const url = `${this.baseUrl}/internal/accounts/${socialAccountId}/token`;
 
-    const response = await fetch(url, {
-      headers: { 'x-internal-service': 'stream-orchestrator' },
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: { 'x-internal-service': 'stream-orchestrator' },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
       const text = await response.text();

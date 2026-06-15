@@ -39,7 +39,14 @@ const logger = createLogger('comments-service', { level: env.LOG_LEVEL });
 
 async function bootstrap(): Promise<void> {
   const sc = StringCodec();
-  const pool = new Pool({ connectionString: env.DATABASE_URL });
+  const pool = new Pool({
+    connectionString: env.DATABASE_URL,
+    max: 20,
+    min: 2,
+    idleTimeoutMillis: 60_000,
+    connectionTimeoutMillis: 5_000,
+    statement_timeout: 30_000,
+  });
   const db = drizzle(pool);
 
   const nats = new NatsJetStreamClient();
@@ -170,7 +177,12 @@ async function bootstrap(): Promise<void> {
   });
 
   await fastify.register(fastifyHelmet);
-  await fastify.register(fastifyCors, { origin: true });
+  await fastify.register(fastifyCors, {
+    origin: env.NODE_ENV === 'production'
+      ? ['https://tiklivepro.me', 'https://app.tiklivepro.me']
+      : true,
+    credentials: true,
+  });
   await fastify.register(fastifyJwt, { secret: env.JWT_SECRET });
 
   await fastify.register(fastifySwagger, {
@@ -241,33 +253,56 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
   // Socket.io must be attached before fastify.listen() so its upgrade listener
   // is registered on the Node.js HTTP server before any connections arrive.
   const io = new SocketIOServer(fastify.server as import('node:http').Server, {
-    cors: { origin: true },
+    cors: {
+      origin: env.NODE_ENV === 'production'
+        ? ['https://tiklivepro.me', 'https://app.tiklivepro.me']
+        : true,
+    },
     transports: ['websocket'],
   });
 
   // Per-session viewer registry: socketId → displayName (in-memory, lives for the process lifetime)
   const sessionViewers = new Map<string, Map<string, string>>();
+  // Per-session streamer socket ID — direct targeting avoids room-join timing issues
+  const sessionStreamers = new Map<string, string>();
   // Per-session set of viewer socket IDs that have been granted video control
   const sessionVideoControlAllowed = new Map<string, Set<string>>();
+  // Pending debounce timers — prevents broadcast storms when many viewers join simultaneously
+  const pendingViewerBroadcasts = new Map<string, ReturnType<typeof setTimeout>>();
 
   function broadcastViewersUpdate(sid: string): void {
-    const registry = sessionViewers.get(sid);
-    const viewers = registry
-      ? Array.from(registry.entries()).map(([id, displayName]) => ({ id, displayName }))
-      : [];
-    io.to(`${sid}:streamer`).emit('viewers_update', { viewers });
-    // Broadcast public-facing count and name list to all clients in the session
-    io.to(sid).emit('viewer_count', { count: registry?.size ?? 0 });
-    io.to(sid).emit('public_viewers', {
-      viewers: viewers.map(({ displayName }) => ({ displayName })),
-    });
+    // Debounce: cancel any pending broadcast for this session and schedule a new one.
+    // 250 ms window collapses bursts of concurrent join/disconnect events into one emit.
+    const existing = pendingViewerBroadcasts.get(sid);
+    if (existing) clearTimeout(existing);
+
+    const timer = setTimeout(() => {
+      pendingViewerBroadcasts.delete(sid);
+      const registry = sessionViewers.get(sid);
+      const viewers = registry
+        ? Array.from(registry.entries()).map(([id, displayName]) => ({ id, displayName }))
+        : [];
+      const streamerSocketId = sessionStreamers.get(sid);
+      logger.debug({ sid, viewerCount: viewers.length, streamerSocketId: streamerSocketId ?? 'none' }, '[broadcastViewersUpdate] sending viewers_update');
+      if (streamerSocketId) {
+        io.to(streamerSocketId).emit('viewers_update', { viewers });
+      }
+      // Broadcast public-facing count and name list to all clients in the session
+      io.to(sid).emit('viewer_count', { count: registry?.size ?? 0 });
+      io.to(sid).emit('public_viewers', {
+        viewers: viewers.map(({ displayName }) => ({ displayName })),
+      });
+    }, 250);
+
+    pendingViewerBroadcasts.set(sid, timer);
   }
 
   io.on('connection', (socket) => {
     const { sessionId } = socket.handshake.query as { sessionId?: string };
+    logger.debug({ socketId: socket.id, sessionId: sessionId ?? '(none)' }, '[connection] new socket connected');
     if (!sessionId) { socket.disconnect(); return; }
     void socket.join(sessionId);
-    logger.info({ sessionId }, 'Comment client connected via Socket.io');
+    logger.info({ sessionId, socketId: socket.id }, 'Comment client connected via Socket.io');
 
     socket.on('emit_reaction', (data: { emoji?: string }) => {
       const emoji = (data?.emoji ?? '❤️').slice(0, 10);
@@ -286,17 +321,17 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
     socket.on('join_as_viewer', (data: unknown) => {
       const d = data as Record<string, unknown> | null;
       const displayName = String(d?.['displayName'] ?? 'Anonymous').slice(0, 50);
+      logger.debug({ sessionId, socketId: socket.id, displayName }, '[join_as_viewer] viewer registered');
       if (!sessionViewers.has(sessionId)) sessionViewers.set(sessionId, new Map());
       sessionViewers.get(sessionId)!.set(socket.id, displayName);
       broadcastViewersUpdate(sessionId);
     });
 
-    // Streamer identifies itself to receive viewer control commands
+    // Streamer identifies itself — store its socket ID for direct targeting
     socket.on('join_as_streamer', () => {
-      void socket.join(`${sessionId}:streamer`);
-      // Send the current viewer list immediately so the panel populates without waiting for the next join event
+      logger.debug({ sessionId, socketId: socket.id }, '[join_as_streamer] streamer registered');
+      sessionStreamers.set(sessionId, socket.id);
       broadcastViewersUpdate(sessionId);
-      logger.debug({ sessionId }, 'Client joined as streamer for video controls');
     });
 
     // Streamer grants or revokes video control for a specific viewer
@@ -334,7 +369,9 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
       if (!['play', 'pause', 'seek', 'speed'].includes(type)) return;
       const isAllowed = sessionVideoControlAllowed.get(sessionId)?.has(socket.id) ?? false;
       if (!isAllowed) return;
-      socket.to(`${sessionId}:streamer`).emit('video_control_command', {
+      const streamerSocketId = sessionStreamers.get(sessionId);
+      if (!streamerSocketId) return;
+      io.to(streamerSocketId).emit('video_control_command', {
         type,
         viewerId: socket.id,
         ...(d['currentTime'] !== undefined ? { currentTime: Number(d['currentTime']) } : {}),
@@ -343,6 +380,11 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
     });
 
     socket.on('disconnect', () => {
+      // If streamer disconnected, remove their registration
+      if (sessionStreamers.get(sessionId) === socket.id) {
+        sessionStreamers.delete(sessionId);
+        logger.debug({ sessionId, socketId: socket.id }, '[disconnect] streamer disconnected');
+      }
       const registry = sessionViewers.get(sessionId);
       if (registry) {
         registry.delete(socket.id);
@@ -397,6 +439,8 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
   const shutdown = async (): Promise<void> => {
     io.close();
     commentPoller.stopAll('' as LiveSessionId);
+    for (const timer of pendingViewerBroadcasts.values()) clearTimeout(timer);
+    pendingViewerBroadcasts.clear();
     await fastify.close();
     await nats.drain();
     await pool.end();

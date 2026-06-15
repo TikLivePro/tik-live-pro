@@ -210,6 +210,7 @@ Scraped by the Prometheus sidecar every 15 s.
       },
     },
     async (req, reply) => {
+      await req.jwtVerify();
       const raw = req.query.sessionIds ?? '';
       const ids = raw.split(',').map((s) => s.trim()).filter(Boolean);
       const records = await deps.recordingRepo.findBySessionIds(ids);
@@ -271,7 +272,8 @@ A recording is active when \`record: true\` has been set on the MediaMTX path co
         },
       },
     },
-    async (_req, reply) => {
+    async (req, reply) => {
+      await req.jwtVerify();
       const authHeaders = deps.mediaMtxApiAuthHeader ? { Authorization: deps.mediaMtxApiAuthHeader } : {};
 
       // Fetch recordings list and config paths in parallel.
@@ -406,6 +408,7 @@ rtmp://<host>:<port>/live/<ingestKey>
       },
     },
     async (req, reply) => {
+      await req.jwtVerify();
       const session = await deps.sessionRepo.findBySessionId(
         req.params.sessionId as LiveSessionId,
       );
@@ -470,6 +473,7 @@ Only valid when the session status is \`live\`.
       },
     },
     async (req, reply) => {
+      await req.jwtVerify();
       const session = await deps.sessionRepo.findBySessionId(
         req.params.sessionId as LiveSessionId,
       );
@@ -538,6 +542,7 @@ Only valid when the session status is \`live\`.
       },
     },
     async (req, reply) => {
+      await req.jwtVerify();
       const session = await deps.sessionRepo.findBySessionId(
         req.params.sessionId as LiveSessionId,
       );
@@ -615,6 +620,7 @@ Only valid when the session status is \`live\`.
       },
     },
     async (req, reply) => {
+      await req.jwtVerify();
       const session = await deps.sessionRepo.findBySessionId(req.params.sessionId as LiveSessionId);
       if (!session) {
         await reply.status(404).send({ code: 'NOT_FOUND', message: 'Session not found' });
@@ -673,6 +679,7 @@ Only valid when the session status is \`live\`.
       },
     },
     async (req, reply) => {
+      await req.jwtVerify();
       const session = await deps.sessionRepo.findBySessionId(req.params.sessionId as LiveSessionId);
       if (!session) {
         await reply.status(404).send({ code: 'NOT_FOUND', message: 'Session not found' });
@@ -738,6 +745,7 @@ Only valid when the session status is \`live\`.
       },
     },
     async (req, reply) => {
+      await req.jwtVerify();
       const session = await deps.sessionRepo.findBySessionId(req.params.sessionId as LiveSessionId);
       if (!session) {
         await reply.status(404).send({ code: 'NOT_FOUND', message: 'Session not found' });
@@ -788,6 +796,7 @@ Only valid when the session status is \`live\`.
       },
     },
     async (req, reply) => {
+      await req.jwtVerify();
       const session = await deps.sessionRepo.findBySessionId(
         req.params.sessionId as LiveSessionId,
       );
@@ -833,6 +842,7 @@ Only valid when the session status is \`live\`.
       },
     },
     async (req, reply) => {
+      await req.jwtVerify();
       const recording = await deps.recordingRepo.findById(req.params.recordingId);
       if (!recording) {
         await reply.status(404).send({ code: 'NOT_FOUND', message: 'Recording not found' });
@@ -910,6 +920,7 @@ Only valid when the session status is \`live\`.
       },
     },
     async (req, reply) => {
+      await req.jwtVerify();
       const session = await deps.sessionRepo.findBySessionId(
         req.params.sessionId as LiveSessionId,
       );
@@ -1120,6 +1131,7 @@ formats — so the client can show a quality picker without an extra round-trip.
       },
     },
     async (req, reply) => {
+      await req.jwtVerify();
       const rawUrl = req.body.url;
       if (!rawUrl || !isPlatformUrl(rawUrl)) {
         await reply.status(400).send({
