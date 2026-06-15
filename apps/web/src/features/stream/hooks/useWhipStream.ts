@@ -37,7 +37,9 @@ export function useWhipStream(): WhipStreamResult {
 
       for (const track of stream.getTracks()) {
         const sendEncodings: RTCRtpEncodingParameters[] =
-          track.kind === 'video' ? [{ maxBitrate: bitrate ?? 2_500_000 }] : [];
+          track.kind === 'video'
+            ? [{ maxBitrate: bitrate ?? 2_500_000, scaleResolutionDownBy: 1 }]
+            : [];
         const transceiver = pc.addTransceiver(track, { streams: [stream], sendEncodings });
         if (track.kind === 'video') {
           // MediaMTX can only remux H.264 to HLS — VP8/VP9 would produce a 404 HLS response.
@@ -116,6 +118,7 @@ export function useWhipStream(): WhipStreamResult {
     const params = sender.getParameters();
     if (params.encodings.length > 0) {
       params.encodings[0]!.maxBitrate = bitrate;
+      params.encodings[0]!.scaleResolutionDownBy = 1;
       await sender.setParameters(params);
     }
   }, []);

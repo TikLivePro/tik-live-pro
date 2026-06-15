@@ -1,15 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MutableRefObject } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { getInitials } from '@/lib/text.utils';
 import { apiFetch } from '@/lib/api';
+import type { Socket } from 'socket.io-client';
 
 interface Viewer {
   id: string;
   displayName: string;
-  joinedAt: string;
+  joinedAt?: string;
 }
 
 interface Props {
@@ -18,11 +19,21 @@ interface Props {
   onClose: () => void;
   /** CSS class override for positioning — defaults to right side panel */
   className?: string;
-  /** When true, shows the "show/hide to audience" toggle (sharer view) */
+  /** When true, shows the "show/hide to audience" toggle and per-viewer video control grants (sharer view) */
   showAudienceToggle?: boolean;
   viewersVisible?: boolean;
   onToggleViewersVisible?: (visible: boolean) => void;
   isTogglingVisibility?: boolean;
+  /** Socket ref for live viewer tracking (streamer mode only) */
+  socketRef?: MutableRefObject<Socket | null>;
+  /** Set of viewer socket IDs currently granted video control */
+  allowedViewerIds?: ReadonlySet<string>;
+  /** Grant or revoke video control for a specific viewer */
+  onGrantViewerControl?: (viewerId: string, allowed: boolean) => void;
+  /** Whether the viewer-control feature is enabled (master switch) */
+  videoControlEnabled?: boolean;
+  /** Live viewer display names pushed from socket (viewer mode, bypasses REST stub) */
+  publicViewerNames?: string[];
 }
 
 export function ViewersPanel({
@@ -34,29 +45,48 @@ export function ViewersPanel({
   viewersVisible = false,
   onToggleViewersVisible,
   isTogglingVisibility = false,
+  socketRef,
+  allowedViewerIds,
+  onGrantViewerControl,
+  videoControlEnabled = false,
+  publicViewerNames,
 }: Props): React.ReactElement {
   const t = useTranslations('watch');
   const tStream = useTranslations('stream');
 
-  const [viewers, setViewers] = useState<Viewer[]>([]);
-  const [total, setTotal] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+  // Streamer mode: use live socket-based viewer list
+  const [socketViewers, setSocketViewers] = useState<Viewer[]>([]);
 
+  // Viewer mode: poll the REST endpoint (used only when publicViewerNames is not provided)
+  const [restViewers, setRestViewers] = useState<Viewer[]>([]);
+  const [total, setTotal] = useState(0);
+  const [isLoading, setIsLoading] = useState(!showAudienceToggle && publicViewerNames === undefined);
+
+  // Subscribe to viewers_update from the socket (streamer only)
   useEffect(() => {
+    if (!showAudienceToggle || !socketRef) return;
+    const socket = socketRef.current;
+    if (!socket) return;
+
+    const handler = (data: { viewers: Viewer[] }) => {
+      setSocketViewers(data.viewers ?? []);
+    };
+    socket.on('viewers_update', handler);
+    return () => { socket.off('viewers_update', handler); };
+  }, [showAudienceToggle, socketRef]);
+
+  // Viewer mode: poll REST for the public audience list (skipped when publicViewerNames supplied)
+  useEffect(() => {
+    if (showAudienceToggle || publicViewerNames !== undefined) return;
     let cancelled = false;
 
     async function fetchViewers(): Promise<void> {
       try {
         const res = await apiFetch(`${apiBase}/sessions/${sessionId}/viewers`);
-        if (!res.ok) {
-          if (!cancelled) setIsLoading(false);
-          return;
-        }
-        const { data } = (await res.json()) as {
-          data: { viewers: Viewer[]; total: number };
-        };
+        if (!res.ok) { if (!cancelled) setIsLoading(false); return; }
+        const { data } = (await res.json()) as { data: { viewers: Viewer[]; total: number } };
         if (!cancelled) {
-          setViewers(data.viewers ?? []);
+          setRestViewers(data.viewers ?? []);
           setTotal(data.total ?? 0);
           setIsLoading(false);
         }
@@ -67,12 +97,19 @@ export function ViewersPanel({
 
     void fetchViewers();
     const interval = setInterval(() => { void fetchViewers(); }, 10_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [sessionId, apiBase, showAudienceToggle, publicViewerNames]);
 
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [sessionId, apiBase]);
+  const viewers = showAudienceToggle
+    ? socketViewers
+    : publicViewerNames !== undefined
+      ? publicViewerNames.map((name) => ({ id: name, displayName: name }))
+      : restViewers;
+  const displayTotal = showAudienceToggle
+    ? socketViewers.length
+    : publicViewerNames !== undefined
+      ? publicViewerNames.length
+      : total;
 
   return (
     <div
@@ -99,9 +136,9 @@ export function ViewersPanel({
             <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
           </svg>
           <span className="text-sm font-semibold text-white">{t('viewersList')}</span>
-          {total > 0 && (
+          {displayTotal > 0 && (
             <span className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-white/60">
-              {total}
+              {displayTotal}
             </span>
           )}
         </div>
@@ -127,7 +164,7 @@ export function ViewersPanel({
         </button>
       </div>
 
-      {/* Audience toggle (sharer only) */}
+      {/* Audience visibility toggle (sharer only) */}
       {showAudienceToggle && (
         <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.04] px-4 py-2.5">
           <span className="text-xs text-white/60">
@@ -161,6 +198,15 @@ export function ViewersPanel({
         </div>
       )}
 
+      {/* Video-control section header (streamer only, when feature enabled) */}
+      {showAudienceToggle && videoControlEnabled && viewers.length > 0 && (
+        <div className="border-b border-white/10 bg-white/[0.02] px-4 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35">
+            {tStream('viewers.videoControl')}
+          </p>
+        </div>
+      )}
+
       {/* Viewer list */}
       <div className="flex-1 overflow-y-auto py-2">
         {isLoading ? (
@@ -182,16 +228,49 @@ export function ViewersPanel({
             {t('noViewers')}
           </p>
         ) : (
-          viewers.map((viewer) => (
-            <div key={viewer.id} className="flex items-center gap-3 px-4 py-2.5">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-[11px] font-bold text-white/70">
-                {getInitials(viewer.displayName)}
+          viewers.map((viewer) => {
+            const hasControl = allowedViewerIds?.has(viewer.id) ?? false;
+            return (
+              <div key={viewer.id} className="flex items-center gap-3 px-4 py-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-[11px] font-bold text-white/70">
+                  {getInitials(viewer.displayName)}
+                </div>
+                <span className="flex-1 truncate text-sm text-white/80">
+                  {viewer.displayName}
+                </span>
+                {/* Per-viewer video control toggle — only in streamer mode when feature is enabled */}
+                {showAudienceToggle && videoControlEnabled && onGrantViewerControl && (
+                  <button
+                    type="button"
+                    onClick={() => onGrantViewerControl(viewer.id, !hasControl)}
+                    aria-label={
+                      hasControl
+                        ? tStream('viewers.revokeVideoControl')
+                        : tStream('viewers.grantVideoControl')
+                    }
+                    title={
+                      hasControl
+                        ? tStream('viewers.revokeVideoControl')
+                        : tStream('viewers.grantVideoControl')
+                    }
+                    className={cn(
+                      'relative h-5 w-9 shrink-0 rounded-full border transition-colors focus:outline-none',
+                      hasControl
+                        ? 'border-green-500/50 bg-green-600'
+                        : 'border-white/20 bg-white/10',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform',
+                        hasControl ? 'left-[18px]' : 'left-0.5',
+                      )}
+                    />
+                  </button>
+                )}
               </div>
-              <span className="flex-1 truncate text-sm text-white/80">
-                {viewer.displayName}
-              </span>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

@@ -24,6 +24,8 @@ import { LiveCommentPanel } from './LiveCommentPanel';
 import { ViewersPanel } from './ViewersPanel';
 import { VideoSourcePicker } from './VideoSourcePicker';
 import { VideoSharePlayer } from './VideoSharePlayer';
+import { PlaylistPanel } from './PlaylistPanel';
+import { usePlaylist } from '../hooks/usePlaylist';
 
 const REACTION_EMOJIS = ['❤️', '🔥', '😍', '👏', '💯', '🎉'];
 
@@ -45,6 +47,8 @@ export function FullscreenLiveView(): React.ReactElement {
     setVideoQualityId,
     preSource,
     setPreSource,
+    prePlaylist,
+    setPrePlaylist,
     platformVideoContext,
     setPlatformVideoContext,
     hydratePlatformVideoContext,
@@ -69,7 +73,14 @@ export function FullscreenLiveView(): React.ReactElement {
   const { sendComment, replyToComment, emitReaction, isSending, socketRef } = useComments(
     currentSession?.id ?? null,
   );
-  const videoShare = useVideoShare({ socketRef, sessionId: currentSession?.id ?? null });
+  // Stable ref so the onVideoEnded callback (captured at hook-mount time) can reach
+  // the playlist's playNext without a stale closure over the playlist object.
+  const playlistRef = useRef<{ playNext: () => void } | null>(null);
+  const videoShare = useVideoShare({
+    socketRef,
+    sessionId: currentSession?.id ?? null,
+    onVideoEnded: () => { playlistRef.current?.playNext(); },
+  });
   const {
     state: whipState,
     connect: connectWhip,
@@ -78,6 +89,15 @@ export function FullscreenLiveView(): React.ReactElement {
     replaceAudioTrack,
     setVideoBitrate,
   } = useWhipStream();
+
+  const playlist = usePlaylist({
+    onLoadItem: (item) => {
+      if (item.type === 'local-file' && item.file) videoShare.loadLocalFile(item.file);
+      else if (item.type === 'online-url' && item.url) videoShare.loadOnlineUrl(item.url);
+    },
+  });
+  // keep the ref in sync so the onVideoEnded callback inside useVideoShare can call playNext
+  playlistRef.current = playlist;
   const {
     isRecording,
     isToggling: isTogglingRecording,
@@ -85,6 +105,7 @@ export function FullscreenLiveView(): React.ReactElement {
   } = useRecording((currentSession?.id as LiveSessionId) ?? null);
 
   const [whipRetryTrigger, setWhipRetryTrigger] = useState(0);
+  const [playlistOpen, setPlaylistOpen] = useState(false);
 
   const isLive = currentSession?.status === 'live';
   const isStarting = currentSession?.status === 'starting';
@@ -242,6 +263,24 @@ export function FullscreenLiveView(): React.ReactElement {
     else if (preSource.type === 'online-url' && preSource.url)
       videoShare.loadOnlineUrl(preSource.url);
     setPreSource(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Seed the playlist from GoLiveForm when the user pre-configured one before going live.
+  useEffect(() => {
+    if (prePlaylist.length === 0) return;
+    for (const item of prePlaylist) {
+      playlist.addItem({
+        type: item.type,
+        name: item.name,
+        ...(item.file !== undefined ? { file: item.file } : {}),
+        ...(item.url !== undefined ? { url: item.url } : {}),
+      });
+    }
+    // Play the first item immediately
+    playlist.playAt(0);
+    setPrePlaylist([]);
+    setPlaylistOpen(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -454,7 +493,9 @@ export function FullscreenLiveView(): React.ReactElement {
     setMinimizedInStore(false);
   }, [setMinimizedInStore]);
 
-  const mountedAtRef = useRef(Date.now());
+  const [floatingComments, setFloatingComments] = useState<Array<{ comment: (typeof comments)[0]; key: string }>>([]);
+  const floatingRemoveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const pendingScrollIdRef = useRef<string | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
   const [whepCopied, setWhepCopied] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -722,11 +763,11 @@ export function FullscreenLiveView(): React.ReactElement {
 
   // Keep bottom controls visible whenever a panel is open
   useEffect(() => {
-    if (commentsOpen || viewersPanelOpen || videoSourceOpen) {
+    if (commentsOpen || viewersPanelOpen || videoSourceOpen || playlistOpen) {
       if (bottomHideTimerRef.current) clearTimeout(bottomHideTimerRef.current);
       setBottomControlsVisible(true);
     }
-  }, [commentsOpen, viewersPanelOpen, videoSourceOpen]);
+  }, [commentsOpen, viewersPanelOpen, videoSourceOpen, playlistOpen]);
 
   // ── Unread comment tracking ──────────────────────────────────
   const [unreadCount, setUnreadCount] = useState(0);
@@ -746,10 +787,51 @@ export function FullscreenLiveView(): React.ReactElement {
         description: comments[0].authorName,
         duration: 3500,
       });
+      const newOnes = comments.slice(0, curr - prev);
+      for (const comment of newOnes) {
+        const key = crypto.randomUUID();
+        setFloatingComments((p) => [...p, { comment, key }].slice(-5));
+        const timer = setTimeout(() => {
+          setFloatingComments((p) => p.filter((f) => f.key !== key));
+          floatingRemoveTimersRef.current.delete(key);
+        }, 5000);
+        floatingRemoveTimersRef.current.set(key, timer);
+      }
     }
   }, [comments, commentsOpen]);
+
+  useEffect(() => {
+    return () => {
+      floatingRemoveTimersRef.current.forEach(clearTimeout);
+      floatingRemoveTimersRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!commentsOpen || !pendingScrollIdRef.current) return;
+    const id = pendingScrollIdRef.current;
+    const timer = setTimeout(() => {
+      document.getElementById(`comment-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      pendingScrollIdRef.current = null;
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [commentsOpen]);
+
   const [viewersVisible, setViewersVisible] = useState(false);
   const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
+
+  // Auto-open the viewers panel when the streamer enables viewer video control,
+  // so they can immediately select which viewers to grant access.
+  const prevAllowViewerControlRef = useRef(false);
+  useEffect(() => {
+    if (videoShare.allowViewerControl && !prevAllowViewerControlRef.current) {
+      setViewersPanelOpen(true);
+      setVideoSourceOpen(false);
+      setCommentsOpen(false);
+      setPlaylistOpen(false);
+    }
+    prevAllowViewerControlRef.current = videoShare.allowViewerControl;
+  }, [videoShare.allowViewerControl]);
 
   const handleShare = useCallback(async () => {
     const url = `${window.location.origin}/watch/${currentSession?.id ?? ''}`;
@@ -812,16 +894,6 @@ export function FullscreenLiveView(): React.ReactElement {
     router.push('/dashboard');
   }
 
-  const overlayComments = comments.slice(0, 5);
-
-  function isNewComment(comment: { receivedAt: Date | string }): boolean {
-    const ms =
-      comment.receivedAt instanceof Date
-        ? comment.receivedAt.getTime()
-        : new Date(comment.receivedAt as string).getTime();
-    return ms > mountedAtRef.current - 500;
-  }
-
   return (
     <>
       {isMinimized && (
@@ -844,6 +916,46 @@ export function FullscreenLiveView(): React.ReactElement {
         className={cn('fixed inset-0 z-50 overflow-hidden bg-black', isMinimized && 'invisible')}
         onMouseMove={handleStreamerMouseMove}
       >
+        {/* ── WHIP reconnecting overlay — shown when connection drops mid-live ── */}
+        {whipState === 'connecting' && isLive && (
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+            <div className="flex items-center gap-2.5 rounded-full border border-white/20 bg-black/65 px-4 py-2.5 backdrop-blur-xl">
+              <svg
+                className="h-4 w-4 animate-spin text-white/60"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M21 12a9 9 0 11-6.219-8.56" />
+              </svg>
+              <span className="text-xs font-medium text-white/70">{t('connecting')}</span>
+            </div>
+          </div>
+        )}
+
+        {/* ── Video share buffering overlay ── */}
+        {videoShare.isBuffering && videoShare.sourceType !== 'camera' && (
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+            <div className="flex items-center gap-2.5 rounded-full border border-white/20 bg-black/65 px-4 py-2.5 backdrop-blur-xl">
+              <svg
+                className="h-4 w-4 animate-spin text-white/60"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M21 12a9 9 0 11-6.219-8.56" />
+              </svg>
+              <span className="text-xs font-medium text-white/60">{t('videoShare.buffering')}</span>
+            </div>
+          </div>
+        )}
+
         {/* Camera feed — always mounted for mic track; hidden when video share is active */}
         <video
           ref={videoRef}
@@ -1070,7 +1182,9 @@ export function FullscreenLiveView(): React.ReactElement {
                       <rect x="14" y="4" width="4" height="16" />
                     </svg>
                   )}
-                  {isPaused ? t('resumeLive') : t('pauseLive')}
+                  <span className="hidden sm:inline">
+                    {isPaused ? t('resumeLive') : t('pauseLive')}
+                  </span>
                 </button>
               )}
 
@@ -1080,7 +1194,7 @@ export function FullscreenLiveView(): React.ReactElement {
                 aria-label={t('minimize')}
                 className={cn(
                   GLASS_PILL,
-                  'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold hover:bg-white/20',
+                  'flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-semibold hover:bg-white/20 sm:px-3',
                 )}
               >
                 <svg
@@ -1098,7 +1212,7 @@ export function FullscreenLiveView(): React.ReactElement {
                   <path d="M22 7V5a2 2 0 0 0-2-2h-2" />
                   <path d="M2 17v2a2 2 0 0 0 2 2h2" />
                 </svg>
-                {t('minimize')}
+                <span className="hidden sm:inline">{t('minimize')}</span>
               </button>
 
               <button
@@ -1107,12 +1221,14 @@ export function FullscreenLiveView(): React.ReactElement {
                 disabled={isEnding}
                 className={cn(
                   GLASS_PILL,
-                  'flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold',
+                  'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold sm:px-4',
                   'hover:bg-red-500/20 hover:border-red-400/30 disabled:cursor-not-allowed disabled:opacity-50',
                 )}
               >
                 <span className="h-2 w-2 rounded-[2px] border border-current" />
-                {isEnding ? t('status.ending') : t('stopLive')}
+                <span className="hidden sm:inline">
+                  {isEnding ? t('status.ending') : t('stopLive')}
+                </span>
               </button>
             </div>
           </div>
@@ -1139,6 +1255,10 @@ export function FullscreenLiveView(): React.ReactElement {
             viewersVisible={viewersVisible}
             onToggleViewersVisible={(v) => void updateViewersVisibility(v)}
             isTogglingVisibility={isTogglingVisibility}
+            socketRef={socketRef}
+            allowedViewerIds={videoShare.allowedViewerIds}
+            onGrantViewerControl={videoShare.grantViewerControl}
+            videoControlEnabled={videoShare.allowViewerControl && videoShare.sourceType !== 'camera'}
             className="absolute left-0 top-14 bottom-24 z-40 w-full border-r sm:w-80"
           />
         )}
@@ -1192,6 +1312,13 @@ export function FullscreenLiveView(): React.ReactElement {
                 videoShare.loadLocalFile(file);
                 setPlatformVideoContext(null);
               }}
+              onSelectMultipleLocalFiles={(files) => {
+                for (const file of files) {
+                  playlist.addItem({ type: 'local-file', name: file.name, file });
+                }
+                setVideoSourceOpen(false);
+                setPlaylistOpen(true);
+              }}
               onSelectOnlineUrl={(url) => {
                 videoShare.loadOnlineUrl(url);
                 // Context will be refreshed via onResolved if this came from a resolve;
@@ -1226,6 +1353,10 @@ export function FullscreenLiveView(): React.ReactElement {
                 onSetSpeed={(r) => videoShare.setSpeed(r)}
                 onToggleViewerControl={(allow) => void updateAllowViewerVideoControl(allow)}
                 onSetVideoVolume={(vol) => videoShare.setVideoVolume(vol)}
+                onPrev={() => playlist.playPrev()}
+                onNext={() => playlist.playNext()}
+                hasPrev={playlist.hasPrev}
+                hasNext={playlist.hasNext}
               />
             )}
 
@@ -1296,14 +1427,39 @@ export function FullscreenLiveView(): React.ReactElement {
           </div>
         )}
 
+        {/* ── Playlist panel ── */}
+        {playlistOpen && (
+          <div className="absolute inset-x-3 bottom-28 z-40 flex flex-col gap-3 rounded-2xl border border-white/15 bg-black/85 p-4 backdrop-blur-2xl sm:left-auto sm:right-16 sm:w-80">
+            <PlaylistPanel
+              items={playlist.items}
+              currentIndex={playlist.currentIndex}
+              onPlayAt={(index) => playlist.playAt(index)}
+              onRemove={(id) => playlist.removeItem(id)}
+              onAddFiles={(files) => {
+                for (const file of files) {
+                  playlist.addItem({ type: 'local-file', name: file.name, file });
+                }
+              }}
+              onAddUrl={(url) => {
+                playlist.addItem({ type: 'online-url', name: url, url });
+              }}
+              onClear={() => playlist.clearPlaylist()}
+              onClose={() => setPlaylistOpen(false)}
+            />
+          </div>
+        )}
+
         {/* ── Right side: action buttons + floating reactions ── */}
         <div
           className={cn(
-            'absolute bottom-28 right-3 flex flex-col items-center gap-3 transition-all duration-300',
+            'absolute right-3 z-20 flex flex-col items-center gap-2.5 sm:gap-3 transition-all duration-300',
+            'max-h-[calc(100svh-18rem)] overflow-y-auto overscroll-contain',
+            '[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]',
             bottomControlsVisible ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-3 pointer-events-none',
           )}
+          style={{ bottom: 'max(7rem, calc(env(safe-area-inset-bottom, 0px) + 6rem))' }}
         >
-          <div className="pointer-events-none relative h-44 w-12 overflow-visible">
+          <div className="pointer-events-none relative h-28 w-12 overflow-visible sm:h-44">
             {liveReactions.map((r) => (
               <LiveReactionFloat
                 key={r.id}
@@ -1321,9 +1477,10 @@ export function FullscreenLiveView(): React.ReactElement {
             onClick={() => {
               setCommentsOpen((o) => !o);
               setViewersPanelOpen(false);
+              setPlaylistOpen(false);
             }}
             className={cn(
-              'relative flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+              'relative flex h-11 w-11 sm:h-12 sm:w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
               commentsOpen
                 ? 'bg-brand/60 border-brand/70 text-white shadow-brand/20'
                 : 'bg-black/45 border-white/20 text-white shadow-black/20',
@@ -1353,7 +1510,7 @@ export function FullscreenLiveView(): React.ReactElement {
           <button
             type="button"
             onClick={fireReaction}
-            className="flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border border-white/20 bg-black/45 backdrop-blur-xl text-white shadow-lg shadow-black/20 transition-transform active:scale-90"
+            className="flex h-11 w-11 sm:h-12 sm:w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border border-white/20 bg-black/45 backdrop-blur-xl text-white shadow-lg shadow-black/20 transition-transform active:scale-90"
           >
             <svg
               className="h-5 w-5"
@@ -1375,7 +1532,7 @@ export function FullscreenLiveView(): React.ReactElement {
             type="button"
             aria-label={t('share.button')}
             onClick={() => void handleShare()}
-            className="flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border border-white/20 bg-black/45 backdrop-blur-xl text-white shadow-lg shadow-black/20 transition-transform active:scale-90"
+            className="flex h-11 w-11 sm:h-12 sm:w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border border-white/20 bg-black/45 backdrop-blur-xl text-white shadow-lg shadow-black/20 transition-transform active:scale-90"
           >
             {shareCopied ? (
               <svg
@@ -1424,7 +1581,7 @@ export function FullscreenLiveView(): React.ReactElement {
               type="button"
               aria-label="Copy HLS stream URL"
               onClick={() => void navigator.clipboard.writeText(platformHlsUrl)}
-              className="flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border border-white/20 bg-black/45 backdrop-blur-xl text-white shadow-lg shadow-black/20 transition-transform active:scale-90"
+              className="flex h-11 w-11 sm:h-12 sm:w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border border-white/20 bg-black/45 backdrop-blur-xl text-white shadow-lg shadow-black/20 transition-transform active:scale-90"
             >
               <svg
                 className="h-5 w-5"
@@ -1455,7 +1612,7 @@ export function FullscreenLiveView(): React.ReactElement {
                 setTimeout(() => setWhepCopied(false), 2500);
               }}
               className={cn(
-                'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg shadow-black/20 transition-transform active:scale-90',
+                'flex h-11 w-11 sm:h-12 sm:w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg shadow-black/20 transition-transform active:scale-90',
                 whepCopied
                   ? 'border-green-400/40 bg-green-900/50 text-green-300'
                   : 'border-white/20 bg-black/45 text-white',
@@ -1508,7 +1665,7 @@ export function FullscreenLiveView(): React.ReactElement {
               onClick={() => currentSession && void toggleRecording(currentSession.id)}
               disabled={isTogglingRecording}
               className={cn(
-                'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+                'flex h-11 w-11 sm:h-12 sm:w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
                 isRecording
                   ? 'border-red-500/60 bg-red-950/70 text-red-300 shadow-red-900/30'
                   : 'border-white/20 bg-black/45 text-white shadow-black/20',
@@ -1556,7 +1713,7 @@ export function FullscreenLiveView(): React.ReactElement {
               onClick={() => setWebcamPipVisible((v) => !v)}
               aria-label={webcamPipVisible ? 'Hide webcam overlay' : 'Show webcam overlay'}
               className={cn(
-                'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+                'flex h-11 w-11 sm:h-12 sm:w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
                 webcamPipVisible
                   ? 'border-cyan-400/40 bg-cyan-900/50 text-cyan-300 shadow-cyan-900/20'
                   : 'border-white/20 bg-black/45 text-white shadow-black/20',
@@ -1598,6 +1755,40 @@ export function FullscreenLiveView(): React.ReactElement {
             </button>
           )}
 
+          {/* Playlist toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              setPlaylistOpen((o) => !o);
+              setCommentsOpen(false);
+              setViewersPanelOpen(false);
+            }}
+            aria-label={t('playlist.title')}
+            className={cn(
+              'flex h-11 w-11 sm:h-12 sm:w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+              playlistOpen || playlist.items.length > 0
+                ? 'border-orange-400/40 bg-orange-900/50 text-orange-300 shadow-orange-900/20'
+                : 'border-white/20 bg-black/45 text-white shadow-black/20',
+            )}
+          >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <line x1="8" y1="6" x2="21" y2="6" />
+              <line x1="8" y1="12" x2="21" y2="12" />
+              <line x1="8" y1="18" x2="21" y2="18" />
+              <polyline points="3 6 4 7 6 5" />
+              <polyline points="3 12 4 13 6 11" />
+              <polyline points="3 18 4 19 6 17" />
+            </svg>
+            <span className="relative text-[9px] font-semibold leading-none">
+              {t('playlist.title')}
+              {playlist.items.length > 0 && (
+                <span className="absolute -right-3 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-orange-400 px-0.5 text-[7px] font-bold leading-none text-black">
+                  {playlist.items.length}
+                </span>
+              )}
+            </span>
+          </button>
+
           {/* Video source toggle */}
           <button
             type="button"
@@ -1605,10 +1796,11 @@ export function FullscreenLiveView(): React.ReactElement {
               setVideoSourceOpen((o) => !o);
               setCommentsOpen(false);
               setViewersPanelOpen(false);
+              setPlaylistOpen(false);
             }}
             aria-label={t('videoShare.sourceLabel')}
             className={cn(
-              'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+              'flex h-11 w-11 sm:h-12 sm:w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
               videoSourceOpen || videoShare.sourceType !== 'camera'
                 ? 'border-purple-400/40 bg-purple-900/50 text-purple-300 shadow-purple-900/20'
                 : 'border-white/20 bg-black/45 text-white shadow-black/20',
@@ -1639,10 +1831,11 @@ export function FullscreenLiveView(): React.ReactElement {
             onClick={() => {
               setViewersPanelOpen((o) => !o);
               setCommentsOpen(false);
+              setPlaylistOpen(false);
             }}
             aria-label={viewersPanelOpen ? t('viewers.hideAudience') : t('viewers.showAudience')}
             className={cn(
-              'flex h-12 w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
+              'flex h-11 w-11 sm:h-12 sm:w-12 flex-col items-center justify-center gap-0.5 rounded-2xl border backdrop-blur-xl shadow-lg transition-all active:scale-90',
               viewersPanelOpen
                 ? 'border-blue-400/40 bg-blue-900/50 text-blue-300 shadow-blue-900/20'
                 : 'border-white/20 bg-black/45 text-white shadow-black/20',
@@ -1675,11 +1868,25 @@ export function FullscreenLiveView(): React.ReactElement {
           </button>
         </div>
 
-        {/* ── Floating comment bubbles — hidden when panel is open ── */}
+        {/* ── Floating comment bubbles — auto-disappear, click opens panel ── */}
         {!commentsOpen && (
-          <div className="absolute bottom-28 left-3 flex flex-col-reverse gap-1.5">
-            {overlayComments.map((c) => (
-              <LiveCommentFloat key={c.id} comment={c} animate={isNewComment(c)} />
+          <div
+            className="absolute left-3 z-20 flex flex-col-reverse gap-1.5"
+            style={{ bottom: 'max(7rem, calc(env(safe-area-inset-bottom, 0px) + 6rem))' }}
+          >
+            {floatingComments.map(({ comment, key }) => (
+              <LiveCommentFloat
+                key={key}
+                comment={comment}
+                animate
+                onClick={() => {
+                  pendingScrollIdRef.current = comment.id;
+                  setCommentsOpen(true);
+                  setViewersPanelOpen(false);
+                  setVideoSourceOpen(false);
+                  setPlaylistOpen(false);
+                }}
+              />
             ))}
           </div>
         )}
@@ -1688,15 +1895,16 @@ export function FullscreenLiveView(): React.ReactElement {
         {/* pointer-events-none on the gradient so right-side buttons remain clickable through the transparent region */}
         <div
           className={cn(
-            'pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/50 to-transparent px-4 pb-6 pt-24 sm:px-6 transition-all duration-300',
+            'pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/50 to-transparent px-4 pt-24 sm:px-6 transition-all duration-300',
             bottomControlsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3',
           )}
+          style={{ paddingBottom: 'max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))' }}
         >
           {/* Volume sliders — glass pill */}
-          <div className="pointer-events-auto mb-5 flex justify-center">
-            <div className="flex items-center gap-6 rounded-2xl border border-white/20 bg-black/40 px-5 py-3 backdrop-blur-xl sm:gap-10">
+          <div className="pointer-events-auto mb-4 flex justify-center sm:mb-5">
+            <div className="flex items-center gap-3 rounded-2xl border border-white/20 bg-black/40 px-3 py-3 backdrop-blur-xl sm:gap-10 sm:px-5">
               {/* Mic */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <svg
                   className="h-4 w-4 flex-shrink-0 text-white/50"
                   viewBox="0 0 24 24"
@@ -1717,15 +1925,15 @@ export function FullscreenLiveView(): React.ReactElement {
                   value={micVolume}
                   onChange={(e) => setMicVolume(Number(e.target.value))}
                   aria-label={t('volume.mic')}
-                  className="h-1 w-20 cursor-pointer accent-white sm:w-28"
+                  className="h-1 w-14 cursor-pointer accent-white sm:w-28"
                 />
-                <span className="w-7 text-right text-[10px] tabular-nums text-white/40">
+                <span className="w-6 text-right text-[10px] tabular-nums text-white/40 sm:w-7">
                   {micVolume}%
                 </span>
               </div>
 
               {/* Monitor */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <svg
                   className="h-4 w-4 flex-shrink-0 text-white/50"
                   viewBox="0 0 24 24"
@@ -1746,9 +1954,9 @@ export function FullscreenLiveView(): React.ReactElement {
                   value={speakerVolume}
                   onChange={(e) => setSpeakerVolume(Number(e.target.value))}
                   aria-label={t('volume.monitor')}
-                  className="h-1 w-20 cursor-pointer accent-white sm:w-28"
+                  className="h-1 w-14 cursor-pointer accent-white sm:w-28"
                 />
-                <span className="w-7 text-right text-[10px] tabular-nums text-white/40">
+                <span className="w-6 text-right text-[10px] tabular-nums text-white/40 sm:w-7">
                   {speakerVolume}%
                 </span>
               </div>
@@ -1756,7 +1964,7 @@ export function FullscreenLiveView(): React.ReactElement {
           </div>
 
           {/* Media controls */}
-          <div className="pointer-events-auto flex items-center justify-center gap-4">
+          <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-3 sm:gap-4">
             {/* Mic toggle — only when camera is active */}
             {cameraState === 'active' && (
               <button
@@ -1926,7 +2134,7 @@ export function FullscreenLiveView(): React.ReactElement {
               onClick={() => currentSession && void endSession(currentSession.id)}
               disabled={isEnding}
               className={cn(
-                'flex items-center gap-2 rounded-full border border-white/20 bg-black/45 px-7 py-3 text-sm font-semibold text-white backdrop-blur-xl transition-colors',
+                'flex items-center gap-2 rounded-full border border-white/20 bg-black/45 px-4 py-3 text-sm font-semibold text-white backdrop-blur-xl transition-colors sm:px-7',
                 'hover:border-red-400/50 hover:bg-red-900/50 disabled:cursor-not-allowed disabled:opacity-50',
               )}
             >

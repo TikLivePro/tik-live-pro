@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { cookies } from 'next/headers';
 import { defaultLocale, isSupported, type SupportedLocale } from '@tik-live-pro/i18n';
@@ -11,6 +11,12 @@ export const metadata: Metadata = {
   title: 'TikLivePro — Multi-Platform Live Streaming',
   description: 'Stream simultaneously to TikTok, Facebook and more from one dashboard.',
   icons: { icon: '/logo.png', apple: '/logo.png' },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

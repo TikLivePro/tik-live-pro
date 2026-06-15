@@ -134,6 +134,7 @@
       "duration": "{duration}",
       "shareEmail": "Partager par e-mail"
     },
+    "connecting": "Connexion…",
     "returnToLive": "Retourner au live",
     "goHome": "Tableau de bord",
     "minimize": "Réduire",
@@ -180,7 +181,10 @@
       "panel": "Spectateurs en direct",
       "noneYet": "Aucun spectateur pour l'instant",
       "updatedOn": "Liste des spectateurs visible",
-      "updatedOff": "Liste des spectateurs masquée"
+      "updatedOff": "Liste des spectateurs masquée",
+      "videoControl": "Contrôle vidéo",
+      "grantVideoControl": "Autoriser le contrôle vidéo",
+      "revokeVideoControl": "Révoquer le contrôle vidéo"
     },
     "videoShare": {
       "sourceLabel": "Vidéo",
@@ -216,7 +220,22 @@
       "historyClose": "Fermer",
       "historyPrev": "Préc.",
       "historyNext": "Suiv.",
-      "historyPage": "{current} sur {total}"
+      "historyPage": "{current} sur {total}",
+      "seekBack10": "Reculer 10s",
+      "seekForward10": "Avancer 10s",
+      "prevVideo": "Vidéo précédente",
+      "nextVideo": "Vidéo suivante"
+    },
+    "playlist": {
+      "title": "Playlist",
+      "empty": "La playlist est vide — ajoutez des vidéos ci-dessous",
+      "addUrl": "Ajouter",
+      "addFile": "Ajouter des fichiers vidéo à la playlist",
+      "urlPlaceholder": "Collez l'URL de la vidéo…",
+      "urlPlatformHint": "Les URL de plateformes doivent être résolues — utilisez le sélecteur de source vidéo.",
+      "remove": "Supprimer",
+      "clear": "Tout effacer",
+      "playItem": "Lire cette vidéo"
     },
     "errors": {
       "noDestinations": "Veuillez ajouter au moins une destination",
@@ -546,6 +565,7 @@
       "unmute": "Activer",
       "label": "Volume"
     },
+    "loading": "Chargement du stream…",
     "quality": {
       "label": "Qualité",
       "auto": "Auto",

@@ -13,16 +13,19 @@ const PLATFORM_DOT: Record<string, string> = {
 interface Props {
   comment: Comment;
   animate?: boolean;
+  onClick?: () => void;
 }
 
-export function LiveCommentFloat({ comment, animate = true }: Props): React.ReactElement {
+export function LiveCommentFloat({ comment, animate = true, onClick }: Props): React.ReactElement {
   const dot = PLATFORM_DOT[comment.platform] ?? 'bg-white/40';
 
   return (
     <div
+      onClick={onClick}
       className={cn(
         'flex max-w-[260px] items-start gap-2 rounded-2xl border border-white/20 bg-black/55 px-3 py-2 backdrop-blur-xl shadow-lg shadow-black/30',
         animate && 'animate-slide-comment',
+        onClick && 'cursor-pointer hover:bg-black/70 transition-colors',
       )}
     >
       <div className="relative mt-0.5 shrink-0">

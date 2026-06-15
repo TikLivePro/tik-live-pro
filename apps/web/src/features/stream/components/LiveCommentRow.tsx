@@ -13,6 +13,11 @@ const PLATFORM_DOT: Record<string, string> = {
 
 const QUICK_REACTIONS = ['❤️', '🔥', '😂', '👏', '😮', '💯'];
 
+const isImageUrl = (url: string) =>
+  url.startsWith('data:image') ||
+  url.includes('giphy.com') ||
+  /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(url);
+
 interface Props {
   comment: Comment;
   isReacting: boolean;
@@ -35,7 +40,7 @@ export function LiveCommentRow({
   const dot = PLATFORM_DOT[comment.platform] ?? 'bg-white/30';
 
   return (
-    <div className="group relative flex gap-2.5 rounded-xl px-3 py-2 transition-colors hover:bg-white/10">
+    <div id={`comment-${comment.id}`} className="group relative flex gap-2.5 rounded-xl px-3 py-2 transition-colors hover:bg-white/10">
       {/* Avatar */}
       <div className="relative mt-0.5 shrink-0">
         {comment.authorAvatarUrl ? (
@@ -59,6 +64,32 @@ export function LiveCommentRow({
         <p className="truncate text-[11px] font-semibold text-white/60">{comment.authorName}</p>
         {comment.content && (
           <p className="break-words text-xs leading-snug text-white">{comment.content}</p>
+        )}
+        {(comment.mediaUrls ?? []).length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {(comment.mediaUrls ?? []).map((url, i) =>
+              isImageUrl(url) ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={i}
+                  src={url}
+                  alt={`attachment ${i + 1}`}
+                  className="max-h-24 max-w-full rounded-lg object-cover"
+                  loading="lazy"
+                />
+              ) : (
+                <a
+                  key={i}
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] text-white/70 underline hover:text-white"
+                >
+                  📎 file
+                </a>
+              ),
+            )}
+          </div>
         )}
       </div>
 

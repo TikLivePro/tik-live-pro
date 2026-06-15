@@ -134,6 +134,7 @@
       "duration": "{duration}",
       "shareEmail": "Share via email"
     },
+    "connecting": "Connecting…",
     "returnToLive": "Return to live",
     "goHome": "Dashboard",
     "minimize": "Minimize",
@@ -180,7 +181,10 @@
       "panel": "Live viewers",
       "noneYet": "No viewers yet",
       "updatedOn": "Viewer list visible",
-      "updatedOff": "Viewer list hidden"
+      "updatedOff": "Viewer list hidden",
+      "videoControl": "Video control",
+      "grantVideoControl": "Grant video control",
+      "revokeVideoControl": "Revoke video control"
     },
     "videoShare": {
       "sourceLabel": "Video",
@@ -216,7 +220,22 @@
       "historyClose": "Close",
       "historyPrev": "Prev",
       "historyNext": "Next",
-      "historyPage": "{current} of {total}"
+      "historyPage": "{current} of {total}",
+      "seekBack10": "Back 10s",
+      "seekForward10": "Forward 10s",
+      "prevVideo": "Previous video",
+      "nextVideo": "Next video"
+    },
+    "playlist": {
+      "title": "Playlist",
+      "empty": "Playlist is empty — add videos below",
+      "addUrl": "Add",
+      "addFile": "Add video file(s) to playlist",
+      "urlPlaceholder": "Paste video URL…",
+      "urlPlatformHint": "Platform URLs need to be resolved first — use the Video source picker.",
+      "remove": "Remove",
+      "clear": "Clear all",
+      "playItem": "Play this video"
     },
     "errors": {
       "noDestinations": "Please add at least one destination",
@@ -546,6 +565,7 @@
       "unmute": "Unmute",
       "label": "Volume"
     },
+    "loading": "Loading stream…",
     "quality": {
       "label": "Quality",
       "auto": "Auto",

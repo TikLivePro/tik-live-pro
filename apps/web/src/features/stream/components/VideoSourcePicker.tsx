@@ -23,6 +23,8 @@ interface Props {
   cameraDisabled?: boolean;
   onSelectCamera: () => void;
   onSelectLocalFile: (file: File) => void;
+  /** Called instead of onSelectLocalFile when 2+ files are chosen — routes them to the playlist. */
+  onSelectMultipleLocalFiles?: (files: File[]) => void;
   onSelectOnlineUrl: (url: string) => void;
   /**
    * Called when the user switches to a different quality of the *already-playing* video.
@@ -63,6 +65,7 @@ export function VideoSourcePicker({
   cameraDisabled = false,
   onSelectCamera,
   onSelectLocalFile,
+  onSelectMultipleLocalFiles,
   onSelectOnlineUrl,
   onSwitchQuality,
   onSelectRecentSource,
@@ -115,8 +118,12 @@ export function VideoSourcePicker({
   }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>): void {
-    const file = e.target.files?.[0];
-    if (file) onSelectLocalFile(file);
+    const files = Array.from(e.target.files ?? []);
+    if (files.length > 1 && onSelectMultipleLocalFiles) {
+      onSelectMultipleLocalFiles(files);
+    } else if (files[0]) {
+      onSelectLocalFile(files[0]);
+    }
     e.target.value = '';
   }
 
@@ -279,7 +286,7 @@ export function VideoSourcePicker({
         {/* Contextual input */}
         {pendingTab === 'local-file' && (
           <div className="flex flex-col gap-1.5">
-            <input ref={fileInputRef} type="file" accept="video/*" className="hidden" onChange={handleFileChange} />
+            <input ref={fileInputRef} type="file" accept="video/*" multiple className="hidden" onChange={handleFileChange} />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}

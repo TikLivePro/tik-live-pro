@@ -13,22 +13,33 @@ import type { PreSourceType } from '../store/stream.store';
 import { useWebcamAvailability } from '../hooks/useWebcamAvailability';
 import { isUnsafeVideoUrl, detectVideoPlatform } from '../consts/video-url.utils';
 import { resolveVideoProxyUrl, API_BASE, buildMergeStreamUrl } from '@/lib/api';
+import type { PlaylistItem } from '../interfaces/video-share.interfaces';
 
 interface Props {
   onSubmit: (params: { title: string; description?: string; destinationIds: SocialAccountId[] }) => void;
   isLoading: boolean;
 }
 
+type SourceTab = 'camera' | PreSourceType | 'playlist';
+
 export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
   const t = useTranslations('stream');
   const { data: accounts = [] } = useSocialAccounts();
-  const { videoQualityId, setVideoQualityId, hydrateVideoQuality, setPreSource, preSource, setPlatformVideoContext } = useStreamStore();
+  const {
+    videoQualityId,
+    setVideoQualityId,
+    hydrateVideoQuality,
+    setPreSource,
+    preSource,
+    setPrePlaylist,
+    setPlatformVideoContext,
+  } = useStreamStore();
   const { hasWebcam, checked: webcamChecked } = useWebcamAvailability();
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<SocialAccountId>>(new Set());
-  const [sourceTab, setSourceTab] = useState<'camera' | PreSourceType>('camera');
+  const [sourceTab, setSourceTab] = useState<SourceTab>('camera');
   const [urlInput, setUrlInput] = useState('');
   const [urlPlatform, setUrlPlatform] = useState<string | null>(null);
   const [isResolving, setIsResolving] = useState(false);
@@ -37,6 +48,12 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
   const [selectedHeight, setSelectedHeight] = useState<number | null>(null);
   const [resolvedPlatformUrl, setResolvedPlatformUrl] = useState<string | null>(null);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+
+  // Playlist state
+  const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
+  const [playlistUrlInput, setPlaylistUrlInput] = useState('');
+  const [playlistUrlError, setPlaylistUrlError] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const initializedRef = useRef(false);
   const webcamDefaultAppliedRef = useRef(false);
@@ -85,6 +102,24 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
     setSourceTab('local-file');
     setUrlPlatform(null);
     setPreSource({ type: 'local-file', file });
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>): void {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length > 1) {
+      const items: PlaylistItem[] = files.map((f) => ({
+        id: crypto.randomUUID(),
+        type: 'local-file',
+        name: f.name,
+        file: f,
+      }));
+      setPlaylistItems((prev) => [...prev, ...items]);
+      setSourceTab('playlist');
+      setPreSource(null);
+    } else if (files[0]) {
+      handleSelectFile(files[0]);
+    }
+    e.target.value = '';
   }
 
   function handleUrlChange(value: string): void {
@@ -152,8 +187,37 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
     setPreSource({ type: 'online-url', url: trimmed });
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  // ── Playlist helpers ────────────────────────────────────────
+
+  function handleAddPlaylistUrl(): void {
+    const trimmed = playlistUrlInput.trim();
+    if (!trimmed) return;
+    if (isUnsafeVideoUrl(trimmed)) {
+      setPlaylistUrlError(t('videoShare.urlUnsafeBlocked'));
+      return;
+    }
+    if (detectVideoPlatform(trimmed)) {
+      setPlaylistUrlError(t('playlist.urlPlatformHint'));
+      return;
+    }
+    setPlaylistItems((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), type: 'online-url', name: trimmed, url: trimmed },
+    ]);
+    setPlaylistUrlInput('');
+    setPlaylistUrlError(null);
+  }
+
+  function handleRemovePlaylistItem(id: string): void {
+    setPlaylistItems((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  function handleSubmit(e: React.FormEvent): void {
     e.preventDefault();
+    if (sourceTab === 'playlist' && playlistItems.length > 0) {
+      setPrePlaylist(playlistItems);
+      setPreSource(null);
+    }
     const trimmedDesc = description.trim();
     onSubmit({
       title: title.trim(),
@@ -164,6 +228,46 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
 
   // Accounts are optional — only the title is required
   const canSubmit = title.trim().length > 0 && !isLoading;
+
+  const tabs: Array<{ id: SourceTab; labelKey: string; icon: React.ReactElement }> = [
+    {
+      id: 'camera',
+      labelKey: 'videoShare.camera',
+      icon: (
+        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.89L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'local-file',
+      labelKey: 'videoShare.localFile',
+      icon: (
+        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" />
+        </svg>
+      ),
+    },
+    {
+      id: 'online-url',
+      labelKey: 'videoShare.onlineUrl',
+      icon: (
+        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 014-10z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'playlist',
+      labelKey: 'playlist.title',
+      icon: (
+        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
+          <polyline points="3 6 4 7 6 5" /><polyline points="3 12 4 13 6 11" /><polyline points="3 18 4 19 6 17" />
+        </svg>
+      ),
+    },
+  ];
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -199,6 +303,27 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
         {sourceTab === 'online-url' && !(preSource?.type === 'online-url' && preSource.url) && (
           <div className="flex aspect-video w-full items-center justify-center rounded-2xl bg-slate-900">
             <p className="text-sm text-slate-400">{t('videoShare.urlPlaceholder')}</p>
+          </div>
+        )}
+        {sourceTab === 'playlist' && (
+          <div className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-2xl bg-slate-900">
+            {playlistItems.length === 0 ? (
+              <p className="text-sm text-slate-400">{t('playlist.empty')}</p>
+            ) : (
+              <div className="flex w-full flex-col items-center gap-1 px-4">
+                <svg className="mb-1 h-6 w-6 text-orange-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
+                  <polyline points="3 6 4 7 6 5" /><polyline points="3 12 4 13 6 11" /><polyline points="3 18 4 19 6 17" />
+                </svg>
+                <p className="text-sm font-semibold text-white">
+                  {playlistItems.length} {playlistItems.length === 1 ? 'video' : 'videos'}
+                </p>
+                <p className="text-xs text-slate-400 truncate max-w-[200px]">{playlistItems[0]?.name}</p>
+                {playlistItems.length > 1 && (
+                  <p className="text-xs text-slate-500">+ {playlistItems.length - 1} more</p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -286,65 +411,64 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
       {/* Video source picker */}
       <div className="space-y-2">
         <p className="text-sm font-medium">{t('videoShare.sourcePickerLabel')}</p>
+
+        {/* Tab row */}
         <div className="flex gap-1 rounded-xl border border-border bg-muted/40 p-1">
-          {(['camera', 'local-file', 'online-url'] as const).map((tab) => {
-            const isCameraTab = tab === 'camera';
+          {tabs.map((tab) => {
+            const isCameraTab = tab.id === 'camera';
             const isDisabled = isCameraTab && webcamChecked && !hasWebcam;
+            const isActive = sourceTab === tab.id;
+            const hasCount = tab.id === 'playlist' && playlistItems.length > 0;
             return (
-            <button
-              key={tab}
-              type="button"
-              disabled={isDisabled}
-              title={isDisabled ? t('camera.notDetected') : undefined}
-              onClick={() => {
-                if (isDisabled) return;
-                if (tab === 'camera') handleSelectCamera();
-                else if (tab === 'local-file') fileInputRef.current?.click();
-                else setSourceTab('online-url');
-              }}
-              className={cn(
-                'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition-colors',
-                isDisabled
-                  ? 'cursor-not-allowed text-muted-foreground/30'
-                  : sourceTab === tab
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {tab === 'camera' && (
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.89L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
-                </svg>
-              )}
-              {tab === 'local-file' && (
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" />
-                </svg>
-              )}
-              {tab === 'online-url' && (
-                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z" />
-                </svg>
-              )}
-              {t(tab === 'camera' ? 'videoShare.camera' : tab === 'local-file' ? 'videoShare.localFile' : 'videoShare.onlineUrl')}
-            </button>
-          ); })}
+              <button
+                key={tab.id}
+                type="button"
+                disabled={isDisabled}
+                title={isDisabled ? t('camera.notDetected') : undefined}
+                onClick={() => {
+                  if (isDisabled) return;
+                  if (tab.id === 'camera') {
+                    handleSelectCamera();
+                  } else if (tab.id === 'local-file') {
+                    fileInputRef.current?.click();
+                  } else if (tab.id === 'online-url') {
+                    setSourceTab('online-url');
+                  } else {
+                    setSourceTab('playlist');
+                  }
+                }}
+                className={cn(
+                  'relative flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition-colors',
+                  isDisabled
+                    ? 'cursor-not-allowed text-muted-foreground/30'
+                    : isActive
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {tab.icon}
+                {t(tab.labelKey as Parameters<typeof t>[0])}
+                {hasCount && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-500 px-0.5 text-[9px] font-bold leading-none text-white">
+                    {playlistItems.length}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* File input (hidden) */}
+        {/* Hidden file input — multiple so picking 2+ files auto-switches to playlist */}
         <input
           ref={fileInputRef}
           type="file"
           accept="video/*"
+          multiple
           className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) handleSelectFile(file);
-            e.target.value = '';
-          }}
+          onChange={handleFileChange}
         />
 
-        {/* URL input */}
+        {/* URL input (single-source tab) */}
         {sourceTab === 'online-url' && (
           <div className="flex flex-col gap-1.5">
             <div className="flex gap-2">
@@ -436,6 +560,88 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
                     );
                   })}
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Playlist editor */}
+        {sourceTab === 'playlist' && (
+          <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/20 p-3">
+            {/* Add URL row */}
+            <div className="flex flex-col gap-1">
+              <div className="flex gap-1.5">
+                <input
+                  type="url"
+                  value={playlistUrlInput}
+                  onChange={(e) => { setPlaylistUrlInput(e.target.value); setPlaylistUrlError(null); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddPlaylistUrl(); } }}
+                  placeholder={t('playlist.urlPlaceholder')}
+                  className="min-w-0 flex-1 rounded-xl border border-border bg-background px-3 py-1.5 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand/50"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddPlaylistUrl}
+                  disabled={!playlistUrlInput.trim()}
+                  className="rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs font-semibold transition-colors hover:bg-muted disabled:opacity-40"
+                >
+                  {t('playlist.addUrl')}
+                </button>
+              </div>
+              {playlistUrlError && (
+                <p className="text-[10px] font-semibold text-red-500">{playlistUrlError}</p>
+              )}
+            </div>
+
+            {/* Add files button */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border bg-background py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" />
+              </svg>
+              {t('playlist.addFile')}
+            </button>
+
+            {/* Playlist items */}
+            {playlistItems.length === 0 ? (
+              <p className="py-2 text-center text-xs text-muted-foreground">{t('playlist.empty')}</p>
+            ) : (
+              <div className="flex flex-col gap-1 overflow-y-auto" style={{ maxHeight: '200px' }}>
+                {playlistItems.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5"
+                  >
+                    <span className="w-4 shrink-0 text-center text-[10px] font-semibold text-muted-foreground">
+                      {index + 1}
+                    </span>
+                    {item.type === 'local-file' ? (
+                      <svg className="h-3 w-3 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" />
+                      </svg>
+                    ) : (
+                      <svg className="h-3 w-3 shrink-0 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 014-10z" />
+                      </svg>
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-xs text-foreground" title={item.name}>
+                      {item.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemovePlaylistItem(item.id)}
+                      aria-label={t('playlist.remove')}
+                      className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground/50 transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>

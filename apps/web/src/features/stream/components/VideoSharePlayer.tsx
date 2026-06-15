@@ -21,6 +21,10 @@ interface Props {
   onSetSpeed: (rate: number) => void;
   onToggleViewerControl: (allow: boolean) => void;
   onSetVideoVolume: (volume: number) => void;
+  onPrev?: () => void;
+  onNext?: () => void;
+  hasPrev?: boolean;
+  hasNext?: boolean;
 }
 
 const SPEEDS = [0.5, 1, 1.5, 2] as const;
@@ -49,6 +53,10 @@ export function VideoSharePlayer({
   onSetSpeed,
   onToggleViewerControl,
   onSetVideoVolume,
+  onPrev,
+  onNext,
+  hasPrev = false,
+  hasNext = false,
 }: Props): React.ReactElement {
   const t = useTranslations('stream');
   const progress = duration > 0 ? currentTime / duration : 0;
@@ -105,36 +113,84 @@ export function VideoSharePlayer({
             </div>
           )}
 
-          {/* Controls row */}
-          <div className="flex items-center gap-2">
+          {/* Transport row: Prev | -10s | Play/Pause | +10s | Next */}
+          <div className="flex items-center justify-center gap-1.5">
+            {/* Prev */}
+            <button
+              type="button"
+              onClick={onPrev}
+              disabled={!hasPrev}
+              aria-label={t('videoShare.prevVideo')}
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/50 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <polygon points="19 20 9 12 19 4 19 20" />
+                <line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </button>
+
+            {/* −10s */}
+            <button
+              type="button"
+              onClick={() => onSeek(Math.max(0, currentTime - 10))}
+              aria-label={t('videoShare.seekBack10')}
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M1 4v6h6" />
+                <path d="M3.51 15a9 9 0 1 0 .49-3.5" />
+              </svg>
+            </button>
+
             {/* Play / Pause */}
             <button
               type="button"
               onClick={isPlaying ? onPause : onPlay}
               aria-label={isPlaying ? t('videoShare.pause') : t('videoShare.play')}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition-colors hover:bg-white/20"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition-colors hover:bg-white/20"
             >
               {isPlaying ? (
-                <svg
-                  className="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <rect x="6" y="4" width="4" height="16" />
                   <rect x="14" y="4" width="4" height="16" />
                 </svg>
               ) : (
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <svg className="h-4 w-4 translate-x-0.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <polygon points="5 3 19 12 5 21 5 3" />
                 </svg>
               )}
             </button>
 
+            {/* +10s */}
+            <button
+              type="button"
+              onClick={() => onSeek(Math.min(duration || Infinity, currentTime + 10))}
+              aria-label={t('videoShare.seekForward10')}
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M23 4v6h-6" />
+                <path d="M20.49 15a9 9 0 1 1-.49-3.5" />
+              </svg>
+            </button>
+
+            {/* Next */}
+            <button
+              type="button"
+              onClick={onNext}
+              disabled={!hasNext}
+              aria-label={t('videoShare.nextVideo')}
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/50 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <polygon points="5 4 15 12 5 20 5 4" />
+                <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Speed + viewer control row */}
+          <div className="flex items-center gap-2">
             {/* Speed selector */}
             <div className="flex items-center gap-1">
               {SPEEDS.map((s) => (
@@ -172,16 +228,7 @@ export function VideoSharePlayer({
                   : 'border-white/15 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white',
               )}
             >
-              <svg
-                className="h-3 w-3"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
+              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
                 <circle cx="9" cy="7" r="4" />
                 <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />

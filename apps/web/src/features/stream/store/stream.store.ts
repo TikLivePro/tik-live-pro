@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { LiveSession, LiveSessionStatus } from '@tik-live-pro/shared-types';
 import type { Comment } from '@tik-live-pro/shared-types';
 import { DEFAULT_VIDEO_QUALITY_ID } from '../consts/stream.consts';
-import type { PlatformVideoContext } from '../interfaces/video-share.interfaces';
+import type { PlatformVideoContext, PlaylistItem } from '../interfaces/video-share.interfaces';
 
 const MAX_COMMENTS = 200;
 const MAX_REACTIONS = 20;
@@ -55,6 +55,9 @@ interface StreamState {
   hydrateVideoQuality: () => void;
   preSource: PreSource | null;
   setPreSource: (src: PreSource | null) => void;
+  /** Playlist pre-configured in GoLiveForm — consumed by FullscreenLiveView on mount. */
+  prePlaylist: PlaylistItem[];
+  setPrePlaylist: (items: PlaylistItem[]) => void;
   /** Context for platform-resolved URLs (YouTube, Twitch…). Survives the GoLiveForm → dashboard transition. */
   platformVideoContext: PlatformVideoContext | null;
   setPlatformVideoContext: (ctx: PlatformVideoContext | null) => void;
@@ -76,6 +79,7 @@ export const useStreamStore = create<StreamState>()((set, get) => ({
   activeStream: null,
   videoQualityId: DEFAULT_VIDEO_QUALITY_ID,
   preSource: null,
+  prePlaylist: [],
   platformVideoContext: null,
 
   setSession: (session) => {
@@ -167,6 +171,7 @@ export const useStreamStore = create<StreamState>()((set, get) => ({
     if (stored) set({ videoQualityId: stored });
   },
   setPreSource: (src) => set({ preSource: src }),
+  setPrePlaylist: (items) => set({ prePlaylist: items }),
   setPlatformVideoContext: (ctx) => {
     try {
       if (ctx) localStorage.setItem(PLATFORM_CTX_KEY, JSON.stringify(ctx));

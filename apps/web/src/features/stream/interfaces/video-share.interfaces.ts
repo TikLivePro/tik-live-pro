@@ -1,5 +1,13 @@
 export type VideoSourceType = 'camera' | 'local-file' | 'online-url';
 
+export interface PlaylistItem {
+  id: string;
+  type: 'local-file' | 'online-url';
+  name: string;
+  file?: File;
+  url?: string;
+}
+
 export interface PlatformVideoContext {
   /** Original platform URL (YouTube, Twitch…) — used to re-resolve after CDN expiry or quality switch. */
   platformUrl: string;
@@ -15,6 +23,7 @@ export interface VideoControlCommand {
   type: VideoControlType;
   currentTime?: number;
   speed?: number;
+  viewerId?: string;
 }
 
 export type RecentSource =
@@ -52,6 +61,10 @@ export interface VideoShareResult {
   seek: (time: number) => void;
   setSpeed: (rate: number) => void;
   setAllowViewerControl: (allow: boolean) => void;
+  /** Grant or revoke video-control permission for a specific viewer socket ID. */
+  grantViewerControl: (viewerId: string, allowed: boolean) => void;
+  /** Set of viewer socket IDs currently granted video control. */
+  allowedViewerIds: ReadonlySet<string>;
   setVideoVolume: (volume: number) => void;
   getVideoTrack: () => MediaStreamTrack | null;
   getAudioTrack: () => MediaStreamTrack | null;

@@ -17,7 +17,6 @@ const MAX_RECENT = 50;
 const LAST_SOURCE_KEY = 'tiklivepro:video:lastSource';
 const LAST_TIME_KEY = 'tiklivepro:video:lastTime';
 const VOLUME_KEY = 'tiklivepro:video:volume';
-const ALLOW_VIEWER_CTRL_KEY = 'tiklivepro:video:allowViewerControl';
 
 interface SavedSource {
   type: 'online-url';
@@ -43,11 +42,6 @@ function readSavedVolume(): number {
     const v = localStorage.getItem(VOLUME_KEY);
     return v ? Math.min(100, Math.max(0, Number(v))) : 50;
   } catch { return 50; }
-}
-
-function readAllowViewerControl(): boolean {
-  try { return localStorage.getItem(ALLOW_VIEWER_CTRL_KEY) === 'true'; }
-  catch { return false; }
 }
 
 function loadSavedUrls(): RecentSource[] {
@@ -77,10 +71,13 @@ function persistUrls(sources: RecentSource[]): void {
 interface UseVideoShareOptions {
   socketRef: MutableRefObject<Socket | null>;
   sessionId: string | null;
+  onVideoEnded?: () => void;
 }
 
-export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): VideoShareResult {
+export function useVideoShare({ socketRef, sessionId, onVideoEnded }: UseVideoShareOptions): VideoShareResult {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const onVideoEndedRef = useRef(onVideoEnded);
+  useEffect(() => { onVideoEndedRef.current = onVideoEnded; }, [onVideoEnded]);
 
   // captureStream() is called once at mount and stays bound to the element for its
   // lifetime. The stream automatically reflects whichever file is currently playing —
@@ -120,9 +117,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   const [isQualitySwitching, setIsQualitySwitching] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [allowViewerControl, setAllowViewerControlState] = useState(() =>
-    typeof window !== 'undefined' ? readAllowViewerControl() : false
-  );
+  const [allowViewerControl, setAllowViewerControlState] = useState(false);
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
   const [bufferedAhead, setBufferedAhead] = useState(0);
   const [bufferedRanges, setBufferedRanges] = useState<Array<{ start: number; end: number }>>([]);
@@ -138,6 +133,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   const [effectiveUrl, setEffectiveUrl] = useState<string | null>(null);
 
   const allowViewerControlRef = useRef(false);
+  const [allowedViewerIds, setAllowedViewerIds] = useState<ReadonlySet<string>>(new Set());
   const sourceTypeRef = useRef<VideoSourceType>('camera');
 
   useEffect(() => {
@@ -205,6 +201,7 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     const onEnded = (): void => {
       setIsPlaying(false);
       try { localStorage.removeItem(LAST_TIME_KEY); } catch { /* ignore */ }
+      onVideoEndedRef.current?.();
     };
     const onProgress = (): void => updateBuffered();
     const onCanPlay = (): void => updateBuffered();
@@ -458,8 +455,17 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
   const setAllowViewerControl = useCallback((allow: boolean): void => {
     allowViewerControlRef.current = allow;
     setAllowViewerControlState(allow);
-    try { localStorage.setItem(ALLOW_VIEWER_CTRL_KEY, String(allow)); } catch { /* ignore */ }
+    if (!allow) setAllowedViewerIds(new Set());
   }, []);
+
+  const grantViewerControl = useCallback((viewerId: string, allowed: boolean): void => {
+    setAllowedViewerIds((prev) => {
+      const next = new Set(prev);
+      if (allowed) next.add(viewerId); else next.delete(viewerId);
+      return next;
+    });
+    socketRef.current?.emit('grant_video_control', { viewerId, allowed });
+  }, [socketRef]);
 
   const setVideoVolume = useCallback((volume: number): void => {
     const clamped = Math.max(0, Math.min(100, volume));
@@ -472,12 +478,17 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     try { localStorage.setItem(VOLUME_KEY, String(clamped)); } catch { /* ignore */ }
   }, []);
 
-  // Register as streamer and handle incoming viewer control commands.
+  // Always register as streamer so the viewer list is received regardless of source type.
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket || !sessionId) return;
+    socket.emit('join_as_streamer');
+  }, [socketRef, sessionId]);
+
+  // Handle incoming viewer control commands (video mode only).
   useEffect(() => {
     const socket = socketRef.current;
     if (!socket || !sessionId || sourceType === 'camera') return;
-
-    socket.emit('join_as_streamer');
 
     const handleCommand = (data: VideoControlCommand): void => {
       if (!allowViewerControlRef.current) return;
@@ -561,6 +572,8 @@ export function useVideoShare({ socketRef, sessionId }: UseVideoShareOptions): V
     seek,
     setSpeed,
     setAllowViewerControl,
+    grantViewerControl,
+    allowedViewerIds,
     setVideoVolume,
     getVideoTrack,
     getAudioTrack,

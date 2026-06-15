@@ -29,6 +29,25 @@ const REACTION_EMOJIS = ['❤️', '🔥', '😍', '👏', '💯', '🎉'];
 const MAX_FLOATING = 5;
 const MAX_REACTIONS = 20;
 
+const GUEST_ADJECTIVES = ['Swift', 'Lucky', 'Bold', 'Brave', 'Cool', 'Quick', 'Wild', 'Clever', 'Sharp', 'Bright'];
+const GUEST_ANIMALS = ['Fox', 'Eagle', 'Tiger', 'Wolf', 'Bear', 'Hawk', 'Lion', 'Panda', 'Lynx', 'Shark'];
+const GUEST_NAME_KEY = 'tiklivepro:guest:name';
+
+function getOrCreateGuestName(): string {
+  try {
+    const stored = sessionStorage.getItem(GUEST_NAME_KEY);
+    if (stored) return stored;
+    const adj = GUEST_ADJECTIVES[Math.floor(Math.random() * GUEST_ADJECTIVES.length)] ?? 'Guest';
+    const animal = GUEST_ANIMALS[Math.floor(Math.random() * GUEST_ANIMALS.length)] ?? 'Viewer';
+    const num = Math.floor(Math.random() * 99) + 1;
+    const name = `${adj}${animal}${num}`;
+    sessionStorage.setItem(GUEST_NAME_KEY, name);
+    return name;
+  } catch {
+    return 'GuestViewer';
+  }
+}
+
 interface LiveReaction {
   id: string;
   emoji: string;
@@ -74,6 +93,7 @@ function HlsPlayer({
   isMuted,
   qualityLevel = -1,
   onQualityLevels,
+  onLoadingChange,
 }: {
   src: string;
   title: string;
@@ -82,6 +102,7 @@ function HlsPlayer({
   /** HLS.js level index, -1 = auto ABR */
   qualityLevel?: number;
   onQualityLevels?: (levels: HlsQualityLevel[]) => void;
+  onLoadingChange?: (loading: boolean) => void;
 }): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -89,17 +110,32 @@ function HlsPlayer({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+
+    onLoadingChange?.(true);
+    const onPlaying = () => onLoadingChange?.(false);
+    const onWaiting = () => onLoadingChange?.(true);
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('waiting', onWaiting);
+
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src;
-      return;
+      return () => {
+        video.removeEventListener('playing', onPlaying);
+        video.removeEventListener('waiting', onWaiting);
+      };
     }
-    if (!Hls.isSupported()) return;
+    if (!Hls.isSupported()) return () => {
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('waiting', onWaiting);
+    };
     const hls = new Hls({
       enableWorker: true,
       lowLatencyMode: true,
       liveSyncDuration: 1,
       liveMaxLatencyDuration: 5,
-      maxBufferLength: 5,
+      maxBufferLength: 30,
+      maxMaxBufferLength: 30,
+      startLevel: -1,
     });
     hlsRef.current = hls;
     hls.loadSource(src);
@@ -112,6 +148,8 @@ function HlsPlayer({
     return () => {
       hlsRef.current = null;
       hls.destroy();
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('waiting', onWaiting);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [src]);
@@ -134,7 +172,7 @@ function HlsPlayer({
       autoPlay
       playsInline
       muted
-      className="absolute inset-0 h-full w-full object-cover"
+      className="absolute inset-0 h-full w-full object-contain bg-black sm:object-cover"
       aria-label={title}
     />
   );
@@ -144,12 +182,14 @@ function WhepPlayer({
   src,
   title,
   onError,
+  onLoadingChange,
   volume,
   isMuted,
 }: {
   src: string;
   title: string;
   onError: () => void;
+  onLoadingChange?: (loading: boolean) => void;
   volume: number;
   isMuted: boolean;
 }): React.ReactElement {
@@ -167,6 +207,12 @@ function WhepPlayer({
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !src) return;
+
+    onLoadingChange?.(true);
+    const onPlaying = () => onLoadingChange?.(false);
+    const onWaiting = () => onLoadingChange?.(true);
+    video.addEventListener('playing', onPlaying);
+    video.addEventListener('waiting', onWaiting);
 
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -226,6 +272,8 @@ function WhepPlayer({
       closed = true;
       clearTimeout(fallbackTimer);
       pc.close();
+      video.removeEventListener('playing', onPlaying);
+      video.removeEventListener('waiting', onWaiting);
     };
   }, [src]);
 
@@ -235,7 +283,7 @@ function WhepPlayer({
       autoPlay
       playsInline
       muted
-      className="absolute inset-0 h-full w-full object-cover"
+      className="absolute inset-0 h-full w-full object-contain bg-black sm:object-cover"
       aria-label={title}
     />
   );
@@ -385,7 +433,14 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const pathname = usePathname();
   const { isAuthenticated, accessToken, displayName } = useAuthStore();
 
+  // Stable guest name for unauthenticated viewers, persisted per browser session
+  const [guestName] = useState(() => getOrCreateGuestName());
+  const viewerDisplayName = displayName ?? guestName;
+
   const [session, setSession] = useState<PublicSession>(initialSession);
+  // Live viewer count and public viewer list pushed from socket
+  const [socketViewerCount, setSocketViewerCount] = useState(initialSession.viewerCount ?? 0);
+  const [publicViewerNames, setPublicViewerNames] = useState<string[]>([]);
   const [whepFailed, setWhepFailed] = useState(false);
   const [whepKey, setWhepKey] = useState(0);
 
@@ -395,6 +450,12 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const [qualityPickerOpen, setQualityPickerOpen] = useState(false);
   // When true, skip WHEP and use HLS (lets viewer reduce bandwidth on slow connections)
   const [forceLowBandwidth, setForceLowBandwidth] = useState(false);
+
+  // Video loading state — true while the player is connecting/buffering before first frame
+  const [isVideoLoading, setIsVideoLoading] = useState(false);
+  useEffect(() => {
+    if (session.platformHlsUrl) setIsVideoLoading(true);
+  }, [session.platformHlsUrl, whepFailed, forceLowBandwidth, whepKey]);
 
   // Panel visibility
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -417,6 +478,9 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const [myCommentReactions, setMyCommentReactions] = useState<Record<string, string>>({});
   const myCommentReactionsRef = useRef(myCommentReactions);
   myCommentReactionsRef.current = myCommentReactions;
+
+  // Whether this specific viewer has been granted video control by the streamer
+  const [myVideoControlAllowed, setMyVideoControlAllowed] = useState(false);
 
   // Reactions
   const [liveReactions, setLiveReactions] = useState<LiveReaction[]>([]);
@@ -509,6 +573,21 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       reconnectionDelay: 3000,
     });
 
+    // Announce as viewer so the streamer can see us in the audience list
+    socket.emit('join_as_viewer', { displayName: viewerDisplayName });
+
+    socket.on('video_control_permission', (data: { allowed: boolean }) => {
+      setMyVideoControlAllowed(data.allowed);
+    });
+
+    socket.on('viewer_count', (data: { count: number }) => {
+      setSocketViewerCount(data.count);
+    });
+
+    socket.on('public_viewers', (data: { viewers: { displayName: string }[] }) => {
+      setPublicViewerNames((data.viewers ?? []).map((v) => v.displayName));
+    });
+
     socket.on('comment', (comment: Comment) => {
       setComments((prev) => {
         if (prev.some((c) => c.id === comment.id)) return prev;
@@ -541,6 +620,9 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     return () => {
       socket.disconnect();
       socketRef.current = null;
+      setMyVideoControlAllowed(false);
+      setSocketViewerCount(0);
+      setPublicViewerNames([]);
       floatingRemoveTimersRef.current.forEach(clearTimeout);
       floatingRemoveTimersRef.current.clear();
     };
@@ -784,7 +866,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
 
-      if (!videoState?.allowViewerControl) return;
+      if (!myVideoControlAllowed || !videoState) return;
 
       if (e.code === 'Space') {
         e.preventDefault();
@@ -840,6 +922,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
         src={whepUrl}
         title={session.title}
         onError={() => setWhepFailed(true)}
+        onLoadingChange={setIsVideoLoading}
         volume={volume}
         isMuted={isMuted}
       />
@@ -851,6 +934,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
         isMuted={isMuted}
         qualityLevel={hlsQualityLevel}
         onQualityLevels={setHlsLevels}
+        onLoadingChange={setIsVideoLoading}
       />
     );
   };
@@ -871,6 +955,26 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       {hasVideo && renderVideo()}
       {!hasVideo && <div className="absolute inset-0 bg-[#0a0b0f]" />}
 
+      {/* ── Video loading overlay ── */}
+      {hasVideo && isVideoLoading && isLive && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/15 bg-black/70 px-6 py-5 backdrop-blur-xl">
+            <svg
+              className="h-6 w-6 animate-spin text-white/70"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <path d="M21 12a9 9 0 11-6.219-8.56" />
+            </svg>
+            <p className="text-xs text-white/50">{t('loading')}</p>
+          </div>
+        </div>
+      )}
+
       {/* Ambient glow when live */}
       {isLive && (
         <div
@@ -888,8 +992,12 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
 
       {/* ── Top bar ── */}
       <header
-        className="absolute inset-x-0 top-0 z-20 flex items-center gap-3 px-4 sm:px-6"
-        style={{ paddingTop: 'max(16px, env(safe-area-inset-top, 16px))' }}
+        className="absolute inset-x-0 top-0 z-20 flex items-center gap-3"
+        style={{
+          paddingTop: 'max(16px, env(safe-area-inset-top, 16px))',
+          paddingLeft: 'max(16px, env(safe-area-inset-left, 16px))',
+          paddingRight: 'max(16px, env(safe-area-inset-right, 16px))',
+        }}
       >
         {/* Logo */}
         <Link
@@ -950,7 +1058,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
               <circle cx="9" cy="7" r="4" />
               <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
             </svg>
-            {session.viewerCount ?? 0}
+            {socketViewerCount}
           </button>
 
           {/* Quality picker — always shown when live */}
@@ -1149,7 +1257,8 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
         <button
           type="button"
           onClick={() => { setIsMuted(false); showControls(); }}
-          className="absolute bottom-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/25 bg-black/60 px-4 py-2.5 text-xs font-semibold text-white backdrop-blur-xl transition-all hover:bg-black/80 animate-pulse"
+          className="absolute left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/25 bg-black/60 px-4 py-2.5 text-xs font-semibold text-white backdrop-blur-xl transition-all hover:bg-black/80 animate-pulse"
+          style={{ bottom: 'max(6rem, calc(env(safe-area-inset-bottom, 0px) + 5rem))' }}
         >
           <svg
             className="h-4 w-4"
@@ -1175,7 +1284,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
           {/* Combined video + volume + share controls pill — centred, slides left to hide */}
           {videoState && !anyPanelOpen && (
             <ViewerVideoControls
-              videoState={videoState}
+              videoState={{ ...videoState, allowViewerControl: myVideoControlAllowed }}
               volume={volume}
               isMuted={isMuted}
               visible={controlsVisible}
@@ -1193,12 +1302,14 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
           {!videoState && !anyPanelOpen && (
             <div
               className={cn(
-                'absolute bottom-8 left-1/2 -translate-x-1/2 z-20 w-[min(360px,90vw)]',
+                'absolute z-20 w-[min(320px,calc(100%-5rem))] sm:w-[min(360px,90vw)]',
+                'left-1/2 -translate-x-1/2',
                 'transition-opacity duration-300 ease-out',
                 controlsVisible
                   ? 'opacity-100 pointer-events-auto'
                   : 'opacity-0 pointer-events-none',
               )}
+              style={{ bottom: 'max(2rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))' }}
             >
               <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-black/72 px-4 py-3 shadow-2xl shadow-black/50 backdrop-blur-2xl">
                 {/* Mute toggle */}
@@ -1272,7 +1383,13 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
 
           {/* Floating comments — auto-disappear via animate-float-comment */}
           {!commentsOpen && !anyPanelOpen && (
-            <div className="absolute bottom-36 left-3 z-20 flex flex-col-reverse gap-1.5">
+            <div
+              className="absolute z-20 flex flex-col-reverse gap-1.5"
+              style={{
+                bottom: 'max(9rem, calc(env(safe-area-inset-bottom, 0px) + 8rem))',
+                left: 'max(0.75rem, env(safe-area-inset-left, 0.75rem))',
+              }}
+            >
               {floatingComments.map(({ comment, key }) => (
                 <CommentBubble
                   key={key}
@@ -1296,14 +1413,18 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
           {!anyPanelOpen && (
             <div
               className={cn(
-                'absolute bottom-32 right-3 z-20 flex flex-col items-center gap-2.5 transition-opacity duration-300 ease-out',
+                'absolute z-20 flex flex-col items-center gap-2.5 transition-opacity duration-300 ease-out',
                 controlsVisible
                   ? 'opacity-100 pointer-events-auto'
                   : 'opacity-0 pointer-events-none',
               )}
+              style={{
+                bottom: 'max(8rem, calc(env(safe-area-inset-bottom, 0px) + 7rem))',
+                right: 'max(0.75rem, env(safe-area-inset-right, 0.75rem))',
+              }}
             >
               {/* Reaction floats */}
-              <div className="pointer-events-none relative h-44 w-12 overflow-visible">
+              <div className="pointer-events-none relative h-28 w-12 overflow-visible sm:h-44">
                 {liveReactions.map((r) => (
                   <LiveReactionFloat
                     key={r.id}
@@ -1401,6 +1522,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
               sessionId={session.id}
               apiBase={apiBase}
               onClose={() => setViewersOpen(false)}
+              publicViewerNames={publicViewerNames}
             />
           )}
         </>
@@ -1424,26 +1546,53 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       {!isLive && (
         <footer
           className="absolute inset-x-0 bottom-0 flex justify-center"
-          style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))' }}
+          style={{
+            paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))',
+            paddingLeft: 'env(safe-area-inset-left, 0px)',
+            paddingRight: 'env(safe-area-inset-right, 0px)',
+          }}
         >
           <p className="text-[11px] text-white/20">{t('poweredBy')}</p>
         </footer>
       )}
       </div>
 
-      {/* ── Comment side panel (pushes video, slides in from right) ── */}
+      {/* Mobile backdrop — dims the video when the comment sheet is open */}
+      {commentsOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm sm:hidden"
+          onClick={() => setCommentsOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* ── Comment panel ──
+          Mobile  : fixed bottom sheet that slides up from the bottom edge
+          Desktop : flex sibling side panel that pushes the video left      ── */}
       <div
         className={cn(
-          'relative flex-shrink-0 h-full overflow-hidden border-l border-white/8 bg-[#0a0b0f] transition-all duration-500 ease-out',
-          commentsOpen ? 'w-80' : 'w-0',
+          'bg-[#0a0b0f] overflow-hidden transition-all duration-500 ease-out',
+          // Mobile: full-width fixed bottom sheet
+          'fixed inset-x-0 bottom-0 z-40 rounded-t-2xl border-t border-white/10',
+          commentsOpen ? 'h-[82vh]' : 'h-0',
+          // Desktop: side panel in the flex row
+          'sm:relative sm:inset-auto sm:z-auto sm:rounded-none sm:border-t-0 sm:border-l sm:border-white/8 sm:flex-shrink-0 sm:h-full',
+          commentsOpen ? 'sm:w-80' : 'sm:w-0',
         )}
       >
         <div
           className={cn(
-            'absolute inset-0 flex w-80 flex-col transition-all duration-500 ease-out',
-            commentsOpen ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-6',
+            'absolute inset-0 flex w-full flex-col sm:w-80 transition-all duration-500 ease-out',
+            commentsOpen
+              ? 'opacity-100 translate-y-0 sm:translate-x-0'
+              : 'opacity-0 translate-y-4 sm:translate-y-0 sm:translate-x-6',
           )}
         >
+          {/* Drag handle — mobile bottom sheet only */}
+          <div className="flex shrink-0 justify-center pt-3 pb-1 sm:hidden">
+            <div className="h-1 w-10 rounded-full bg-white/25" />
+          </div>
+
           {/* Panel header */}
           <div className="flex shrink-0 items-center gap-3 border-b border-white/8 px-5 py-4">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5">

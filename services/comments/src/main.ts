@@ -245,6 +245,24 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
     transports: ['websocket'],
   });
 
+  // Per-session viewer registry: socketId → displayName (in-memory, lives for the process lifetime)
+  const sessionViewers = new Map<string, Map<string, string>>();
+  // Per-session set of viewer socket IDs that have been granted video control
+  const sessionVideoControlAllowed = new Map<string, Set<string>>();
+
+  function broadcastViewersUpdate(sid: string): void {
+    const registry = sessionViewers.get(sid);
+    const viewers = registry
+      ? Array.from(registry.entries()).map(([id, displayName]) => ({ id, displayName }))
+      : [];
+    io.to(`${sid}:streamer`).emit('viewers_update', { viewers });
+    // Broadcast public-facing count and name list to all clients in the session
+    io.to(sid).emit('viewer_count', { count: registry?.size ?? 0 });
+    io.to(sid).emit('public_viewers', {
+      viewers: viewers.map(({ displayName }) => ({ displayName })),
+    });
+  }
+
   io.on('connection', (socket) => {
     const { sessionId } = socket.handshake.query as { sessionId?: string };
     if (!sessionId) { socket.disconnect(); return; }
@@ -264,10 +282,36 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
       })();
     });
 
+    // Viewer announces themselves so the streamer can see who is watching
+    socket.on('join_as_viewer', (data: unknown) => {
+      const d = data as Record<string, unknown> | null;
+      const displayName = String(d?.['displayName'] ?? 'Anonymous').slice(0, 50);
+      if (!sessionViewers.has(sessionId)) sessionViewers.set(sessionId, new Map());
+      sessionViewers.get(sessionId)!.set(socket.id, displayName);
+      broadcastViewersUpdate(sessionId);
+    });
+
     // Streamer identifies itself to receive viewer control commands
     socket.on('join_as_streamer', () => {
       void socket.join(`${sessionId}:streamer`);
+      // Send the current viewer list immediately so the panel populates without waiting for the next join event
+      broadcastViewersUpdate(sessionId);
       logger.debug({ sessionId }, 'Client joined as streamer for video controls');
+    });
+
+    // Streamer grants or revokes video control for a specific viewer
+    socket.on('grant_video_control', (data: unknown) => {
+      const d = data as Record<string, unknown> | null;
+      if (!d) return;
+      const viewerId = String(d['viewerId'] ?? '');
+      const allowed = Boolean(d['allowed']);
+      if (!sessionVideoControlAllowed.has(sessionId)) {
+        sessionVideoControlAllowed.set(sessionId, new Set());
+      }
+      const allowedSet = sessionVideoControlAllowed.get(sessionId)!;
+      if (allowed) allowedSet.add(viewerId); else allowedSet.delete(viewerId);
+      // Notify the specific viewer of their new permission
+      io.to(viewerId).emit('video_control_permission', { allowed });
     });
 
     // Streamer broadcasts current video playback state to all viewers in the session
@@ -282,17 +326,30 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
       });
     });
 
-    // Viewer requests a video control action → forward to the streamer room only
+    // Viewer requests a video control action — only forwarded if the viewer has been granted control
     socket.on('video_control_request', (data: unknown) => {
       const d = data as Record<string, unknown> | null;
       if (!d) return;
       const type = String(d['type'] ?? '');
       if (!['play', 'pause', 'seek', 'speed'].includes(type)) return;
+      const isAllowed = sessionVideoControlAllowed.get(sessionId)?.has(socket.id) ?? false;
+      if (!isAllowed) return;
       socket.to(`${sessionId}:streamer`).emit('video_control_command', {
         type,
+        viewerId: socket.id,
         ...(d['currentTime'] !== undefined ? { currentTime: Number(d['currentTime']) } : {}),
         ...(d['speed'] !== undefined ? { speed: Number(d['speed']) } : {}),
       });
+    });
+
+    socket.on('disconnect', () => {
+      const registry = sessionViewers.get(sessionId);
+      if (registry) {
+        registry.delete(socket.id);
+        if (registry.size === 0) sessionViewers.delete(sessionId);
+        broadcastViewersUpdate(sessionId);
+      }
+      sessionVideoControlAllowed.get(sessionId)?.delete(socket.id);
     });
   });
 

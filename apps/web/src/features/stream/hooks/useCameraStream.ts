@@ -119,10 +119,17 @@ export function useCameraStream(autoStart = false): CameraStreamResult {
           setIsMicMuted(true);
         } catch (secondErr) {
           console.warn('Failed to start camera with ideal constraints, retrying with basic constraints:', secondErr);
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: false,
-          });
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+              audio: false,
+            });
+          } catch {
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+              audio: false,
+            });
+          }
           setIsMicMuted(true);
         }
       }
