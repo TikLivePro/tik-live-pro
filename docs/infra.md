@@ -1,6 +1,6 @@
 # TikLivePro — Infrastructure Guide
 
-> **Last updated:** 2026-06-02 (add status page at status.tiklivepro.me port 3011; Caddyfile + docker-compose + K8s ingress + Dockerfile.status added)
+> **Last updated:** 2026-06-15 (Caddyfile: add CORS preflight (OPTIONS) blocks at Caddy level for tiklivepro.me and app.tiklivepro.me origins; expose stream-orchestrator under /stream-orchestrator/* path prefix)
 > Update whenever a Dockerfile, compose file, Kubernetes manifest, or build script changes.
 
 ## Table of Contents
@@ -241,8 +241,9 @@ Config file: `infra/caddy/Caddyfile` — versioned in the repo, auto-deployed by
 | Subdomain / Path | Forwards to | Notes |
 |------------------|-------------|-------|
 | `tiklivepro.me`, `www.tiklivepro.me` | `localhost:3010` | Next.js frontend |
+| `api.tiklivepro.me` OPTIONS (from `tiklivepro.me` or `app.tiklivepro.me`) | — (Caddy responds 204) | CORS preflight handled at the Caddy level so OPTIONS never reaches a backend. Allows `Authorization, Content-Type, X-Correlation-Id` with `credentials: true`, `max-age: 86400`. |
 | `api.tiklivepro.me/socket.io/*` | `localhost:3006` | Comments socket.io WebSocket — routed directly to the comments service because the API gateway's `fetch()` proxy does not handle WebSocket upgrades. **The comments container must expose `3006:3006`** in `docker-compose.prod.managed.yml` so Caddy (a host-level service) can reach it. |
-| `api.tiklivepro.me/stream-orchestrator/*` | `localhost:3009` (prefix stripped) | Stream orchestrator REST API — exposes the internal service under a path prefix so browsers can reach `GET /sessions/:id/ingest` without a separate subdomain |
+| `api.tiklivepro.me/stream-orchestrator/*` | `localhost:3009` (prefix stripped) | Stream orchestrator REST API — exposes the internal service under a path prefix so browsers can reach `GET /sessions/:id/ingest` without a separate subdomain. |
 | `api.tiklivepro.me` (all other paths) | `localhost:3000` | API Gateway (REST) |
 | `status.tiklivepro.me` | `localhost:3011` | Status page (Next.js). Polls all service `/health` endpoints server-side and renders aggregated status. **DNS A record required**: point `status.tiklivepro.me` at the same droplet IP. The status container must expose `3011:3011`. |
 | `hls.tiklivepro.me` | `localhost:8888` | MediaMTX HLS relay. CORS headers added: `Allow-Origin *`, `Allow-Methods GET/HEAD/OPTIONS`, `Allow-Headers Range` |

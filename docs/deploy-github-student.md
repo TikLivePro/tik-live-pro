@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-06-13 (cookie export: incognito window + robots.txt step required to prevent YouTube cookie rotation; bgutil API updated to POST /get_pot for v1.3+)
+> Dernière mise à jour : 2026-06-15 (Caddyfile: CORS preflight (OPTIONS) géré au niveau Caddy pour tiklivepro.me et app.tiklivepro.me; stream-orchestrator exposé sous /stream-orchestrator/*)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -226,6 +226,35 @@ status.tiklivepro.me {
 }
 
 api.tiklivepro.me {
+    # CORS preflight — Caddy répond 204 directement pour éviter que OPTIONS
+    # n'atteigne un backend qui ne gère pas correctement les preflights.
+    @cors_main {
+        method OPTIONS
+        header Origin https://tiklivepro.me
+    }
+    @cors_app {
+        method OPTIONS
+        header Origin https://app.tiklivepro.me
+    }
+
+    handle @cors_main {
+        header Access-Control-Allow-Origin "https://tiklivepro.me"
+        header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, X-Correlation-Id"
+        header Access-Control-Allow-Credentials "true"
+        header Access-Control-Max-Age "86400"
+        respond "" 204
+    }
+
+    handle @cors_app {
+        header Access-Control-Allow-Origin "https://app.tiklivepro.me"
+        header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type, X-Correlation-Id"
+        header Access-Control-Allow-Credentials "true"
+        header Access-Control-Max-Age "86400"
+        respond "" 204
+    }
+
     handle /socket.io/* {
         reverse_proxy localhost:3006
     }
