@@ -44,9 +44,39 @@ api.tiklivepro.me {
         reverse_proxy localhost:3006
     }
 
-    # Stream orchestrator is an internal service; expose it under a
-    # /stream-orchestrator prefix so the browser can reach it without a
-    # separate subdomain. The prefix is stripped before forwarding.
+    # Stream orchestrator — CORS headers added at the Caddy level (defer) so
+    # they are present even when the upstream returns a 502, preventing the
+    # browser from misreporting a backend outage as a CORS error.
+    @so_main {
+        path /stream-orchestrator/*
+        header Origin https://tiklivepro.me
+    }
+    @so_app {
+        path /stream-orchestrator/*
+        header Origin https://app.tiklivepro.me
+    }
+
+    handle @so_main {
+        header {
+            Access-Control-Allow-Origin "https://tiklivepro.me"
+            Access-Control-Allow-Credentials "true"
+            defer
+        }
+        uri strip_prefix /stream-orchestrator
+        reverse_proxy localhost:3009
+    }
+
+    handle @so_app {
+        header {
+            Access-Control-Allow-Origin "https://app.tiklivepro.me"
+            Access-Control-Allow-Credentials "true"
+            defer
+        }
+        uri strip_prefix /stream-orchestrator
+        reverse_proxy localhost:3009
+    }
+
+    # Fallback for /stream-orchestrator/* from other origins (e.g. internal tools).
     handle /stream-orchestrator/* {
         uri strip_prefix /stream-orchestrator
         reverse_proxy localhost:3009

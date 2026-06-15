@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-06-15 (Caddyfile: CORS preflight (OPTIONS) géré au niveau Caddy pour tiklivepro.me et app.tiklivepro.me; stream-orchestrator exposé sous /stream-orchestrator/*)
+> Dernière mise à jour : 2026-06-15 (Caddyfile: CORS headers with defer on /stream-orchestrator/* pour que les réponses 502 portent aussi les headers ACAO)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -258,10 +258,40 @@ api.tiklivepro.me {
     handle /socket.io/* {
         reverse_proxy localhost:3006
     }
+    @so_main {
+        path /stream-orchestrator/*
+        header Origin https://tiklivepro.me
+    }
+    @so_app {
+        path /stream-orchestrator/*
+        header Origin https://app.tiklivepro.me
+    }
+
+    handle @so_main {
+        header {
+            Access-Control-Allow-Origin "https://tiklivepro.me"
+            Access-Control-Allow-Credentials "true"
+            defer
+        }
+        uri strip_prefix /stream-orchestrator
+        reverse_proxy localhost:3009
+    }
+
+    handle @so_app {
+        header {
+            Access-Control-Allow-Origin "https://app.tiklivepro.me"
+            Access-Control-Allow-Credentials "true"
+            defer
+        }
+        uri strip_prefix /stream-orchestrator
+        reverse_proxy localhost:3009
+    }
+
     handle /stream-orchestrator/* {
         uri strip_prefix /stream-orchestrator
         reverse_proxy localhost:3009
     }
+
     handle {
         reverse_proxy localhost:3000
     }
