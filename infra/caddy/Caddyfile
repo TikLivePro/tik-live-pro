@@ -14,14 +14,11 @@ api.tiklivepro.me {
         reverse_proxy localhost:3006
     }
 
-    # Stream orchestrator is an internal service; expose it under a
-    # /stream-orchestrator prefix so the browser can reach it without a
-    # separate subdomain. The prefix is stripped before forwarding.
-    handle /stream-orchestrator/* {
-        uri strip_prefix /stream-orchestrator
-        reverse_proxy localhost:3009
-    }
-
+    # All other traffic — including /stream-orchestrator/* — goes through
+    # the API gateway (port 3000). The gateway handles CORS, auth, prefix
+    # stripping, and proxying to the correct downstream service. Routing
+    # stream-orchestrator directly to port 3009 bypassed the gateway's CORS
+    # middleware and caused preflight (OPTIONS) failures in the browser.
     handle {
         reverse_proxy localhost:3000
     }

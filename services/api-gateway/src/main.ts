@@ -1262,6 +1262,14 @@ All error responses follow a consistent envelope:
     const isPublic = PUBLIC_PREFIXES.has(prefix);
 
     const handler = async (request: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => {
+      // OPTIONS preflight is handled by @fastify/cors in onRequest before this
+      // handler fires. This guard is a safety net in case cors does not intercept
+      // (e.g. strictPreflight mismatch) — preflights never carry auth and must
+      // not be proxied upstream.
+      if (request.method === 'OPTIONS') {
+        return reply.code(204).send();
+      }
+
       const requestPath = request.url.split('?')[0]!;
       const isPublicGet = request.method === 'GET' && PUBLIC_GET_PATHS.has(requestPath);
       if (!isPublic && !isPublicGet && !PUBLIC_PATHS.has(requestPath) && !PUBLIC_PATH_PATTERNS.some((p) => p.test(requestPath))) {
