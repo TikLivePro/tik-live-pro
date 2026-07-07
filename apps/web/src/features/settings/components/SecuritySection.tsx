@@ -49,7 +49,7 @@ export function SecuritySection(): React.JSX.Element {
   }
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-5 space-y-3">
+    <section className="card-surface space-y-3 p-5">
       <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
         {t('security.sectionTitle')}
       </p>

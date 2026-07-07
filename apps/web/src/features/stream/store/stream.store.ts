@@ -26,6 +26,10 @@ export interface LiveReaction {
 interface StreamState {
   currentSession: LiveSession | null;
   comments: Comment[];
+  /** Cumulative comment count for the session (comments[] is capped at MAX_COMMENTS). */
+  commentCount: number;
+  /** Cumulative emoji-reaction count for the session (liveReactions[] is transient). */
+  reactionCount: number;
   liveReactions: LiveReaction[];
   replyingTo: Comment | null;
   commentReactions: Record<string, Record<string, number>>;
@@ -68,6 +72,8 @@ interface StreamState {
 export const useStreamStore = create<StreamState>()((set, get) => ({
   currentSession: null,
   comments: [],
+  commentCount: 0,
+  reactionCount: 0,
   liveReactions: [],
   replyingTo: null,
   commentReactions: {},
@@ -107,19 +113,26 @@ export const useStreamStore = create<StreamState>()((set, get) => ({
         return { comments };
       }
       const comments = [comment, ...state.comments].slice(0, MAX_COMMENTS);
-      return { comments };
+      return { comments, commentCount: state.commentCount + 1 };
     }),
 
   addComments: (incoming) =>
     set((state) => {
       const comments = [...incoming, ...state.comments].slice(0, MAX_COMMENTS);
-      return { comments };
+      return { comments, commentCount: state.commentCount + incoming.length };
     }),
 
   removeComment: (id) =>
     set((state) => ({ comments: state.comments.filter((c) => c.id !== id) })),
 
-  clearComments: () => set({ comments: [], commentReactions: {}, myCommentReactions: {} }),
+  clearComments: () =>
+    set({
+      comments: [],
+      commentCount: 0,
+      reactionCount: 0,
+      commentReactions: {},
+      myCommentReactions: {},
+    }),
 
   addCommentReaction: (commentId, emoji) =>
     set((state) => {
@@ -149,6 +162,7 @@ export const useStreamStore = create<StreamState>()((set, get) => ({
   addReaction: (reaction) =>
     set((state) => ({
       liveReactions: [...state.liveReactions, reaction].slice(-MAX_REACTIONS),
+      reactionCount: state.reactionCount + 1,
     })),
 
   removeReaction: (id) =>

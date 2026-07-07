@@ -16,7 +16,7 @@ export function CommentFeed() {
     myCommentReactions,
     addCommentReaction,
   } = useStreamStore();
-  const { replyingTo, setReplyingTo, sendComment, replyToComment, isSending } =
+  const { replyingTo, setReplyingTo, sendComment, replyToComment, isSending, sendError } =
     useComments(currentSession?.id ?? null);
 
   const handleReply = (comment: Comment) => {
@@ -41,17 +41,29 @@ export function CommentFeed() {
     : t('inputPlaceholder');
 
   return (
-    <div className="rounded-xl border border-border bg-background shadow-sm h-[480px] sm:h-[600px] flex flex-col">
+    <div className="card-surface flex h-[480px] flex-col overflow-hidden sm:h-[600px]">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-border shrink-0">
-        <h2 className="font-semibold">{t('title')}</h2>
-        <p className="text-xs text-muted-foreground">{comments.length} {t('commentsCount')}</p>
+      <div className="flex shrink-0 items-center justify-between border-b border-border/80 bg-muted/30 px-4 py-3">
+        <h2 className="font-semibold tracking-tight">{t('title')}</h2>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-0.5 text-xs font-medium tabular-nums text-muted-foreground">
+          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" />
+          </svg>
+          {comments.length} {t('commentsCount')}
+        </span>
       </div>
 
       {/* Comment list */}
-      <div className="flex-1 overflow-y-auto divide-y divide-border">
+      <div className="flex-1 divide-y divide-border/70 overflow-y-auto">
         {comments.length === 0 ? (
-          <p className="text-center text-muted-foreground text-sm py-8">{t('noComments')}</p>
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" />
+              </svg>
+            </span>
+            <p className="text-sm text-muted-foreground">{t('noComments')}</p>
+          </div>
         ) : (
           comments.map((c) => (
             <CommentItem
@@ -76,6 +88,13 @@ export function CommentFeed() {
           >
             {t('cancelReply')}
           </button>
+        </div>
+      )}
+
+      {/* Send failure notice */}
+      {sendError && (
+        <div className="shrink-0 px-3 py-1.5 bg-destructive/10 border-t border-destructive/20 text-xs text-destructive" role="alert">
+          {t('sendError')}
         </div>
       )}
 

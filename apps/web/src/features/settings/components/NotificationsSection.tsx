@@ -50,7 +50,7 @@ export function NotificationsSection(): React.JSX.Element {
   ];
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-5">
+    <section className="card-surface p-5">
       <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
         {t('notifications.sectionTitle')}
       </p>

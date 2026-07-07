@@ -5,7 +5,7 @@ import type { Comment, LiveSessionId, SocialAccountId, SocialPlatform } from '@t
 import type { Logger } from '@tik-live-pro/logger';
 import type { SessionRegistry } from './session-registry.js';
 
-interface TokenInfo {
+export interface TokenInfo {
   accessToken: string;
   platform: string;
   platformUserId: string;
@@ -107,10 +107,15 @@ export class CommentPoster {
     return comment;
   }
 
-  private async fetchTokens(
+  // Public: the session.starting handler uses this to resolve each account's
+  // real platform + access token before starting comment pollers — the
+  // session.created event only carries account IDs (platform 'unknown').
+  async fetchTokens(
     accountIds: string[],
   ): Promise<Record<string, TokenInfo>> {
     try {
+      // Timeout guard: this is called from NATS consumers (session.starting)
+      // and the posting hot path — a hung integrations call must not stall them.
       const response = await fetch(`${this.integrationsUrl}/internal/accounts/tokens`, {
         method: 'POST',
         headers: {
@@ -118,6 +123,7 @@ export class CommentPoster {
           'X-Internal-Secret': this.internalApiKey,
         },
         body: JSON.stringify({ accountIds }),
+        signal: AbortSignal.timeout(10_000),
       });
 
       if (!response.ok) {

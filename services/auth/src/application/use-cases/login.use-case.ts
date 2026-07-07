@@ -17,6 +17,10 @@ export interface LoginInput {
 
 export interface LoginOutput extends TokenPair {
   userId: UserId;
+  subscriptionTier: string;
+  displayName: string;
+  email: string;
+  avatarUrl: string | null;
 }
 
 export class LoginUseCase {
@@ -68,6 +72,13 @@ export class LoginUseCase {
     await this.nats.publish(Subjects.AUTH_USER_LOGGED_IN, eventPayload, { correlationId });
 
     log.info({ userId: user.id, email: user.email }, 'Login: success');
-    return { userId: user.id, ...tokens };
+    return {
+      userId: user.id,
+      subscriptionTier: user.subscriptionTier,
+      displayName: user.displayName,
+      email: user.email,
+      avatarUrl: user.avatarUrl,
+      ...tokens,
+    };
   }
 }

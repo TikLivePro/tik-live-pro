@@ -8,6 +8,13 @@
       "when": 1779336146891,
       "tag": "0000_conscious_skullbuster",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783310959337,
+      "tag": "0001_wealthy_stick",
+      "breakpoints": true
     }
   ]
 }

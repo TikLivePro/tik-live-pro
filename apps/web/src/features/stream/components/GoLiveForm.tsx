@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { useSocialAccounts } from '@/features/accounts/hooks/useSocialAccounts';
+import { ConnectAccountModal } from '@/features/accounts/components/ConnectAccountModal';
 import { AccountSelector } from './AccountSelector';
 import { CameraPreview } from './CameraPreview';
+import { RtmpIngestCard } from './RtmpIngestCard';
 import { cn } from '@/lib/utils';
 import type { SocialAccountId } from '@tik-live-pro/shared-types';
 import { VIDEO_QUALITY_PRESETS } from '../consts/stream.consts';
@@ -20,7 +22,11 @@ interface Props {
   isLoading: boolean;
 }
 
-type SourceTab = 'camera' | PreSourceType | 'playlist';
+type SourceTab = 'camera' | PreSourceType | 'playlist' | 'obs';
+
+const FIELD_LABEL_CLASS = 'block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground';
+const INPUT_CLASS =
+  'w-full rounded-lg border border-border bg-surface-1 px-3 py-2.5 text-sm placeholder:text-muted-foreground transition-colors disabled:opacity-60';
 
 export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
   const t = useTranslations('stream');
@@ -53,6 +59,7 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
   const [playlistItems, setPlaylistItems] = useState<PlaylistItem[]>([]);
   const [playlistUrlInput, setPlaylistUrlInput] = useState('');
   const [playlistUrlError, setPlaylistUrlError] = useState<string | null>(null);
+  const [connectModalOpen, setConnectModalOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const initializedRef = useRef(false);
@@ -267,14 +274,170 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
         </svg>
       ),
     },
+    {
+      id: 'obs',
+      labelKey: 'obs.tabLabel',
+      icon: (
+        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="2" y="6" width="20" height="12" rx="2" />
+          <circle cx="8" cy="12" r="2" />
+          <path d="M14 10h4M14 14h4" />
+        </svg>
+      ),
+    },
   ];
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {/* Camera / video preview */}
+      {/* Stream title */}
       <div className="space-y-1.5">
-        <p className="text-sm font-medium text-muted-foreground">{t('camera.optional')}</p>
+        <label htmlFor="stream-title" className={FIELD_LABEL_CLASS}>
+          {t('title')}
+        </label>
+        <input
+          id="stream-title"
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder={t('title')}
+          maxLength={120}
+          required
+          disabled={isLoading}
+          className={INPUT_CLASS}
+        />
+      </div>
+
+      {/* Description — optional */}
+      <div className="space-y-1.5">
+        <label htmlFor="stream-description" className={FIELD_LABEL_CLASS}>
+          {t('description')}
+        </label>
+        <textarea
+          id="stream-description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder={t('description')}
+          maxLength={280}
+          rows={3}
+          disabled={isLoading}
+          className={cn(INPUT_CLASS, 'resize-none')}
+        />
+      </div>
+
+      {/* Destinations — optional */}
+      <div className="space-y-2">
+        <p className={FIELD_LABEL_CLASS}>
+          {t('destinations')}
+          <span className="ml-1.5 font-normal normal-case tracking-normal">({t('optionalLabel')})</span>
+        </p>
+        <AccountSelector
+          accounts={accounts}
+          selectedIds={selectedIds}
+          onChange={setSelectedIds}
+          onConnectClick={() => setConnectModalOpen(true)}
+        />
+        {selectedIds.size === 0 && (
+          <p className="text-xs text-muted-foreground">{t('noDestinationsHint')}</p>
+        )}
+        <ConnectAccountModal open={connectModalOpen} onClose={() => setConnectModalOpen(false)} />
+      </div>
+
+      {/* Quality selector */}
+      <div className="space-y-2">
+        <p className={FIELD_LABEL_CLASS}>{t('quality.streamLabel')}</p>
+        <div className="grid grid-cols-3 gap-2">
+          {VIDEO_QUALITY_PRESETS.map((preset) => {
+            const isSelected = videoQualityId === preset.id;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                disabled={isLoading}
+                onClick={() => setVideoQualityId(preset.id)}
+                className={cn(
+                  'flex flex-col items-center rounded-xl border px-2 py-2.5 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                  isSelected
+                    ? 'border-brand/60 bg-brand/10 text-brand'
+                    : 'border-border bg-surface-1 text-foreground hover:border-border/80 hover:bg-muted/50',
+                )}
+              >
+                <span className="text-sm font-semibold">{preset.label}</span>
+                <span className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
+                  {preset.subLabel}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Video source picker */}
+      <div className="space-y-2">
+        <p className={FIELD_LABEL_CLASS}>{t('videoShare.sourcePickerLabel')}</p>
+
+        {/* Tab row */}
+        <div className="flex gap-1 overflow-x-auto rounded-full border border-border bg-surface-1 p-1">
+          {tabs.map((tab) => {
+            const isCameraTab = tab.id === 'camera';
+            const isDisabled = isCameraTab && webcamChecked && !hasWebcam;
+            const isActive = sourceTab === tab.id;
+            const hasCount = tab.id === 'playlist' && playlistItems.length > 0;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                disabled={isDisabled}
+                title={isDisabled ? t('camera.notDetected') : undefined}
+                onClick={() => {
+                  if (isDisabled) return;
+                  if (tab.id === 'camera') {
+                    handleSelectCamera();
+                  } else if (tab.id === 'local-file') {
+                    fileInputRef.current?.click();
+                  } else if (tab.id === 'online-url') {
+                    setSourceTab('online-url');
+                  } else if (tab.id === 'obs') {
+                    setSourceTab('obs');
+                    setUrlPlatform(null);
+                    setPreSource(null);
+                  } else {
+                    setSourceTab('playlist');
+                  }
+                }}
+                className={cn(
+                  'relative flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1.5 text-xs font-semibold transition-colors',
+                  isDisabled
+                    ? 'cursor-not-allowed text-muted-foreground/30'
+                    : isActive
+                    ? 'bg-muted text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <span className="hidden sm:inline-flex">{tab.icon}</span>
+                {t(tab.labelKey as Parameters<typeof t>[0])}
+                {hasCount && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-500 px-0.5 text-[9px] font-bold leading-none text-white">
+                    {playlistItems.length}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Hidden file input — multiple so picking 2+ files auto-switches to playlist */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="video/*"
+          multiple
+          className="hidden"
+          onChange={handleFileChange}
+        />
+
+        {/* Source preview */}
         {sourceTab === 'camera' && <CameraPreview />}
+        {sourceTab === 'obs' && <RtmpIngestCard />}
         {sourceTab === 'local-file' && previewBlobUrl && (
           <video
             src={previewBlobUrl}
@@ -326,147 +489,6 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
             )}
           </div>
         )}
-      </div>
-
-      {/* Stream title */}
-      <div className="space-y-1.5">
-        <label htmlFor="stream-title" className="block text-sm font-medium">
-          {t('title')}
-        </label>
-        <input
-          id="stream-title"
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder={t('title')}
-          maxLength={120}
-          required
-          disabled={isLoading}
-          className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand/50 disabled:opacity-60"
-        />
-      </div>
-
-      {/* Description — optional */}
-      <div className="space-y-1.5">
-        <label htmlFor="stream-description" className="block text-sm font-medium text-muted-foreground">
-          {t('description')}
-        </label>
-        <input
-          id="stream-description"
-          type="text"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder={t('description')}
-          maxLength={280}
-          disabled={isLoading}
-          className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-brand/50 disabled:opacity-60"
-        />
-      </div>
-
-      {/* Quality selector */}
-      <div className="space-y-2">
-        <p className="text-sm font-medium">{t('quality.streamLabel')}</p>
-        <div className="grid grid-cols-3 gap-2">
-          {VIDEO_QUALITY_PRESETS.map((preset) => {
-            const isSelected = videoQualityId === preset.id;
-            return (
-              <button
-                key={preset.id}
-                type="button"
-                disabled={isLoading}
-                onClick={() => setVideoQualityId(preset.id)}
-                className={cn(
-                  'flex flex-col items-center rounded-xl border px-2 py-2.5 text-center transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-                  isSelected
-                    ? 'border-brand/60 bg-brand/10 text-brand'
-                    : 'border-border bg-background text-foreground hover:border-border/80 hover:bg-muted/50',
-                )}
-              >
-                <span className="text-sm font-semibold">{preset.label}</span>
-                <span className="mt-0.5 text-[10px] leading-tight text-muted-foreground">
-                  {preset.subLabel}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Account selector — optional */}
-      <div className="space-y-2">
-        <p className="text-sm font-medium">
-          {t('selectAccounts')}
-          <span className="ml-1.5 text-xs font-normal text-muted-foreground">({t('optionalLabel')})</span>
-        </p>
-        <AccountSelector
-          accounts={accounts}
-          selectedIds={selectedIds}
-          onChange={setSelectedIds}
-        />
-        {selectedIds.size === 0 && (
-          <p className="text-xs text-muted-foreground">{t('noDestinationsHint')}</p>
-        )}
-      </div>
-
-      {/* Video source picker */}
-      <div className="space-y-2">
-        <p className="text-sm font-medium">{t('videoShare.sourcePickerLabel')}</p>
-
-        {/* Tab row */}
-        <div className="flex gap-1 rounded-xl border border-border bg-muted/40 p-1">
-          {tabs.map((tab) => {
-            const isCameraTab = tab.id === 'camera';
-            const isDisabled = isCameraTab && webcamChecked && !hasWebcam;
-            const isActive = sourceTab === tab.id;
-            const hasCount = tab.id === 'playlist' && playlistItems.length > 0;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                disabled={isDisabled}
-                title={isDisabled ? t('camera.notDetected') : undefined}
-                onClick={() => {
-                  if (isDisabled) return;
-                  if (tab.id === 'camera') {
-                    handleSelectCamera();
-                  } else if (tab.id === 'local-file') {
-                    fileInputRef.current?.click();
-                  } else if (tab.id === 'online-url') {
-                    setSourceTab('online-url');
-                  } else {
-                    setSourceTab('playlist');
-                  }
-                }}
-                className={cn(
-                  'relative flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition-colors',
-                  isDisabled
-                    ? 'cursor-not-allowed text-muted-foreground/30'
-                    : isActive
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {tab.icon}
-                {t(tab.labelKey as Parameters<typeof t>[0])}
-                {hasCount && (
-                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-500 px-0.5 text-[9px] font-bold leading-none text-white">
-                    {playlistItems.length}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Hidden file input — multiple so picking 2+ files auto-switches to playlist */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="video/*"
-          multiple
-          className="hidden"
-          onChange={handleFileChange}
-        />
 
         {/* URL input (single-source tab) */}
         {sourceTab === 'online-url' && (
@@ -664,8 +686,8 @@ export function GoLiveForm({ onSubmit, isLoading }: Props): React.ReactElement {
         type="submit"
         disabled={!canSubmit}
         className={cn(
-          'flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold text-white transition-colors',
-          'bg-brand hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50',
+          'btn-gradient flex w-full items-center justify-center gap-2 py-3 text-sm font-bold active:scale-[0.99]',
+          'disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none',
         )}
       >
         {isLoading && (

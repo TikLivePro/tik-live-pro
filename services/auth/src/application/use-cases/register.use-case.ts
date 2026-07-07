@@ -57,6 +57,7 @@ export class RegisterUseCase {
       email: emailVO.branded,
       passwordHash: passwordVO.value,
       displayName: input.displayName.trim(),
+      avatarUrl: null,
       subscriptionTier: SubscriptionTier.FREE,
       locale,
       isVerified: false,

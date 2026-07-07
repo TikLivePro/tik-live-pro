@@ -15,6 +15,7 @@ import { InlineAuthModal } from '@/features/auth/components/InlineAuthModal';
 import { EmojiPickerPopover } from '@/features/comments/components/EmojiPickerPopover';
 import { GifPickerPopover } from '@/features/comments/components/GifPickerPopover';
 import { CommentReactionPicker } from '@/features/comments/components/CommentReactionPicker';
+import { ReplayTimeline } from '@/features/comments/components/ReplayTimeline';
 import { useElapsedTime } from '../hooks/useElapsedTime';
 import { LiveReactionFloat } from './LiveReactionFloat';
 import { ViewersPanel } from './ViewersPanel';
@@ -135,8 +136,12 @@ function HlsPlayer({
     const hls = new Hls({
       enableWorker: true,
       lowLatencyMode: true,
-      liveSyncDuration: 1,
-      liveMaxLatencyDuration: 5,
+      // MediaMTX serves 2s segments / 500ms parts (anti-stutter tuning); a sync
+      // target below one segment duration makes hls.js chase a live edge the
+      // playlist can't sustain, causing periodic stall/seek loops. Hold about
+      // two segments back from the edge instead.
+      liveSyncDuration: 4,
+      liveMaxLatencyDuration: 12,
       maxBufferLength: 30,
       maxMaxBufferLength: 30,
       startLevel: -1,
@@ -148,6 +153,19 @@ function HlsPlayer({
       onQualityLevels?.(
         hls.levels.map((l, i) => ({ index: i, height: l.height, bitrate: l.bitrate })),
       );
+    });
+    // Recover from fatal errors instead of leaving the viewer on a black
+    // screen — the host's ffmpeg relay restarting (routine during transient
+    // platform hiccups) surfaces here as playlist 404s / media errors.
+    hls.on(Hls.Events.ERROR, (_event, data) => {
+      if (!data.fatal) return;
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        setTimeout(() => {
+          if (hlsRef.current === hls) hls.startLoad();
+        }, 2000);
+      } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        hls.recoverMediaError();
+      }
     });
     return () => {
       hlsRef.current = null;
@@ -537,14 +555,20 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     if (isEnded) return;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     let consecutiveUnchanged = 0;
+    // Track the last-seen status locally: comparing against the closure's
+    // session.status (frozen at effect mount) made every poll after a single
+    // transition look like a change, so the backoff never engaged and early
+    // viewers polled at the fast interval for the whole pre-live phase.
+    let lastStatus = session.status;
 
     const poll = async (): Promise<void> => {
       try {
         const res = await fetch(`${apiBase}/sessions/${session.id}/public`);
         if (res.ok) {
           const { data } = (await res.json()) as { data: PublicSession };
-          const statusChanged = data.status !== session.status;
+          const statusChanged = data.status !== lastStatus;
           if (statusChanged) {
+            lastStatus = data.status;
             consecutiveUnchanged = 0;
             setSession(data);
           } else {
@@ -582,16 +606,19 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   }, [isLive, session.id]);
 
   // Comments socket — read-only if unauthenticated, send-capable if authenticated.
-  // accessToken is intentionally excluded from deps: we don't want to reconnect on every
-  // token refresh and lose events. The initial token value is captured at connect time,
-  // which is sufficient because the comments service does not re-verify the token after
-  // the handshake.
+  // accessToken is intentionally excluded from deps: we don't want to reconnect on
+  // every token refresh and lose events. The auth callback below reads the token
+  // fresh from the store at each (re)connect handshake instead.
   useEffect(() => {
     if (!isLive) return;
 
-    const token = useAuthStore.getState().accessToken;
+    // auth is a callback so every (re)connect handshake carries a fresh access
+    // token — a static object would replay a token that expires after 15 min.
     const socket = socketIo(COMMENTS_WS_URL, {
-      ...(token ? { auth: { token } } : {}),
+      auth: (cb) => {
+        const token = useAuthStore.getState().accessToken;
+        cb(token ? { token } : {});
+      },
       query: { sessionId: session.id },
       transports: ['websocket'],
       reconnectionAttempts: 8,
@@ -602,8 +629,13 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       randomizationFactor: 0.5,
     });
 
-    // Announce as viewer so the streamer can see us in the audience list
-    socket.emit('join_as_viewer', { displayName: viewerDisplayName });
+    // Announce as viewer so the streamer can see us in the audience list.
+    // Emitted on 'connect' (not once at creation) so the viewer re-registers
+    // after every reconnect — the server's viewer registry is in-memory and
+    // forgets us when the comments service restarts or the socket drops.
+    socket.on('connect', () => {
+      socket.emit('join_as_viewer', { displayName: viewerDisplayName });
+    });
 
     socket.on('video_control_permission', (data: { allowed: boolean }) => {
       setMyVideoControlAllowed(data.allowed);
@@ -820,10 +852,14 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     });
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length === 0) return;
+    // Attachments travel as base64 data: URLs stored in Postgres and fanned
+    // out to every viewer — the API rejects items over 200KB (≈145KB binary).
+    const MAX_ATTACHMENT_BYTES = 140 * 1024;
+    const MAX_ATTACHMENTS = 4;
+    const files = Array.from(e.target.files ?? []).filter((f) => f.size <= MAX_ATTACHMENT_BYTES);
+    if (files.length === 0) { e.target.value = ''; return; }
     const loaded = await Promise.all(files.map(readFileAsDataUrl));
-    setAttachments((prev) => [...prev, ...loaded]);
+    setAttachments((prev) => [...prev, ...loaded].slice(0, MAX_ATTACHMENTS));
     e.target.value = '';
   }, []);
 
@@ -862,14 +898,14 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       // before the socket echo (which may omit mediaUrls).
       if (res.ok) {
         try {
-          const body = (await res.json()) as { data: Comment };
-          const created = body?.data;
-          if (created?.id) {
-            setComments((prev) => {
-              if (prev.some((c) => c.id === created.id)) return prev;
-              return [created, ...prev].slice(0, 100);
-            });
-          }
+          // POST /comments returns an array (one per platform); /reply a single object
+          const body = (await res.json()) as { data: Comment | Comment[] };
+          const created = Array.isArray(body?.data) ? body.data : [body?.data];
+          setComments((prev) => {
+            const fresh = created.filter((c) => c?.id && !prev.some((p) => p.id === c.id));
+            if (fresh.length === 0) return prev;
+            return [...fresh, ...prev].slice(0, 100);
+          });
         } catch { /* ignore — socket will deliver the comment */ }
       }
       setCommentText('');
@@ -1196,7 +1232,12 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
 
       {/* ── Non-live centered state ── */}
       {!isLive && !isPaused && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-5 px-6 text-center">
+        <div
+          className={cn(
+            'absolute inset-0 z-10 flex flex-col items-center gap-5 px-6 text-center',
+            isEnded ? 'overflow-y-auto py-16 sm:py-20' : 'justify-center',
+          )}
+        >
           <div
             className={cn(
               'flex h-20 w-20 items-center justify-center rounded-2xl border transition-all',
@@ -1269,6 +1310,9 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
             <img src="/logo.png" alt="" className="h-4 w-4 object-contain" />
             {t('goToApp')}
           </Link>
+
+          {/* Chat replay — full comment + reaction history with exact send times */}
+          {isEnded && <ReplayTimeline sessionId={session.id} />}
         </div>
       )}
 

@@ -238,7 +238,42 @@ Authenticates a registered user with email + password and returns a fresh JWT ac
           },
         },
         response: {
-          200: tokenPairResponse('Login successful. Token pair issued.'),
+          200: {
+            description: 'Login successful. Token pair issued.',
+            type: 'object',
+            required: ['data'],
+            properties: {
+              data: {
+                type: 'object',
+                required: ['userId', 'accessToken', 'refreshToken'],
+                properties: {
+                  ...tokenPairProperties,
+                  subscriptionTier: {
+                    type: 'string',
+                    description: 'User subscription tier.',
+                    example: 'free',
+                  },
+                  displayName: {
+                    type: 'string',
+                    description: 'Publicly visible display name.',
+                    example: 'Alice Streamer',
+                  },
+                  email: {
+                    type: 'string',
+                    format: 'email',
+                    description: 'Account email address.',
+                    example: 'alice@example.com',
+                  },
+                  avatarUrl: {
+                    type: 'string',
+                    format: 'uri',
+                    nullable: true,
+                    description: 'Profile picture URL, or null if not set.',
+                  },
+                },
+              },
+            },
+          },
           401: errorResponse('Invalid credentials — wrong email or password.'),
           422: errorResponse('Validation error — request body failed schema checks.'),
         },
@@ -272,6 +307,11 @@ Authenticates a registered user with email + password and returns a fresh JWT ac
   fastify.post(
     '/auth/oauth/social',
     {
+      config: {
+        // Each call triggers an outbound provider API verification — keep the
+        // same abuse ceiling as password login.
+        rateLimit: { max: 10, timeWindow: '1 minute' },
+      },
       schema: {
         tags: ['Authentication'],
         summary: 'Social OAuth login (Google / Facebook / TikTok)',
@@ -332,6 +372,12 @@ Exchanges a provider OAuth access token for a TikLivePro JWT token pair.
                     nullable: true,
                     description: 'Email address from the OAuth provider, or null if not provided.',
                     example: 'alice@example.com',
+                  },
+                  avatarUrl: {
+                    type: 'string',
+                    format: 'uri',
+                    nullable: true,
+                    description: 'Profile picture from the OAuth provider, or null if unavailable.',
                   },
                 },
               },

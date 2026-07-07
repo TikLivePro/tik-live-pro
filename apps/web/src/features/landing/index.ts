@@ -1,6 +1,11 @@
 export { LandingView } from './components/LandingView';
 export { LandingNav } from './components/LandingNav';
+export { MobileNavSheet } from './components/MobileNavSheet';
 export { HeroSection } from './components/HeroSection';
+export { HeroPreview } from './components/HeroPreview';
 export { FeaturesSection } from './components/FeaturesSection';
+export { HowItWorksSection } from './components/HowItWorksSection';
 export { PricingSection } from './components/PricingSection';
+export { FinalCtaSection } from './components/FinalCtaSection';
 export { LandingFooter } from './components/LandingFooter';
+export * from './consts/landing.consts';

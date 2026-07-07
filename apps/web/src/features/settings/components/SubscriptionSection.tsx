@@ -25,7 +25,7 @@ export function SubscriptionSection(): React.JSX.Element {
     : null;
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
+    <section className="card-surface space-y-4 p-5">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
           {t('subscription.sectionTitle')}

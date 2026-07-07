@@ -100,6 +100,12 @@ const patchSessionBody = z.object({
 
 // ---------------------------------------------------------------------------
 
+// Micro-cache for the public watch-page poll: every viewer polls
+// /sessions/:id/public every few seconds, which otherwise turns into N
+// identical Postgres reads per interval for the same session.
+const PUBLIC_SESSION_CACHE_TTL_MS = 3000;
+const publicSessionCache = new Map<string, { expiresAt: number; body: unknown }>();
+
 export function registerLiveSessionRoutes(
   fastify: FastifyInstance,
   deps: LiveSessionRouteDeps,
@@ -148,12 +154,16 @@ export function registerLiveSessionRoutes(
     },
     async (request, reply) => {
       const sessionId = request.params.sessionId as LiveSessionId;
+      const cached = publicSessionCache.get(sessionId);
+      if (cached && cached.expiresAt > Date.now()) {
+        return reply.send(cached.body);
+      }
       const session = await deps.sessionRepo.findById(sessionId);
       if (!session) {
         return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Session not found' } });
       }
       const platforms = [...new Set(session.destinations.map((d) => d.platform))];
-      return reply.send({
+      const body = {
         data: {
           id: session.id,
           title: session.title,
@@ -166,7 +176,16 @@ export function registerLiveSessionRoutes(
           viewerCount: 0,
           allowViewerVideoControl: session.allowViewerVideoControl,
         },
-      });
+      };
+      publicSessionCache.set(sessionId, { expiresAt: Date.now() + PUBLIC_SESSION_CACHE_TTL_MS, body });
+      // Opportunistic sweep so ended sessions don't accumulate forever.
+      if (publicSessionCache.size > 1000) {
+        const now = Date.now();
+        for (const [key, entry] of publicSessionCache) {
+          if (entry.expiresAt <= now) publicSessionCache.delete(key);
+        }
+      }
+      return reply.send(body);
     },
   );
 
@@ -323,6 +342,9 @@ Creates a new live session that will broadcast simultaneously to one or more con
           const authHeader = request.headers['authorization'];
           const billingRes = await fetch(`${deps.billingServiceUrl}/billing/entitlements`, {
             headers: authHeader ? { Authorization: authHeader } : {},
+            // A hung billing service must not stall every session creation
+            // until the gateway's 30s timeout — recording is best-effort.
+            signal: AbortSignal.timeout(5000),
           });
           if (billingRes.ok) {
             const { data } = (await billingRes.json()) as { data: { features: string[] } };

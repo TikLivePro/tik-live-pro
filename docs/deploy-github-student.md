@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-06-15 (streaming: deep optimisation anti-micro-coupures — MediaMTX buffer HLS 20s, writeQueueSize 2048, reconnexion auto ffmpeg ×3, mémoire MediaMTX 128m)
+> Dernière mise à jour : 2026-07-06 (hardening + migrations : job CI `migrate` — les migrations drizzle des 9 services sont jouées sur Neon avant chaque deploy ; ports internes bindés sur 127.0.0.1 — seuls 1935/tcp (RTMP OBS) et 8189/udp (ICE WebRTC) restent publics ; Caddy bloque /stream-orchestrator/docs et /metrics)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -660,6 +660,10 @@ GitHub Actions                       GitHub Actions
         ↓                                      ↓
   push :main, :sha-xxx             push :1.2.3, :1.2, :1, :latest
   (pas de deploy)                         ↓
+                                   Job migrate (runner GitHub)
+                                     pnpm db:migrate × 9 services
+                                     → directement sur Neon (secrets *_DATABASE_URL)
+                                          ↓
                                    SSH → Droplet
                                      écriture de .env depuis GitHub Secrets
                                      docker compose pull
@@ -668,6 +672,31 @@ GitHub Actions                       GitHub Actions
 ```
 
 Le fichier `.env` est **recréé à chaque déploiement** depuis les secrets GitHub — le serveur ne stocke jamais de secrets de façon permanente. `IMAGE_TAG` et `REGISTRY` sont calculés depuis le tag git et injectés directement.
+
+### Migrations de base de données
+
+Le job `migrate` du workflow (`.github/workflows/deploy.yml`) exécute `pnpm --filter <service> db:migrate` pour les 9 services **avant** le job `deploy` (qui en dépend via `needs`). Chaque `src/migrate.ts` détecte les URLs Neon et utilise le driver `neon-http`. Le nouveau code ne démarre donc jamais sur un schéma en retard.
+
+Pour jouer une migration manuellement (dépannage) :
+```bash
+# depuis votre machine locale
+DATABASE_URL="postgresql://user:pass@ep-xxx.neon.tech/tiklivepro_stream?sslmode=require" \
+  pnpm --filter @tik-live-pro/stream-orchestrator db:migrate
+```
+
+> **Règle :** tout changement de schéma drizzle doit être accompagné d'un fichier SQL dans `src/infrastructure/db/migrations/` **et** d'une entrée dans `migrations/meta/_journal.json` — sinon le job `migrate` ne le verra pas.
+
+### Exposition réseau du Droplet
+
+Tous les ports HTTP passent par Caddy (TLS). Dans `docker-compose.prod.managed.yml`, ils sont bindés sur `127.0.0.1` et donc inaccessibles depuis Internet. Seules exceptions, **publiques par nécessité** :
+
+| Port | Usage |
+|------|-------|
+| `80/443` | Caddy (TLS Let's Encrypt) |
+| `1935/tcp` | Ingest RTMP — OBS pousse directement dessus |
+| `8189/udp` | WebRTC ICE — les navigateurs s'y connectent directement |
+
+Tout nouveau port de service doit suivre la même règle (`127.0.0.1:<port>:<port>`).
 
 ---
 

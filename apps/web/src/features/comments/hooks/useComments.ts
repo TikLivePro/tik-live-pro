@@ -22,7 +22,7 @@ interface UseCommentsResult {
 
 export function useComments(sessionId: LiveSessionId | null): UseCommentsResult {
   const socketRef = useRef<Socket | null>(null);
-  const { accessToken, displayName } = useAuthStore();
+  const { displayName } = useAuthStore();
   const { comments, addComment, addReaction, replyingTo, setReplyingTo } = useStreamStore();
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -30,8 +30,15 @@ export function useComments(sessionId: LiveSessionId | null): UseCommentsResult 
   useEffect(() => {
     if (!sessionId) return;
 
+    // auth is a callback so every (re)connect handshake carries a *fresh*
+    // access token from the store — a static object would replay the token
+    // captured at mount, which expires after 15 min and would make the server
+    // reject streamer re-registration after a reconnect.
     const socket = socketIo(COMMENTS_WS_URL, {
-      ...(accessToken ? { auth: { token: accessToken } } : {}),
+      auth: (cb) => {
+        const token = useAuthStore.getState().accessToken;
+        cb(token ? { token } : {});
+      },
       query: { sessionId },
       transports: ['websocket'],
       reconnectionAttempts: 10,
@@ -60,8 +67,6 @@ export function useComments(sessionId: LiveSessionId | null): UseCommentsResult 
       socket.disconnect();
       socketRef.current = null;
     };
-  // accessToken intentionally excluded: reconnect only when session changes, not on every token refresh
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, addComment, addReaction]);
 
   const emitReaction = useCallback((emoji: string) => {
@@ -86,10 +91,15 @@ export function useComments(sessionId: LiveSessionId | null): UseCommentsResult 
         });
         if (res.ok) {
           try {
-            const body = (await res.json()) as { data: Comment };
-            const created = body?.data;
-            if (created?.id) addComment(created);
+            // POST /comments returns an array (one entry per platform posted to)
+            const body = (await res.json()) as { data: Comment | Comment[] };
+            const created = Array.isArray(body?.data) ? body.data : [body?.data];
+            for (const comment of created) {
+              if (comment?.id) addComment(comment);
+            }
           } catch { /* ignore parse errors — socket will deliver the comment */ }
+        } else {
+          setSendError('sendError');
         }
       } catch {
         setSendError('sendError');
@@ -122,8 +132,10 @@ export function useComments(sessionId: LiveSessionId | null): UseCommentsResult 
             const created = body?.data;
             if (created?.id) addComment(created);
           } catch { /* ignore parse errors — socket will deliver the comment */ }
+          setReplyingTo(null);
+        } else {
+          setSendError('sendError');
         }
-        setReplyingTo(null);
       } catch {
         setSendError('sendError');
       } finally {

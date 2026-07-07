@@ -18,6 +18,10 @@ const MAX_CONCURRENT_WORKER_STARTS = 5;
 // Covers transient network hiccups to TikTok/Facebook without ending the session.
 const MAX_WORKER_RETRIES = 3;
 const WORKER_RETRY_BASE_DELAY_MS = 2000;
+// If a retried worker stays live at least this long, the retry budget resets.
+// Without this, a long stream with one transient hiccup per hour exhausts its
+// 3 lifetime retries and is hard-killed on the 4th despite hours of stability.
+const RETRY_BUDGET_RESET_MS = 60_000;
 
 interface WorkerLiveState {
   everLive: boolean;          // true once any attempt has produced stats
@@ -28,6 +32,13 @@ interface WorkerLiveState {
 export class HandleStreamArrivedUseCase {
   private readonly workers = new Map<string, IStreamWorker>();
   private readonly retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // Keys currently between launchWorker() entry and workers.set() — guards
+  // against a concurrent stream re-arrival spawning a second ffmpeg for the
+  // same ingest key while a start (or retry) is in flight.
+  private readonly launching = new Set<string>();
+  // Keys whose stopWorker() arrived while the worker was still launching;
+  // the launch path kills the worker right after start instead of leaking it.
+  private readonly pendingStops = new Set<string>();
   private activeStarts = 0;
   private readonly startQueue: Array<() => void> = [];
 
@@ -41,8 +52,12 @@ export class HandleStreamArrivedUseCase {
   ) {}
 
   async execute(ingestKey: string): Promise<void> {
-    if (this.workers.has(ingestKey)) {
-      this.logger.warn({ ingestKey }, 'Worker already running for this ingest key');
+    if (
+      this.workers.has(ingestKey) ||
+      this.launching.has(ingestKey) ||
+      this.retryTimers.has(ingestKey)
+    ) {
+      this.logger.warn({ ingestKey }, 'Worker already running, launching, or awaiting retry for this ingest key');
       return;
     }
 
@@ -119,12 +134,21 @@ export class HandleStreamArrivedUseCase {
     liveState: WorkerLiveState,
     retryCount: number,
   ): Promise<void> {
+    // Must be the first synchronous statement: closes the window in which a
+    // concurrent execute() (OBS reconnect, MediaMTX path flap, crash recovery)
+    // could spawn a second ffmpeg pushing to the same platform RTMP keys.
+    this.launching.add(ingestKey);
+
     const worker = this.workerFactory();
     // Guards double-handling: worker.start() can both reject AND fire onError.
     // Once startCompleted is true, the top-level error handler owns errors.
     let startCompleted = false;
+    // Timestamp of the first stats event of THIS attempt — used to decide
+    // whether a stable recovery earns the retry budget back.
+    let attemptLiveAt = 0;
 
     worker.onStats((stats: StreamWorkerStats) => {
+      if (attemptLiveAt === 0) attemptLiveAt = Date.now();
       liveState.everLive = true;
       void (async () => {
         // Mark destinations/session LIVE exactly once across all retry attempts.
@@ -182,20 +206,32 @@ export class HandleStreamArrivedUseCase {
 
     worker.onError((err: Error) => {
       if (!startCompleted) return; // handled by the start() rejection below
-      this.workers.delete(ingestKey);
+      // A late error from a superseded worker must not unregister (or retry
+      // on behalf of) the worker currently owning this ingest key.
+      if (this.workers.get(ingestKey) === worker) {
+        this.workers.delete(ingestKey);
+      } else {
+        this.logger.warn({ ingestKey }, 'Ignoring error from a superseded stream worker');
+        return;
+      }
       this.logger.error({ err, sessionId: session.sessionId, retryCount }, 'Stream worker error');
+
+      // A recovery that stayed live for a while proves the pipeline is healthy
+      // again — treat the next failure as a fresh transient, not attempt N+1.
+      const effectiveRetryCount =
+        attemptLiveAt !== 0 && Date.now() - attemptLiveAt >= RETRY_BUDGET_RESET_MS ? 0 : retryCount;
 
       // Transient failure after the worker was live: retry with exponential backoff.
       // This covers brief network hiccups to TikTok/Facebook without ending the session.
-      if (liveState.everLive && retryCount < MAX_WORKER_RETRIES) {
-        const delay = (retryCount + 1) * WORKER_RETRY_BASE_DELAY_MS;
+      if (liveState.everLive && effectiveRetryCount < MAX_WORKER_RETRIES) {
+        const delay = (effectiveRetryCount + 1) * WORKER_RETRY_BASE_DELAY_MS;
         this.logger.warn(
-          { ingestKey, attempt: retryCount + 1, delayMs: delay },
+          { ingestKey, attempt: effectiveRetryCount + 1, delayMs: delay },
           'Worker died after being live — scheduling restart',
         );
         const timer = setTimeout(() => {
           this.retryTimers.delete(ingestKey);
-          void this.launchWorker(ingestKey, session, socialDests, destConfigs, liveState, retryCount + 1);
+          void this.launchWorker(ingestKey, session, socialDests, destConfigs, liveState, effectiveRetryCount + 1);
         }, delay);
         this.retryTimers.set(ingestKey, timer);
         return;
@@ -203,17 +239,35 @@ export class HandleStreamArrivedUseCase {
 
       // Permanent failure (startup error or max retries exhausted).
       void (async () => {
-        for (const dest of session.destinations) {
+        // Re-read the session: the in-memory entity is stale by now, and a
+        // manual stop may have ENDED the session while ffmpeg was dying —
+        // overwriting that with ERROR would resurrect it as failed in the UI.
+        const current = await this.sessionRepo.findByIngestKey(ingestKey);
+        if (
+          !current ||
+          current.status === StreamSessionStatus.ENDING ||
+          current.status === StreamSessionStatus.ENDED ||
+          current.status === StreamSessionStatus.ERROR
+        ) {
+          this.logger.info(
+            { ingestKey, status: current?.status ?? 'not_found' },
+            'Skipping worker-failure transition — session already ended or gone',
+          );
+          return;
+        }
+
+        for (const dest of current.destinations) {
           if (
             dest.status === DestinationStatus.LIVE ||
             dest.status === DestinationStatus.CONNECTING
           ) {
-            session.markDestinationError(dest.socialAccountId, err.message);
+            const prevStatus = dest.status;
+            current.markDestinationError(dest.socialAccountId, err.message);
             await this.eventPublisher.destinationStatusChanged(
-              session.sessionId,
+              current.sessionId,
               dest.socialAccountId,
               dest.platform,
-              dest.status,
+              prevStatus,
               DestinationStatus.ERROR,
               err.message,
               randomUUID(),
@@ -221,14 +275,16 @@ export class HandleStreamArrivedUseCase {
           }
         }
 
-        if (!session.hasAnyLiveDestination()) {
-          session.markError();
-          await this.eventPublisher.sessionError(session.sessionId, session.userId, randomUUID());
+        if (!current.hasAnyLiveDestination()) {
+          current.markError();
+          await this.eventPublisher.sessionError(current.sessionId, current.userId, randomUUID());
         }
 
-        await this.sessionRepo.update(session);
-        this.logger.error({ sessionId: session.sessionId, retryCount }, 'Stream worker permanently failed');
-      })();
+        await this.sessionRepo.update(current);
+        this.logger.error({ sessionId: current.sessionId, retryCount }, 'Stream worker permanently failed');
+      })().catch((persistErr: unknown) => {
+        this.logger.error({ err: persistErr, ingestKey }, 'Failed to persist worker permanent failure');
+      });
     });
 
     await this.acquireStartSlot();
@@ -238,6 +294,13 @@ export class HandleStreamArrivedUseCase {
       this.releaseStartSlot();
     } catch (err) {
       this.releaseStartSlot();
+      this.launching.delete(ingestKey);
+      // The user stopped the session while ffmpeg was starting — the failure
+      // is moot and the session is already ENDED; don't overwrite it.
+      if (this.pendingStops.delete(ingestKey)) {
+        this.logger.info({ ingestKey }, 'Worker start failed after stop was requested — ignoring');
+        return;
+      }
       this.logger.error({ err, sessionId: session.sessionId }, 'Stream worker failed to start');
       for (const dest of session.destinations) {
         if (dest.status === DestinationStatus.LIVE || dest.status === DestinationStatus.CONNECTING) {
@@ -262,6 +325,16 @@ export class HandleStreamArrivedUseCase {
     }
 
     this.workers.set(ingestKey, worker);
+    this.launching.delete(ingestKey);
+
+    // A stop request arrived while ffmpeg was still starting — honor it now
+    // instead of leaking a relay that pushes to the platforms forever.
+    if (this.pendingStops.delete(ingestKey)) {
+      await worker.stop();
+      this.workers.delete(ingestKey);
+      this.logger.info({ ingestKey }, 'Worker stopped right after start (stop requested during launch)');
+      return;
+    }
 
     this.logger.info(
       { sessionId: session.sessionId, destinationCount: destConfigs.length, retryCount },
@@ -297,6 +370,12 @@ export class HandleStreamArrivedUseCase {
       clearTimeout(timer);
       this.retryTimers.delete(ingestKey);
     }
+    // A worker between launchWorker() entry and workers.set() is invisible in
+    // the map — record the stop so the launch path kills it right after start.
+    if (this.launching.has(ingestKey)) {
+      this.pendingStops.add(ingestKey);
+      this.logger.info({ ingestKey }, 'Stop requested while worker is launching — deferred');
+    }
     const worker = this.workers.get(ingestKey);
     if (!worker) return;
     await worker.stop();
@@ -306,5 +385,19 @@ export class HandleStreamArrivedUseCase {
 
   activeWorkerCount(): number {
     return this.workers.size;
+  }
+
+  // Graceful shutdown: cancel pending retries and kill every ffmpeg relay so a
+  // bare-process restart doesn't leave orphans that crash recovery then duplicates.
+  async stopAllWorkers(): Promise<void> {
+    for (const timer of this.retryTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.retryTimers.clear();
+    for (const key of this.launching) {
+      this.pendingStops.add(key);
+    }
+    const keys = [...this.workers.keys()];
+    await Promise.allSettled(keys.map((key) => this.stopWorker(key)));
   }
 }

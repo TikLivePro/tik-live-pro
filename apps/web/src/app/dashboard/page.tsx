@@ -1,183 +1,65 @@
 'use client';
 
 import { useState } from 'react';
-import { useTranslations } from 'next-intl';
-import Link from 'next/link';
 import { StreamPanel } from '@/features/stream/components/StreamPanel';
-import { CommentFeed } from '@/features/comments/components/CommentFeed';
+import { ThisMonthStats } from '@/features/stream/components/ThisMonthStats';
+import { RecentSessionsTable } from '@/features/stream/components/RecentSessionsTable';
 import { AccountList } from '@/features/accounts/components/AccountList';
 import { HistorySidebar } from '@/features/stream/components/HistorySidebar';
 import { RecordingsSidebar } from '@/features/stream/components/RecordingsSidebar';
-import { UserMenu } from '@/features/auth/components/UserMenu';
-import { NotificationBell } from '@/features/notifications/components/NotificationBell';
-import { useStreamStore, useActiveSession } from '@/features/stream';
-import { useStream } from '@/features/stream/hooks/useStream';
+import { DashboardHeader } from '@/features/stream/components/DashboardHeader';
+import { DashboardGreeting } from '@/features/stream/components/DashboardGreeting';
+import { ActiveSessionBanner } from '@/features/stream/components/ActiveSessionBanner';
+import { StickyGoLiveBar } from '@/features/stream/components/StickyGoLiveBar';
+import { useActiveSession } from '@/features/stream';
 
-const INACTIVE_STATUSES = new Set(['ending', 'ended', 'error']);
-const STOPPABLE_STATUSES = new Set(['live', 'starting', 'paused']);
+import { CreatorLayout } from '@/components/CreatorLayout';
 
 export default function DashboardPage(): React.ReactElement {
-  const t = useTranslations('stream');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [recordingsOpen, setRecordingsOpen] = useState(false);
   useActiveSession();
-  const currentSession = useStreamStore((s) => s.currentSession);
-  const { endSession, pauseSession, resumeSession, isEnding, isPausing } = useStream();
-  const hasActiveSession = currentSession !== null && !INACTIVE_STATUSES.has(currentSession.status);
-  const canStop = currentSession !== null && STOPPABLE_STATUSES.has(currentSession.status);
-  const canPause = currentSession?.status === 'live';
-  const canResume = currentSession?.status === 'paused';
-
-  console.log('currentSession :>> ', currentSession);
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border">
-        <div className="container mx-auto flex h-14 items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <img src="/logo.png" alt="TikLive Pro" className="h-7 w-7 object-contain" />
-            <span className="text-base font-bold tracking-tight sm:text-lg">TikLive Pro</span>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* History toggle */}
-            <button
-              type="button"
-              onClick={() => setHistoryOpen(true)}
-              aria-label={t('history.sectionLabel')}
-              title={t('history.sectionLabel')}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <svg
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <polyline points="12 6 12 12 16 14" />
-              </svg>
-            </button>
-            {/* Recordings toggle */}
-            <button
-              type="button"
-              onClick={() => setRecordingsOpen(true)}
-              aria-label={t('recordings.sectionLabel')}
-              title={t('recordings.sectionLabel')}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <svg
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="8" />
-                <circle cx="12" cy="12" r="3" fill="currentColor" stroke="none" />
-              </svg>
-            </button>
-            <NotificationBell />
-            <UserMenu />
-          </div>
-        </div>
-      </header>
+    <CreatorLayout>
+      <div className="relative min-h-screen bg-background flex-1 w-full">
+      {/* Ambient background */}
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="animate-orb-drift absolute -top-32 right-[-10%] h-80 w-80 rounded-full bg-brand/10 blur-3xl" />
+        <div className="absolute -left-24 top-1/3 h-72 w-72 rounded-full bg-[hsl(15_90%_55%)]/8 blur-3xl" />
+      </div>
 
-      {/* Return-to-live banner */}
-      {hasActiveSession && (
-        <div className="border-b border-red-500/20 bg-red-500/10 px-4 py-2.5">
-          <div className="container mx-auto flex items-center justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-2">
-              <span
-                className={`h-2 w-2 flex-shrink-0 rounded-full ${canResume ? 'bg-yellow-400' : 'animate-pulse bg-red-500'}`}
-              />
-              <span className="truncate text-sm font-medium text-red-400">
-                {currentSession.title}
-              </span>
-            </div>
-            <div className="flex flex-shrink-0 items-center gap-2">
-              {canPause && (
-                <button
-                  type="button"
-                  onClick={() => void pauseSession(currentSession.id)}
-                  disabled={isPausing}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/20 px-3 py-1 text-xs font-semibold text-white/80 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <svg
-                    className="h-3 w-3 flex-shrink-0"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <rect x="6" y="4" width="4" height="16" rx="1" />
-                    <rect x="14" y="4" width="4" height="16" rx="1" />
-                  </svg>
-                  {isPausing ? t('status.paused') : t('pauseLive')}
-                </button>
-              )}
-              {canResume && (
-                <button
-                  type="button"
-                  onClick={() => void resumeSession(currentSession.id)}
-                  disabled={isPausing}
-                  className="flex items-center gap-1.5 rounded-lg border border-yellow-400/40 px-3 py-1 text-xs font-semibold text-yellow-300 transition-colors hover:bg-yellow-400/10 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <svg
-                    className="h-3 w-3 flex-shrink-0"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <polygon points="5,3 19,12 5,21" />
-                  </svg>
-                  {t('resumeLive')}
-                </button>
-              )}
-              {canStop && (
-                <button
-                  type="button"
-                  onClick={() => void endSession(currentSession.id)}
-                  disabled={isEnding}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/20 px-3 py-1 text-xs font-semibold text-white/80 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <span className="h-2 w-2 flex-shrink-0 rounded-[2px] border border-current" />
-                  {isEnding ? t('status.ending') : t('stopLive')}
-                </button>
-              )}
-              <Link
-                href={`/live/${currentSession.id}`}
-                className="rounded-lg bg-red-600 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-red-500"
-              >
-                {t('returnToLive')}
-              </Link>
-            </div>
-          </div>
-        </div>
-      )}
+      <DashboardHeader
+        onOpenHistory={() => setHistoryOpen(true)}
+        onOpenRecordings={() => setRecordingsOpen(true)}
+      />
+      <ActiveSessionBanner />
 
-      <main className="container mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="space-y-6 lg:col-span-2">
+      <main className="container relative mx-auto space-y-6 px-4 py-6 pb-24 lg:pb-6">
+        <DashboardGreeting />
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+          <div className="animate-fade-up lg:col-span-8">
             <StreamPanel />
+          </div>
+          <div className="animate-fade-up space-y-6 lg:col-span-4 [animation-delay:120ms]">
+            <ThisMonthStats />
             <AccountList />
           </div>
-          <div className="lg:col-span-1">
-            <CommentFeed />
-          </div>
+        </div>
+
+        <div className="animate-fade-up [animation-delay:180ms]">
+          <RecentSessionsTable onViewAll={() => setHistoryOpen(true)} />
         </div>
       </main>
 
+      <StickyGoLiveBar />
       <HistorySidebar open={historyOpen} onClose={() => setHistoryOpen(false)} />
       <RecordingsSidebar
         open={recordingsOpen}
         onClose={() => setRecordingsOpen(false)}
       />
-    </div>
+      </div>
+    </CreatorLayout>
   );
 }

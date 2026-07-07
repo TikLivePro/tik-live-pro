@@ -52,13 +52,30 @@
       "sessionExpired": "Your session has expired. Please sign in again",
       "generic": "Something went wrong. Please try again",
       "oauthFailed": "Social login failed. Please try again"
-    }
+    },
+    "welcomeBack": "Welcome back",
+    "welcomeSubtitle": "Log in to manage your streams and engage your audience.",
+    "signUpToStream": "Sign up to stream",
+    "testimonial": {
+      "quote": "Switching to TikLivePro completely changed how I interact with my community. The latency is practically zero, and the analytics give me total control over my content.",
+      "name": "Sarah Jenkins",
+      "role": "Top 1% Creator"
+    },
+    "callback": {
+      "connecting": "Connecting your account…",
+      "redirectMoment": "You'll be redirected in a moment.",
+      "failedTitle": "Connection failed",
+      "failedBody": "We couldn't securely connect your account. Please try again or return to login.",
+      "tryAgain": "Try again",
+      "backToLogin": "Back to login"
+    },
+    "signUpSubtitle": "Create your account and start streaming everywhere at once."
   },
   "stream": {
     "title": "Stream title",
     "description": "Description (optional)",
     "goLive": "Go Live",
-    "goLiveHeading": "Start your live stream",
+    "goLiveHeading": "Stream Setup",
     "goLiveSubtitle": "Set your stream details and choose which accounts to broadcast to",
     "selectAccounts": "Broadcast to",
     "noAccountsConnected": "No accounts connected yet",
@@ -244,6 +261,71 @@
       "endFailed": "Failed to end the stream",
       "pauseFailed": "Failed to pause the stream",
       "resumeFailed": "Failed to resume the stream"
+    },
+    "greeting": "Ready to go live, {name}?",
+    "thisMonth": {
+      "title": "This Month",
+      "totalStreams": "Total Streams",
+      "hoursLive": "Hours Live",
+      "peakViewers": "Peak Viewers"
+    },
+    "recentSessions": {
+      "title": "Recent Sessions",
+      "streamCol": "Stream",
+      "dateCol": "Date & Duration",
+      "destinationsCol": "Destinations",
+      "actionCol": "Action",
+      "replay": "Replay",
+      "viewAll": "View all",
+      "viewersCol": "Viewers",
+      "peakLabel": "peak"
+    },
+    "greetingGeneric": "Ready to go live?",
+    "obs": {
+      "tabLabel": "OBS / RTMP",
+      "rtmpUrl": "RTMP URL",
+      "streamKey": "Stream Key",
+      "copy": "Copy",
+      "copied": "Copied!",
+      "showKey": "Show stream key",
+      "hideKey": "Hide stream key",
+      "generatedOnStart": "Your RTMP URL and stream key are generated when you start the broadcast."
+    },
+    "controlRoom": {
+      "viewers": "Viewers",
+      "peakViewers": "Peak viewers",
+      "commentsCount": "Comments",
+      "reactions": "Reactions",
+      "settings": "Stream settings",
+      "settingsHint": "Resolution, source & stream links",
+      "links": "Stream links",
+      "watchLink": "Watch link",
+      "hlsLink": "HLS stream",
+      "webrtcLink": "WebRTC (low latency)",
+      "endConfirmTitle": "End this stream?",
+      "endConfirmBody": "Your broadcast will stop on every destination. This can't be undone.",
+      "endConfirmAction": "End stream",
+      "chatTab": "Chat",
+      "viewersTab": "Viewers",
+      "dashboardNav": "Dashboard",
+      "healthStreaming": "Streaming",
+      "healthConnecting": "Reconnecting",
+      "healthError": "Error",
+      "healthEnded": "Ended",
+      "healthPending": "Waiting",
+      "sidebar": {
+        "label": "Creator Studio Navigation",
+        "creatorStudio": "Creator Studio",
+        "overview": "Overview",
+        "streaming": "Streaming",
+        "analytics": "Analytics",
+        "accounts": "Accounts",
+        "settings": "Settings",
+        "soon": "Soon",
+        "upgradePro": "Upgrade Pro",
+        "help": "Help",
+        "logout": "Logout"
+      }
     }
   },
   "comments": {
@@ -264,7 +346,14 @@
     "insertLinkConfirm": "Insert",
     "viewAttachment": "View attachment",
     "dismissPreview": "Dismiss preview",
-    "addReaction": "Add reaction"
+    "addReaction": "Add reaction",
+    "filterAll": "All",
+    "pauseAutoscroll": "Pause auto-scroll",
+    "resumeAutoscroll": "Resume auto-scroll",
+    "newMessages": "New messages",
+    "pinned": "Pinned",
+    "pin": "Pin",
+    "unpin": "Unpin"
   },
   "accounts": {
     "title": "Connected Accounts",
@@ -277,11 +366,14 @@
     "status": {
       "connected": "Connected",
       "disconnected": "Disconnected",
-      "error": "Error"
+      "error": "Error",
+      "ready": "Ready"
     },
     "limit": {
       "freemium": "Free plan allows up to 2 connected accounts",
-      "upgrade": "Upgrade to Premium for unlimited accounts"
+      "upgrade": "Upgrade to Premium for unlimited accounts",
+      "freemiumShort": "Free plan · 2 accounts max",
+      "upgradeCta": "Upgrade"
     },
     "modal": {
       "title": "Connect an account",
@@ -291,7 +383,9 @@
       "connectFailed": "Failed to connect account",
       "disconnectFailed": "Failed to disconnect account",
       "limitReached": "Account limit reached. Upgrade to connect more accounts"
-    }
+    },
+    "manage": "Manage",
+    "reconnect": "Reconnect"
   },
   "billing": {
     "title": "Subscription",
@@ -300,7 +394,10 @@
       "free": {
         "name": "Free",
         "description": "Get started with live streaming",
-        "features": ["Up to 2 connected accounts", "Basic streaming features"]
+        "features": [
+          "Up to 2 connected accounts",
+          "Basic streaming features"
+        ]
       },
       "premium": {
         "name": "Premium",
@@ -572,6 +669,11 @@
       "open": "Stream quality",
       "hd": "HD · Live",
       "saveData": "Saves bandwidth"
+    },
+    "replay": {
+      "title": "Chat replay",
+      "summary": "{comments, plural, one {# comment} other {# comments}} · {reactions, plural, one {# reaction} other {# reactions}}",
+      "empty": "No comments or reactions were sent during this live."
     }
   },
   "notFound": {
@@ -583,14 +685,32 @@
     "nav": {
       "signIn": "Sign In",
       "getStarted": "Get Started Free",
-      "goToDashboard": "Go to Dashboard"
+      "goToDashboard": "Go to Dashboard",
+      "features": "Features",
+      "howItWorks": "How it works",
+      "pricing": "Pricing",
+      "goLiveFree": "Go Live Free",
+      "openMenu": "Open menu",
+      "closeMenu": "Close menu"
     },
     "hero": {
       "badge": "Multi-Platform Live Streaming",
-      "headline": "Go Live on TikTok\n& Facebook Simultaneously",
       "subtext": "Stream to all your platforms at once. Manage comments in real time, track live stats, and grow your audience — all from one dashboard.",
       "cta": "Start Streaming Free",
-      "ctaSecondary": "Sign In"
+      "ctaSecondary": "Sign In",
+      "preview": {
+        "live": "LIVE",
+        "viewers": "12.4K viewers",
+        "duration": "00:42:17",
+        "c1": "This is amazing 🔥",
+        "c2": "Greetings from Paris!",
+        "c3": "How do you go live on both?!"
+      },
+      "headlineStart": "Go live ",
+      "headlineHighlight": "everywhere",
+      "headlineEnd": ".\nAt once.",
+      "socialProof": "Trusted by 12,000+ creators",
+      "socialProofMore": "+9k"
     },
     "features": {
       "sectionLabel": "FEATURES",
@@ -610,6 +730,14 @@
       "latency": {
         "title": "Ultra-Low Latency",
         "description": "WebRTC-powered streaming delivers your content to viewers in under 500 milliseconds."
+      },
+      "obsIngest": {
+        "title": "OBS & RTMP Ingest",
+        "description": "Bring your existing OBS or Streamlabs setup — one custom RTMP key connects your studio to every destination."
+      },
+      "security": {
+        "title": "Secure Account Linking",
+        "description": "Official OAuth flows and AES-256 encrypted tokens keep your TikTok and Facebook accounts safe."
       }
     },
     "pricing": {
@@ -627,23 +755,67 @@
         "f3": "Unified comment feed",
         "cta": "Get Started Free"
       },
-      "premium": {
-        "name": "Premium",
-        "price": "$19",
+      "billingToggleLabel": "Billing period",
+      "monthly": "Monthly",
+      "yearly": "Yearly",
+      "billedYearly": "Billed yearly",
+      "pro": {
+        "name": "Pro",
+        "priceMonthly": "$19",
+        "priceYearly": "$15",
         "description": "For serious streamers",
         "f1": "Unlimited connected accounts",
         "f2": "Live analytics dashboard",
         "f3": "Comment moderation tools",
         "f4": "Stream recording",
         "f5": "Priority support",
-        "cta": "Upgrade to Premium"
+        "cta": "Upgrade to Pro"
+      },
+      "studio": {
+        "name": "Studio",
+        "priceMonthly": "$49",
+        "priceYearly": "$39",
+        "description": "For teams and power creators",
+        "f1": "Everything in Pro",
+        "f2": "4K Ultra HD quality",
+        "f3": "Custom RTMP ingest",
+        "f4": "Dedicated support",
+        "cta": "Go Studio"
       }
     },
     "footer": {
       "tagline": "The simplest way to go live everywhere.",
       "rights": "© 2026 TikLivePro. All rights reserved.",
-      "terms": "Terms",
-      "privacy": "Privacy"
+      "terms": "Terms of Service",
+      "privacy": "Privacy Policy",
+      "productTitle": "Product",
+      "legalTitle": "Legal",
+      "languageTitle": "Language",
+      "features": "Features",
+      "howItWorks": "How it works",
+      "pricing": "Pricing",
+      "dataDeletion": "Data deletion"
+    },
+    "howItWorks": {
+      "sectionLabel": "HOW IT WORKS",
+      "heading": "Live in three steps",
+      "step1": {
+        "title": "Connect your accounts",
+        "description": "Link TikTok and Facebook securely through our dashboard in a few clicks."
+      },
+      "step2": {
+        "title": "Set up your stream",
+        "description": "Pick your destinations, add a title, and stream from your camera or OBS."
+      },
+      "step3": {
+        "title": "Go live everywhere",
+        "description": "Hit one button and broadcast to your entire audience at once."
+      }
+    },
+    "finalCta": {
+      "heading": "Ready to scale?",
+      "subtext": "Join thousands of creators maximizing their reach with every stream.",
+      "cta": "Start streaming free"
     }
   }
 }

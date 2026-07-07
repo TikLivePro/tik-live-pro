@@ -40,6 +40,7 @@ export class PgAuthUserRepository implements IAuthUserRepository {
       email: user.email,
       passwordHash: user.passwordHash,
       displayName: user.displayName,
+      avatarUrl: user.avatarUrl,
       subscriptionTier: user.subscriptionTier,
       locale: user.locale,
       isVerified: user.isVerified,
@@ -57,6 +58,7 @@ export class PgAuthUserRepository implements IAuthUserRepository {
         email: user.email,
         passwordHash: user.passwordHash,
         displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
         subscriptionTier: user.subscriptionTier,
         locale: user.locale,
         isVerified: user.isVerified,
@@ -99,7 +101,7 @@ export class PgAuthUserRepository implements IAuthUserRepository {
       provider: account.provider,
       providerUserId: account.providerUserId,
       providerEmail: account.providerEmail,
-    });
+    }).onConflictDoNothing({ target: [oauthAccounts.provider, oauthAccounts.providerUserId] });
     this.logger.debug({ provider: account.provider }, 'PgAuthUserRepository: saveOAuthAccount done');
   }
 
@@ -117,6 +119,7 @@ export class PgAuthUserRepository implements IAuthUserRepository {
       email: row.email as Email,
       passwordHash: row.passwordHash,
       displayName: row.displayName,
+      avatarUrl: row.avatarUrl,
       subscriptionTier: row.subscriptionTier as SubscriptionTier,
       locale: row.locale,
       isVerified: row.isVerified,

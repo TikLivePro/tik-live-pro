@@ -6,6 +6,7 @@ import type { HandleStreamArrivedUseCase } from './handle-stream-arrived.use-cas
 import type { LiveSessionId } from '@tik-live-pro/shared-types';
 import { DestinationStatus, SocialPlatform as SP } from '@tik-live-pro/shared-types';
 import { StreamSessionStatus } from '../../domain/entities/stream-session.entity.js';
+import { stopVideoPush } from '../../infrastructure/ffmpeg/video-push-registry.js';
 import type { Logger } from '@tik-live-pro/logger';
 
 export interface StopBroadcastInput {
@@ -40,6 +41,13 @@ export class StopBroadcastUseCase {
       this.logger.info({ sessionId: input.sessionId, status: session.status }, 'Session already stopped — notifying live-session to finalize');
       await this.eventPublisher.sessionBroadcastStopped(session.sessionId, session.userId, input.correlationId);
       return;
+    }
+
+    // Kill any looping video-push ffmpeg first: it would otherwise keep the
+    // MediaMTX path (and ~1 CPU core of libx264) alive forever after the
+    // session ends, since nothing else knows about it.
+    if (stopVideoPush(session.sessionId)) {
+      this.logger.info({ sessionId: session.sessionId }, 'Stopped video-push process on session end');
     }
 
     // Stop the ffmpeg worker and any active recording

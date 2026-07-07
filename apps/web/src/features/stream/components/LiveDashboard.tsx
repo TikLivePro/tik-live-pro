@@ -28,14 +28,14 @@ export function LiveDashboard(): React.ReactElement {
 
   return (
     <div className="flex flex-col min-h-screen bg-[#0f1117] text-white">
-      <header className="flex items-center justify-between border-b border-white/5 px-4 py-3 sm:px-6">
+      <header className="sticky top-0 z-40 flex items-center justify-between border-b border-white/10 bg-[#0f1117]/80 px-4 py-3 backdrop-blur-md sm:px-6">
         <div className="flex items-center gap-2">
           <img src="/logo.png" alt="TikLive Pro" className="h-7 w-7 object-contain" />
           <span className="text-base font-bold tracking-tight sm:text-lg">TikLive Pro</span>
         </div>
         <div className="flex items-center gap-3">
           {isLive && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-bold text-white">
+            <span className="animate-live-glow bg-gradient-brand inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold text-white">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
               {t('status.live')}
             </span>
@@ -71,7 +71,7 @@ export function LiveDashboard(): React.ReactElement {
                 return (
                   <div
                     key={dest.socialAccountId}
-                    className="flex items-center gap-3 rounded-2xl bg-white/5 px-4 py-3"
+                    className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 transition-colors hover:bg-white/[0.08]"
                   >
                     <span className={cn('h-2 w-2 flex-shrink-0 rounded-full', isDestLive ? 'bg-green-500' : 'bg-slate-500')} />
                     <div className={cn('flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white', avatarColor)}>
@@ -95,7 +95,7 @@ export function LiveDashboard(): React.ReactElement {
           <button
             onClick={() => void endSession(currentSession.id)}
             disabled={isEnding}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-white/15 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-red-500/40 bg-red-500/10 py-3.5 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span className="h-4 w-4 flex-shrink-0 rounded-sm border-2 border-current" />
             {isEnding ? t('status.ending') : t('stopLive')}

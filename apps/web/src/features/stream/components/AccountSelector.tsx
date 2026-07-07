@@ -2,30 +2,29 @@
 
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
-import { getInitials } from '@/lib/text.utils';
-import { AVATAR_COLORS } from '../consts/stream.consts';
-import type { SocialAccount, SocialAccountId, SocialPlatform } from '@tik-live-pro/shared-types';
+import { getPlatformIdentityColor } from '@/lib/platform.consts';
+import type { SocialAccount, SocialAccountId } from '@tik-live-pro/shared-types';
 
 interface Props {
   accounts: SocialAccount[];
   selectedIds: Set<SocialAccountId>;
   onChange: (ids: Set<SocialAccountId>) => void;
+  /** Renders a "+ Connect account" dashed chip when provided. */
+  onConnectClick?: () => void;
 }
 
-const PLATFORM_ORDER: SocialPlatform[] = ['tiktok', 'facebook'];
-
-export function AccountSelector({ accounts, selectedIds, onChange }: Props): React.ReactElement {
+/**
+ * Destination chip row (Pro-Stream redesign) — one toggleable,
+ * platform-colored chip per connected account.
+ */
+export function AccountSelector({ accounts, selectedIds, onChange, onConnectClick }: Props): React.ReactElement {
   const tStream = useTranslations('stream');
   const tAccounts = useTranslations('accounts');
 
-  const activeAccounts = accounts.filter((a) => a.isActive);
+  // 'platform' is the MediaMTX sentinel destination, never a connectable account
+  const activeAccounts = accounts.filter((a) => a.isActive && a.platform !== 'platform');
 
-  const byPlatform = PLATFORM_ORDER.reduce<Record<SocialPlatform, SocialAccount[]>>(
-    (acc, p) => ({ ...acc, [p]: activeAccounts.filter((a) => a.platform === p) }),
-    { tiktok: [], facebook: [], platform: [] },
-  );
-
-  function toggle(id: SocialAccountId) {
+  function toggle(id: SocialAccountId): void {
     const next = new Set(selectedIds);
     if (next.has(id)) {
       next.delete(id);
@@ -35,118 +34,82 @@ export function AccountSelector({ accounts, selectedIds, onChange }: Props): Rea
     onChange(next);
   }
 
-  function toggleGroup(platform: SocialPlatform) {
-    const group = byPlatform[platform];
-    const allSelected = group.every((a) => selectedIds.has(a.id));
-    const next = new Set(selectedIds);
-    if (allSelected) {
-      group.forEach((a) => next.delete(a.id));
-    } else {
-      group.forEach((a) => next.add(a.id));
-    }
-    onChange(next);
-  }
+  const connectChip = onConnectClick && (
+    <button
+      type="button"
+      onClick={onConnectClick}
+      className="chip-platform border-dashed px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-brand/50 hover:text-brand"
+    >
+      <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <line x1="5" y1="12" x2="19" y2="12" />
+      </svg>
+      {tAccounts('connect')}
+    </button>
+  );
 
   if (activeAccounts.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border p-4 text-center">
-        <p className="text-sm font-medium text-muted-foreground">{tStream('noAccountsConnected')}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{tStream('connectAccountsHint')}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {connectChip}
+        <p className="text-xs text-muted-foreground">{tStream('connectAccountsHint')}</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {PLATFORM_ORDER.map((platform) => {
-        const group = byPlatform[platform];
-        if (group.length === 0) return null;
-        const allGroupSelected = group.every((a) => selectedIds.has(a.id));
+    <div className="flex flex-wrap items-center gap-2">
+      {activeAccounts.map((account) => {
+        const checked = selectedIds.has(account.id);
+        const color = getPlatformIdentityColor(account.platform);
 
         return (
-          <div key={platform}>
-            <div className="mb-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {platform === 'tiktok' ? (
-                  <span className="flex h-5 w-5 items-center justify-center rounded bg-black text-[9px] font-black text-white">
-                    TT
-                  </span>
-                ) : (
-                  <span className="flex h-5 w-5 items-center justify-center rounded bg-[#1877F2] text-[10px] font-black text-white">
-                    f
-                  </span>
-                )}
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {tAccounts(`platform.${platform}`)}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => toggleGroup(platform)}
-                className="text-xs text-brand hover:underline focus:outline-none"
-              >
-                {allGroupSelected ? tStream('deselectAll') : tStream('selectAll')}
-              </button>
-            </div>
-
-            <div className="space-y-1.5">
-              {group.map((account, i) => {
-                const checked = selectedIds.has(account.id);
-                const avatarColor = AVATAR_COLORS[i % AVATAR_COLORS.length] ?? 'bg-slate-600';
-
-                return (
-                  <label
-                    key={account.id}
-                    className={cn(
-                      'flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors',
-                      checked
-                        ? 'border-brand/50 bg-brand/5'
-                        : 'border-border bg-background hover:bg-muted/50',
-                    )}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggle(account.id)}
-                      className="sr-only"
-                    />
-                    <div
-                      className={cn(
-                        'flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white',
-                        avatarColor,
-                      )}
-                    >
-                      {getInitials(account.displayName)}
-                    </div>
-                    <span className="flex-1 truncate text-sm font-medium">{account.displayName}</span>
-                    <span
-                      className={cn(
-                        'flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border-2 transition-colors',
-                        checked ? 'border-brand bg-brand' : 'border-border bg-background',
-                      )}
-                    >
-                      {checked && (
-                        <svg
-                          className="h-2.5 w-2.5 text-white"
-                          viewBox="0 0 10 10"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          aria-hidden="true"
-                        >
-                          <polyline points="1.5,5 4,7.5 8.5,2" />
-                        </svg>
-                      )}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
+          <label
+            key={account.id}
+            className={cn(
+              'chip-platform cursor-pointer select-none px-3 py-1.5 text-sm font-medium transition-all',
+              checked ? 'shadow-sm' : 'opacity-60 hover:opacity-100',
+            )}
+            style={
+              checked && color
+                ? { backgroundColor: `${color}1a`, borderColor: `${color}4d` }
+                : undefined
+            }
+          >
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => toggle(account.id)}
+              className="sr-only"
+            />
+            <span
+              aria-hidden="true"
+              className={cn('h-2 w-2 rounded-full', !color && 'bg-muted-foreground')}
+              style={color ? { backgroundColor: color, opacity: checked ? 1 : 0.5 } : undefined}
+            />
+            <span className="max-w-[160px] truncate">
+              {account.displayName}
+              <span className="ml-1 text-muted-foreground">
+                ({tAccounts(`platform.${account.platform}`)})
+              </span>
+            </span>
+            <span aria-hidden="true" className="text-muted-foreground">
+              {checked ? (
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              ) : (
+                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              )}
+            </span>
+          </label>
         );
       })}
+      {connectChip}
     </div>
   );
 }

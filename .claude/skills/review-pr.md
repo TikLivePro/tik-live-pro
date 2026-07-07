@@ -37,6 +37,20 @@ Use when the user asks to review code changes.
 - [ ] Platform OAuth tokens encrypted before storage
 - [ ] Rate limiting in place on public endpoints
 - [ ] New public routes (no Bearer required) are explicitly added to the gateway's `PUBLIC_PREFIXES` set
+- [ ] Resource-scoped routes check ownership (`resource.userId === jwt sub`, 404 on mismatch) — `jwtVerify()` alone is not authorization
+- [ ] User-supplied URLs reaching server-side fetch/ffmpeg pass the SSRF guard (no private/loopback hosts)
+- [ ] New host ports in prod compose are loopback-bound (`127.0.0.1:`) unless the protocol requires direct public access
+
+### Database
+- [ ] Schema change ships with a migration SQL file **and** a `migrations/meta/_journal.json` entry (unjournaled = never applied)
+- [ ] `onConflictDoUpdate` uses `` sql`excluded."col"` `` — table-column references are a silent no-op
+- [ ] Hot lookup columns (FKs, status) have explicit indexes — Postgres does not auto-index FKs
+
+### Streaming / concurrency (see CLAUDE.md — Streaming & Concurrency Rules)
+- [ ] Spawned ffmpeg processes are registered and killed on session end + shutdown
+- [ ] Late async callbacks re-read entity state from the DB before persisting transitions
+- [ ] Socket.io room emits are bounded (payload caps, debounce, rate limits) — cost is O(viewers)
+- [ ] Pollers: recursive setTimeout, in-flight guard, timeout on awaited calls, backoff, permanent stop after N failures
 
 ### Tests
 - [ ] Domain use cases have unit tests

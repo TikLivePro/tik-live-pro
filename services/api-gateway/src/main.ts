@@ -58,7 +58,7 @@ const PUBLIC_PATH_PATTERNS = [
 ];
 // GET-only paths that are publicly readable (no auth required for safe read operations).
 // POST/PATCH/DELETE to the same paths still require auth (enforced below).
-const PUBLIC_GET_PATHS = new Set(['/comments']);
+const PUBLIC_GET_PATHS = new Set(['/comments', '/comments/reactions', '/comments/viewer-stats']);
 
 async function bootstrap(): Promise<void> {
   const fastify = Fastify({
@@ -126,6 +126,8 @@ The gateway authenticates requests using JWT Bearer tokens and forwards them to 
 | \`/integrations/*\` | Integrations Service | Yes |
 | \`/billing/*\` | Billing Service | Yes |
 | \`GET /comments\` | Comments Service | No — public read for live viewers |
+| \`GET /comments/reactions\` | Comments Service | No — public read for replay pages |
+| \`GET /comments/viewer-stats\` | Comments Service | No — public read for dashboard/watch stats |
 | \`POST /comments\` | Comments Service | Yes |
 | \`/comments/*\` | Comments Service | Yes |
 | \`/notifications/*\` | Notifications Service | Yes |
@@ -217,6 +219,21 @@ All error responses follow a consistent envelope:
               accessTokenExpiresAt: { type: 'string', format: 'date-time', example: '2026-05-19T10:15:00.000Z' },
               refreshTokenExpiresAt: { type: 'string', format: 'date-time', example: '2026-06-18T10:00:00.000Z' },
             },
+          },
+          AuthResult: {
+            description: 'Token pair plus the authenticated user profile snapshot.',
+            allOf: [
+              { $ref: '#/components/schemas/TokenPair' },
+              {
+                type: 'object',
+                properties: {
+                  subscriptionTier: { type: 'string', enum: ['free', 'premium'], example: 'free' },
+                  displayName: { type: 'string', example: 'Alice Streamer' },
+                  email: { type: 'string', format: 'email', nullable: true, example: 'alice@example.com' },
+                  avatarUrl: { type: 'string', format: 'uri', nullable: true },
+                },
+              },
+            ],
           },
           User: {
             type: 'object',
@@ -389,8 +406,35 @@ All error responses follow a consistent envelope:
               },
             },
             responses: {
-              200: { description: 'Login successful.', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/TokenPair' } } } } } },
+              200: { description: 'Login successful.', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/AuthResult' } } } } } },
               401: { description: 'Invalid credentials.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            },
+          },
+        },
+        '/auth/oauth/social': {
+          post: {
+            tags: ['Authentication'],
+            summary: 'Social OAuth login (Google / Facebook / TikTok)',
+            description:
+              'Exchanges a provider OAuth access token for a TikLivePro JWT token pair. If the provider email matches an existing account, the OAuth identity is auto-linked to it; missing profile data (avatar, display name) is backfilled from the provider. No authorization required.',
+            requestBody: {
+              required: true,
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    required: ['provider', 'accessToken'],
+                    properties: {
+                      provider: { type: 'string', enum: ['google', 'facebook', 'tiktok'], example: 'google' },
+                      accessToken: { type: 'string', example: 'ya29.a0AfH6...' },
+                    },
+                  },
+                },
+              },
+            },
+            responses: {
+              200: { description: 'OAuth login successful.', content: { 'application/json': { schema: { type: 'object', properties: { data: { $ref: '#/components/schemas/AuthResult' } } } } } },
+              401: { description: 'Provider token invalid or expired.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
             },
           },
         },
@@ -965,6 +1009,93 @@ All error responses follow a consistent envelope:
             },
           },
         },
+        '/comments/reactions': {
+          get: {
+            tags: ['Comments'],
+            summary: 'List emoji reactions for a session',
+            description: 'Returns the persisted emoji reactions of a live session in chronological order (oldest first), with the exact timestamp each reaction was sent. Publicly readable — used by session replay pages.',
+            parameters: [
+              { in: 'query', name: 'sessionId', required: true, schema: { type: 'string', format: 'uuid' }, description: 'Live session ID to fetch reactions for.' },
+              { in: 'query', name: 'page', required: false, schema: { type: 'integer', minimum: 1, default: 1 }, description: 'Page number (1-based).' },
+              { in: 'query', name: 'pageSize', required: false, schema: { type: 'integer', minimum: 1, maximum: 500, default: 200 }, description: 'Number of results per page.' },
+            ],
+            responses: {
+              200: {
+                description: 'Paginated reaction list, oldest first.',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        data: {
+                          type: 'object',
+                          properties: {
+                            items: {
+                              type: 'array',
+                              items: {
+                                type: 'object',
+                                properties: {
+                                  id: { type: 'string', format: 'uuid' },
+                                  sessionId: { type: 'string', format: 'uuid' },
+                                  emoji: { type: 'string', example: '❤️' },
+                                  createdAt: { type: 'string', format: 'date-time', description: 'Exact moment the reaction was sent.' },
+                                },
+                              },
+                            },
+                            page: { type: 'integer' },
+                            pageSize: { type: 'integer' },
+                            hasNextPage: { type: 'boolean' },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+
+        '/comments/viewer-stats': {
+          get: {
+            tags: ['Comments'],
+            summary: 'Peak concurrent viewers per session',
+            description: 'Returns the highest concurrent viewer count ever observed for each requested session. Sessions with no recorded peak are omitted. Publicly readable.',
+            parameters: [
+              { in: 'query', name: 'sessionIds', required: true, schema: { type: 'string' }, description: 'Comma-separated list of session UUIDs (max 50).' },
+            ],
+            responses: {
+              200: {
+                description: 'Peak viewer count per session.',
+                content: {
+                  'application/json': {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        data: {
+                          type: 'object',
+                          properties: {
+                            peaks: {
+                              type: 'array',
+                              items: {
+                                type: 'object',
+                                properties: {
+                                  sessionId: { type: 'string', format: 'uuid' },
+                                  peakViewers: { type: 'integer', example: 1204 },
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              400: { description: 'Invalid or too many session IDs.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            },
+          },
+        },
 
         // -----------------------------------------------------------------------
         // NOTIFICATIONS
@@ -1220,12 +1351,27 @@ All error responses follow a consistent envelope:
     const upstreamPath = request.url.slice('/stream-orchestrator'.length);
     const targetUrl = `${env.STREAM_ORCHESTRATOR_SERVICE_URL}${upstreamPath}`;
 
+    // Abort if the orchestrator doesn't answer with headers within 10s; cleared
+    // once the response starts so the long-lived body stream is unaffected.
+    const connectController = new AbortController();
+    const connectTimeout = setTimeout(() => connectController.abort(), 10_000);
+
     let upstream: Response;
     try {
-      upstream = await fetch(targetUrl);
+      upstream = await fetch(targetUrl, {
+        signal: connectController.signal,
+        headers: {
+          // Forward the real client IP — the orchestrator's per-IP rate limits
+          // otherwise key everything on the gateway's container IP.
+          'x-forwarded-for': request.ip,
+          'x-correlation-id': request.headers['x-correlation-id'] as string,
+        },
+      });
     } catch {
+      clearTimeout(connectTimeout);
       return reply.status(502).send({ error: { code: 'BAD_GATEWAY', message: 'Upstream unavailable' } });
     }
+    clearTimeout(connectTimeout);
 
     if (!upstream.body) {
       return reply.status(upstream.status).send();
@@ -1244,6 +1390,9 @@ All error responses follow a consistent envelope:
     const nodeStream = Readable.fromWeb(upstream.body as Parameters<typeof Readable.fromWeb>[0]);
     // Destroy the upstream when the browser disconnects so ffmpeg is killed promptly.
     request.raw.once('close', () => { nodeStream.destroy(); });
+    // An unhandled 'error' on either stream would crash the process.
+    nodeStream.once('error', () => { reply.raw.destroy(); });
+    reply.raw.once('error', () => { nodeStream.destroy(); });
     nodeStream.pipe(reply.raw, { end: true });
   });
 

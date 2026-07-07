@@ -35,6 +35,7 @@ export function AuthSync() {
         subscriptionTier: (session.appSubscriptionTier ?? 'free') as SubscriptionTier,
         ...(session.appDisplayName !== undefined ? { displayName: session.appDisplayName } : {}),
         ...(session.appEmail !== undefined ? { email: session.appEmail } : {}),
+        ...(session.appAvatarUrl !== undefined ? { avatarUrl: session.appAvatarUrl } : {}),
       });
     }
   }, [session, status, accessToken, setAuth, clearAuth]);

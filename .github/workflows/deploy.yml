@@ -169,11 +169,64 @@ jobs:
           cache-to: type=gha,mode=max,scope=status
           push: true
 
+  # ── Migrations DB (uniquement sur tag ou dispatch, AVANT le deploy) ──────────
+  # Applique les migrations drizzle de chaque service sur Neon depuis le runner.
+  # Sans ce job, un nouveau fichier dans src/infrastructure/db/migrations/ ne
+  # serait jamais joué en production (les images runtime ne contiennent que
+  # dist/ et le déploiement ne fait que docker compose pull + up).
+  migrate:
+    name: Run database migrations
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # version omise volontairement — lue depuis "packageManager" du package.json racine
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run migrations (all services)
+        run: |
+          set -e
+          run_migrate() {
+            echo "==> Migrating $1"
+            DATABASE_URL="$2" pnpm --filter "$1" db:migrate
+          }
+          run_migrate "@tik-live-pro/auth-service"          "$AUTH_DATABASE_URL"
+          run_migrate "@tik-live-pro/users-service"         "$USERS_DATABASE_URL"
+          run_migrate "@tik-live-pro/live-session-service"  "$SESSIONS_DATABASE_URL"
+          run_migrate "@tik-live-pro/billing-service"       "$BILLING_DATABASE_URL"
+          run_migrate "@tik-live-pro/integrations-service"  "$INTEGRATIONS_DATABASE_URL"
+          run_migrate "@tik-live-pro/comments-service"      "$COMMENTS_DATABASE_URL"
+          run_migrate "@tik-live-pro/notifications-service" "$NOTIFICATIONS_DATABASE_URL"
+          run_migrate "@tik-live-pro/analytics-service"     "$ANALYTICS_DATABASE_URL"
+          run_migrate "@tik-live-pro/stream-orchestrator"   "$STREAM_DATABASE_URL"
+        env:
+          AUTH_DATABASE_URL: ${{ secrets.AUTH_DATABASE_URL }}
+          USERS_DATABASE_URL: ${{ secrets.USERS_DATABASE_URL }}
+          SESSIONS_DATABASE_URL: ${{ secrets.SESSIONS_DATABASE_URL }}
+          BILLING_DATABASE_URL: ${{ secrets.BILLING_DATABASE_URL }}
+          INTEGRATIONS_DATABASE_URL: ${{ secrets.INTEGRATIONS_DATABASE_URL }}
+          COMMENTS_DATABASE_URL: ${{ secrets.COMMENTS_DATABASE_URL }}
+          NOTIFICATIONS_DATABASE_URL: ${{ secrets.NOTIFICATIONS_DATABASE_URL }}
+          ANALYTICS_DATABASE_URL: ${{ secrets.ANALYTICS_DATABASE_URL }}
+          STREAM_DATABASE_URL: ${{ secrets.STREAM_DATABASE_URL }}
+
   # ── Deploy (uniquement sur tag v*.*.* ou dispatch manuel) ────────────────────
   deploy:
     name: Deploy ${{ github.ref_name }} to production
     runs-on: ubuntu-latest
-    needs: [build-services, build-web, build-status]
+    # migrate d'abord : le nouveau code ne démarre jamais sur un schéma en retard
+    needs: [build-services, build-web, build-status, migrate]
     # Ne déploie PAS à chaque push sur main — seulement sur tag ou dispatch
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     environment: production

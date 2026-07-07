@@ -1,6 +1,6 @@
 # TikLivePro — Architecture Overview
 
-> **Last updated:** 2026-06-09 (stream-orchestrator: video proxy — yt-dlp URL resolution for YouTube/Twitch/Vimeo/Dailymotion; new POST /video-proxy/resolve endpoint; video-push extended to handle platform URLs)
+> **Last updated:** 2026-07-06 (comments/WS hardening: platform comments persisted from comment.received; streamer socket events JWT-gated; OAuth auto-link backfills avatar/display name; auth_users gains avatar_url)
 > Keep this file up-to-date whenever services, ports, infrastructure, or data flows change.
 
 ## Table of Contents
@@ -189,6 +189,10 @@ src/
 | Platform token storage | AES-256-GCM encrypted before PostgreSQL insertion; `TOKEN_ENCRYPTION_KEY` ≥ 32 chars |
 | Rate limiting | API Gateway: 500 req/min global, 100 req/min on `/auth/*` endpoints |
 | Authorization | RBAC roles embedded in JWT; the Gateway verifies the JWT for admission (all protected prefixes). Downstream services that need the caller's identity (e.g. to scope a DB query to `userId`) must also call `await request.jwtVerify()` at the top of the route handler — the Gateway does not forward a decoded user header, it forwards the raw `Authorization: Bearer` header unchanged. |
+| Resource ownership | Every session-scoped route in `stream-orchestrator` (ingest URL, recording start/stop/pause/resume/status, session recordings, video-push, recording download) compares `session.userId` against the JWT `sub` and answers **404** on mismatch (not 403, to avoid leaking existence). Without this, any authenticated user could read another host's ingest key and hijack their stream. |
+| SSRF guards | `video-push` and `merge-stream` reject private/loopback hosts (`PRIVATE_IP_RE`); platform URLs are resolved via yt-dlp before reaching ffmpeg. |
+| Streamer socket identity | The comments service Socket.io server verifies the JWT passed in the handshake `auth.token`. `join_as_streamer` requires a valid JWT and — when the session owner is known from `session.created`/`session.starting` events — the JWT `sub` must match the owner. `video_state` and `grant_video_control` are only accepted from the registered streamer socket. Clients supply the token via a socket.io `auth` **callback** so reconnects always carry a fresh (non-expired) access token. |
+| OAuth account linking | `POST /auth/oauth/social` verifies the provider token server-side, then auto-links the OAuth identity to any existing account with the same (provider-attested) email. Missing profile data (avatar, display name) is backfilled from the provider on both register and login; user-chosen values are never overwritten. A provider attesting the account's email marks it verified. |
 | Input validation | Zod schemas at the HTTP interface layer, before use-case invocation |
 | Secret management | Kubernetes Secrets in production; never commit `.env` with real values |
 | TLS | Ingress terminates TLS; all in-cluster traffic is plain HTTP |

@@ -8,6 +8,9 @@ import type { SocialPlatform, LiveSessionId, SocialAccountId } from '@tik-live-p
 const POLL_TIMEOUT_MS = 10_000;
 const MAX_BACKOFF_MS = 60_000;
 const BASE_BACKOFF_MS = 2_000;
+// A poller that fails this many times in a row (bad platform, revoked token,
+// dead API) is stopped for good instead of error-looping for the whole session.
+const MAX_CONSECUTIVE_FAILURES = 10;
 
 interface PollTarget {
   sessionId: LiveSessionId;
@@ -90,19 +93,26 @@ export class CommentPoller {
     if (state.stopped) return;
     this.timers.delete(key);
 
-    const timeoutController = new AbortController();
-    const timeoutId = setTimeout(() => timeoutController.abort(), POLL_TIMEOUT_MS);
+    // IPlatformAdapter.pollComments takes no AbortSignal, so race it against a
+    // timeout — otherwise one hung platform HTTP call stalls this poller
+    // permanently (the chain only reschedules once the promise settles).
+    let raceTimer: ReturnType<typeof setTimeout> | null = null;
 
     try {
       const adapter = this.adapterRegistry.get(target.platform);
-      const page = await adapter.pollComments(
-        target.accessToken,
-        target.sessionId,
-        target.socialAccountId,
-        state.cursor,
-      );
+      const page = await Promise.race([
+        adapter.pollComments(
+          target.accessToken,
+          target.sessionId,
+          target.socialAccountId,
+          state.cursor,
+        ),
+        new Promise<never>((_, reject) => {
+          raceTimer = setTimeout(() => reject(new Error('POLL_TIMEOUT')), POLL_TIMEOUT_MS);
+        }),
+      ]);
 
-      clearTimeout(timeoutId);
+      if (raceTimer) clearTimeout(raceTimer);
 
       for (const comment of page.comments) {
         const payload: CommentReceivedPayload = comment;
@@ -113,8 +123,17 @@ export class CommentPoller {
       state.consecutiveFailures = 0;
       this.scheduleNext(key, target, state, target.intervalMs);
     } catch (err) {
-      clearTimeout(timeoutId);
+      if (raceTimer) clearTimeout(raceTimer);
       state.consecutiveFailures++;
+
+      if (state.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        this.logger.error(
+          { err, sessionId: target.sessionId, platform: target.platform, consecutiveFailures: state.consecutiveFailures },
+          'Comment polling stopped permanently after repeated failures',
+        );
+        this.clearKey(key);
+        return;
+      }
 
       const backoffMs = Math.min(
         BASE_BACKOFF_MS * Math.pow(2, state.consecutiveFailures - 1),

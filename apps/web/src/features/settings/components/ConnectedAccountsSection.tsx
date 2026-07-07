@@ -104,7 +104,7 @@ export function ConnectedAccountsSection(): React.JSX.Element {
   const facebookAccounts = allAccounts?.filter((a) => a.platform === 'facebook') ?? [];
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
+    <section className="card-surface space-y-4 p-5">
       <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
         {t('connectedAccounts.sectionTitle')}
       </p>

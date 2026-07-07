@@ -44,6 +44,17 @@ api.tiklivepro.me {
         reverse_proxy localhost:3006
     }
 
+    # The /stream-orchestrator/* handles below proxy DIRECTLY to :3009,
+    # bypassing the API gateway — never expose the orchestrator's Swagger UI
+    # or Prometheus metrics publicly. handle blocks are evaluated in order,
+    # so these must stay above the @so_* handles.
+    handle /stream-orchestrator/docs* {
+        respond "" 404
+    }
+    handle /stream-orchestrator/metrics {
+        respond "" 404
+    }
+
     # Stream orchestrator — CORS headers added at the Caddy level (defer) so
     # they are present even when the upstream returns a 502, preventing the
     # browser from misreporting a backend outage as a CORS error.

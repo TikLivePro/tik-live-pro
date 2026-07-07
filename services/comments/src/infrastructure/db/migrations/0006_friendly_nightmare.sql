@@ -1,0 +1,1 @@
+CREATE INDEX "reactions_session_created_idx" ON "reactions" USING btree ("session_id","created_at");

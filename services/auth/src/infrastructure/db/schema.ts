@@ -5,6 +5,7 @@ export const authUsers = pgTable('auth_users', {
   email: varchar('email', { length: 254 }).notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   displayName: varchar('display_name', { length: 100 }).notNull(),
+  avatarUrl: text('avatar_url'),
   subscriptionTier: varchar('subscription_tier', { length: 20 }).notNull().default('free'),
   locale: varchar('locale', { length: 10 }).notNull().default('en'),
   isVerified: boolean('is_verified').notNull().default(false),

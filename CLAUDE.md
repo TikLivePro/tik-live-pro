@@ -307,6 +307,32 @@ Never check subscription status directly in other services — call the billing 
 - All user input is validated with Zod schemas before reaching use cases
 - Rate limiting is applied at the API Gateway level
 - **Downstream JWT verification**: the API Gateway verifies the JWT for admission but forwards the raw `Authorization: Bearer` header unchanged — it does **not** inject a decoded user header. Any downstream service handler that needs the caller's identity (`request.user.sub`) must call `await request.jwtVerify()` at the top of the handler before accessing `request.user`.
+- **Resource ownership is mandatory**: `jwtVerify()` only proves the caller is *a* user, not *the* owner. Every route scoped to a resource (`/sessions/:sessionId/*`, recordings, etc.) must compare the resource's `userId` against the JWT `sub` and answer **404** on mismatch (not 403 — don't leak existence). Without this, any authenticated user can read another host's ingest key and hijack their stream.
+- **SSRF guards**: any endpoint that passes a user-supplied URL to a server-side fetch or ffmpeg must reject private/loopback hosts (see `PRIVATE_IP_RE` in `services/stream-orchestrator/src/interfaces/http/routes.ts`).
+- **Host port bindings**: in the prod compose files, every published port must be bound `127.0.0.1:<port>:<port>` — Caddy (host systemd service) terminates TLS and proxies via localhost. Only `1935/tcp` (OBS RTMP ingest) and `8189/udp` (WebRTC ICE) are public. Note that Caddy proxies `/stream-orchestrator/*` **directly** to :3009, bypassing the gateway — anything the orchestrator must not expose publicly (e.g. `/docs`, `/metrics`) has to be blocked in `infra/caddy/Caddyfile`.
+
+## Database Migrations
+
+Each service owns its drizzle schema in `src/infrastructure/db/schema.ts` and migrations in `src/infrastructure/db/migrations/`.
+
+- **Every schema change needs**: the schema edit, a new `NNNN_name.sql` migration file, **and** an entry in `migrations/meta/_journal.json`. Without the journal entry the migration never runs.
+- Migrations are applied by the **CI `migrate` job** in `.github/workflows/deploy.yml` (runs `pnpm --filter <service> db:migrate` against Neon for all 9 services before `deploy`). They do NOT run at container startup, and runtime images ship only `dist/` — a migration that isn't in the journal + CI path will silently never reach production.
+- **Drizzle upsert trap**: in `onConflictDoUpdate`, the `set` values must use `` sql`excluded."column_name"` ``. Referencing the table's own columns (`status: table.status`) renders as `SET "status" = "table"."status"`, which Postgres resolves to the **existing** row — a silent no-op.
+- Postgres does not auto-index FK columns — add an explicit index for any column used in hot lookups (`session_id`, `status`, …).
+
+## Streaming & Concurrency Rules
+
+Hard-won rules from the multi-user production audits (2026-06-15, 2026-07-05):
+
+- **Every spawned ffmpeg process must be registered and killed** on session end AND on graceful shutdown. Relay workers live in `HandleStreamArrivedUseCase` (`stopWorker`/`stopAllWorkers`); video pushes in `infrastructure/ffmpeg/video-push-registry.ts`. An unregistered ffmpeg (`-stream_loop -1` + libx264 ≈ 1 CPU core) outlives its session and keeps the MediaMTX path alive forever.
+- **Deliberate kills look like errors**: fluent-ffmpeg emits an `error` event when a process is killed with SIGTERM. Any stop path must suppress that error (see `_stopping` in `FfmpegStreamWorker`) or the retry logic will restart a stream the user just stopped.
+- **Guard against duplicate workers per ingest key**: stream arrivals come from multiple concurrent sources (MediaMTX watcher, RTMP server, crash recovery, retry timers). Any new arrival path must go through `HandleStreamArrivedUseCase.execute()` which checks `workers` + `launching` + `retryTimers`.
+- **Async callbacks must re-read state**: an error/retry callback firing minutes later holds a stale session entity — re-fetch from the DB and skip if the session is already ENDED before persisting a status transition.
+- **HLS tuning is coupled client↔server**: hls.js `liveSyncDuration` in `WatchView.tsx` must stay ≥ 2× `hlsSegmentDuration` in `infra/mediamtx/*.yml`. Changing MediaMTX segment/part durations without updating the player causes stall/seek loops for every viewer.
+- **Socket.io server registries are in-memory**: clients must emit `join_as_viewer` / `join_as_streamer` inside `socket.on('connect', …)` (re-fires on reconnect), never once at socket creation. Server-side per-session state must be cleaned up in the `session.ended` NATS handler.
+- **Fan-out costs are O(viewers)**: anything emitted to a session room is multiplied by the viewer count. Cap payload sizes (viewer name lists, mediaUrls), debounce bursts, and rate-limit unauthenticated socket events (reactions) per socket AND per session.
+- **Per-IP rate limits need the real IP**: services behind Caddy/the gateway must set `trustProxy: true`, and any gateway passthrough must forward `x-forwarded-for` — otherwise "per-IP" limits are platform-global.
+- **Pollers**: use recursive `setTimeout` (never `setInterval`), an in-flight guard, a timeout on every awaited call (`AbortSignal.timeout` or `Promise.race` when the interface has no signal), exponential backoff, and a permanent-stop after N consecutive failures.
 
 ## Documentation Maintenance — MANDATORY RULE
 
@@ -327,6 +353,8 @@ Never check subscription status directly in other services — call the billing 
 | New Makefile target | `docs/setup.md` (relevant section) |
 | Security model change | `docs/architecture.md` (Security Model) |
 | New environment variable | `docs/setup.md` (env vars table) · relevant `.env.example` |
+| New DB migration | `migrations/meta/_journal.json` (same change) — applied by the CI `migrate` job, see Database Migrations section |
+| CI workflow change (`.github/workflows/deploy.yml`) | `docs/deploy-github-student.md` (Flux de déploiement) |
 | Architectural decision | `docs/decisions/` (new ADR file, e.g. `003-topic.md`) |
 
 ### How to update

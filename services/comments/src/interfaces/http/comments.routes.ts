@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Server as SocketIOServer } from 'socket.io';
-import { eq, desc, count, and } from 'drizzle-orm';
+import { eq, desc, asc, and, inArray } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { comments } from '../../infrastructure/db/schema.js';
+import { comments, reactions, viewerPeaks } from '../../infrastructure/db/schema.js';
 import type { CommentPoster } from '../../application/comment-poster.js';
 import type { Comment } from '@tik-live-pro/shared-types';
 
@@ -169,21 +169,181 @@ Comments are collected by the \`CommentPoller\` which calls each platform's comm
       if (platform) conditions.push(eq(comments.platform, platform));
       const where = and(...conditions);
 
-      const [items, [totalRow]] = await Promise.all([
-        deps.db
-          .select()
-          .from(comments)
-          .where(where)
-          .orderBy(desc(comments.receivedAt))
-          .limit(pageSize)
-          .offset(offset),
-        deps.db.select({ count: count() }).from(comments).where(where),
-      ]);
+      // Fetch one extra row to derive hasNextPage without a COUNT(*) — on a
+      // busy session the count over 100k+ rows dominates the query cost, and
+      // every viewer hits this endpoint at go-live. `total` is a lower bound;
+      // no client renders it.
+      const rows = await deps.db
+        .select()
+        .from(comments)
+        .where(where)
+        .orderBy(desc(comments.receivedAt))
+        .limit(pageSize + 1)
+        .offset(offset);
 
-      const total = Number(totalRow?.count ?? 0);
+      const hasNextPage = rows.length > pageSize;
+      const items = hasNextPage ? rows.slice(0, pageSize) : rows;
       return reply.status(200).send({
-        data: { items, total, page, pageSize, hasNextPage: offset + items.length < total },
+        data: { items, total: offset + rows.length, page, pageSize, hasNextPage },
       });
+    },
+  );
+
+  // GET /comments/reactions ----------------------------------------------------
+  fastify.get<{
+    Querystring: { sessionId: string; page?: number; pageSize?: number };
+  }>(
+    '/comments/reactions',
+    {
+      schema: {
+        tags: ['Comments'],
+        summary: 'List emoji reactions for a session',
+        description: `
+Returns the persisted emoji reactions of a live session in **chronological order** (oldest first), with the exact timestamp each reaction was sent.
+
+Reactions are recorded by the Socket.io \`emit_reaction\` handler (rate-limited per socket and per session) as they happen during the live. This endpoint is the read side, used by the session **replay** view to show the reaction history alongside the comment history.
+
+Publicly readable — replay pages are accessible to unauthenticated viewers, same as \`GET /comments\`.
+        `.trim(),
+        querystring: {
+          type: 'object',
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'string', format: 'uuid', description: 'The live session to fetch reactions for.' },
+            page: { type: 'integer', minimum: 1, default: 1 },
+            pageSize: { type: 'integer', minimum: 1, maximum: 500, default: 200 },
+          },
+        },
+        response: {
+          200: {
+            description: 'Paginated reaction list, oldest first.',
+            type: 'object',
+            required: ['data'],
+            properties: {
+              data: {
+                type: 'object',
+                required: ['items', 'page', 'pageSize', 'hasNextPage'],
+                properties: {
+                  items: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      description: 'A single emoji reaction sent by a viewer during the live session.',
+                      properties: {
+                        id: { type: 'string', format: 'uuid', description: 'Internal reaction ID.' },
+                        sessionId: { type: 'string', format: 'uuid', description: 'ID of the live session.' },
+                        emoji: { type: 'string', description: 'The reaction emoji.', example: '❤️' },
+                        createdAt: {
+                          type: 'string',
+                          format: 'date-time',
+                          description: 'ISO 8601 timestamp of the exact moment the reaction was sent.',
+                        },
+                      },
+                    },
+                  },
+                  page: { type: 'integer' },
+                  pageSize: { type: 'integer' },
+                  hasNextPage: { type: 'boolean' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { sessionId, page = 1, pageSize = 200 } = request.query;
+      const offset = (page - 1) * pageSize;
+
+      // limit+1 instead of COUNT(*) — same trade-off as GET /comments.
+      const rows = await deps.db
+        .select()
+        .from(reactions)
+        .where(eq(reactions.sessionId, sessionId))
+        .orderBy(asc(reactions.createdAt))
+        .limit(pageSize + 1)
+        .offset(offset);
+
+      const hasNextPage = rows.length > pageSize;
+      const items = hasNextPage ? rows.slice(0, pageSize) : rows;
+      return reply.status(200).send({ data: { items, page, pageSize, hasNextPage } });
+    },
+  );
+
+  // GET /comments/viewer-stats -------------------------------------------------
+  fastify.get<{
+    Querystring: { sessionIds: string };
+  }>(
+    '/comments/viewer-stats',
+    {
+      schema: {
+        tags: ['Comments'],
+        summary: 'Peak concurrent viewers per session',
+        description: `
+Returns the highest concurrent viewer count ever observed for each requested session.
+
+Peaks are recorded by the Socket.io viewer registry as viewers join a live session (debounced, monotonic via \`GREATEST\` upsert). Sessions with no recorded peak are omitted from the response.
+
+Publicly readable — the dashboard stats and watch pages consume this without a token, same as \`GET /comments\`.
+        `.trim(),
+        querystring: {
+          type: 'object',
+          required: ['sessionIds'],
+          properties: {
+            sessionIds: {
+              type: 'string',
+              description: 'Comma-separated list of session UUIDs (max 50).',
+              example: 'a1b2c3d4-…,e5f6a7b8-…',
+            },
+          },
+        },
+        response: {
+          200: {
+            description: 'Peak viewer count per session.',
+            type: 'object',
+            required: ['data'],
+            properties: {
+              data: {
+                type: 'object',
+                required: ['peaks'],
+                properties: {
+                  peaks: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        sessionId: { type: 'string', format: 'uuid' },
+                        peakViewers: { type: 'integer', description: 'Highest concurrent viewer count observed.', example: 1204 },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          400: errorSchema('Invalid or too many session IDs.'),
+        },
+      },
+    },
+    async (request, reply) => {
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const ids = request.query.sessionIds
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => UUID_RE.test(s));
+
+      if (ids.length === 0 || ids.length > 50) {
+        return reply.status(400).send({
+          error: { code: 'BAD_REQUEST', message: 'sessionIds must contain 1–50 valid UUIDs' },
+        });
+      }
+
+      const rows = await deps.db
+        .select({ sessionId: viewerPeaks.sessionId, peakViewers: viewerPeaks.peakViewers })
+        .from(viewerPeaks)
+        .where(inArray(viewerPeaks.sessionId, ids));
+
+      return reply.status(200).send({ data: { peaks: rows } });
     },
   );
 
@@ -212,9 +372,13 @@ Supports an optional \`mediaUrl\` field to attach an image, GIF, or file URL alo
             authorName: { type: 'string', maxLength: 255, nullable: true, description: 'Display name to use for local comments (when no platform account is linked).' },
             mediaUrls: {
               type: 'array',
-              items: { type: 'string', format: 'uri' },
+              // Each accepted URL is stored inline in Postgres and fanned out
+              // over Socket.io to every viewer in the room — an uncapped 1MB
+              // base64 data: URI would mean ~1GB of egress at 1,000 viewers.
+              maxItems: 4,
+              items: { type: 'string', format: 'uri', maxLength: 200_000 },
               nullable: true,
-              description: 'Optional list of image, GIF, or file URLs to attach.',
+              description: 'Optional list of image, GIF, or file URLs to attach (max 4, ≤200KB each).',
             },
           },
         },
@@ -242,10 +406,32 @@ Supports an optional \`mediaUrl\` field to attach an image, GIF, or file URL alo
       );
 
       if (posted.length > 0) {
-        for (const comment of posted) {
+        // Persist before broadcasting so the comment survives into history —
+        // the poster only publishes to the platform APIs. Re-keyed with a
+        // fresh UUID (platform IDs are not UUIDs); the dedupe constraint on
+        // (session_id, platform, platform_comment_id) keeps the poller from
+        // re-inserting the same comment when it shows up in a later poll.
+        const saved = posted.map((comment) => ({
+          ...comment,
+          id: randomUUID() as Comment['id'],
+          ...(mediaUrls?.length ? { mediaUrls } : {}),
+        }));
+        for (const comment of saved) {
+          await deps.db.insert(comments).values({
+            id: comment.id,
+            sessionId: comment.sessionId,
+            platform: comment.platform,
+            platformCommentId: comment.platformCommentId,
+            authorName: comment.authorName,
+            authorPlatformUserId: comment.authorPlatformUserId,
+            authorAvatarUrl: comment.authorAvatarUrl ?? null,
+            content: comment.content,
+            mediaUrls: comment.mediaUrls ?? null,
+            receivedAt: new Date(comment.receivedAt),
+          }).onConflictDoNothing();
           broadcastComment(sessionId, comment);
         }
-        return reply.status(201).send({ data: posted });
+        return reply.status(201).send({ data: saved });
       }
 
       // No linked platform accounts — persist and broadcast a local comment so it
@@ -317,9 +503,13 @@ Replies to a specific comment. The reply is sent to the platform where the origi
             content: { type: 'string', minLength: 0, maxLength: 1000, description: 'Reply text.' },
             mediaUrls: {
               type: 'array',
-              items: { type: 'string', format: 'uri' },
+              // Each accepted URL is stored inline in Postgres and fanned out
+              // over Socket.io to every viewer in the room — an uncapped 1MB
+              // base64 data: URI would mean ~1GB of egress at 1,000 viewers.
+              maxItems: 4,
+              items: { type: 'string', format: 'uri', maxLength: 200_000 },
               nullable: true,
-              description: 'Optional list of image, GIF, or file URLs to attach.',
+              description: 'Optional list of image, GIF, or file URLs to attach (max 4, ≤200KB each).',
             },
           },
         },

@@ -8,6 +8,8 @@ import { useStreamStore } from '@/features/stream/store/stream.store';
 import { FullscreenLiveView } from '@/features/stream/components/FullscreenLiveView';
 import type { LiveSession, LiveSessionId } from '@tik-live-pro/shared-types';
 
+import { CreatorLayout } from '@/components/CreatorLayout';
+
 const TERMINAL_STATUSES = new Set(['ended', 'error']);
 
 export default function LiveSessionPage(): React.ReactElement {
@@ -77,5 +79,9 @@ export default function LiveSessionPage(): React.ReactElement {
     );
   }
 
-  return <FullscreenLiveView />;
+  return (
+    <CreatorLayout>
+      <FullscreenLiveView />
+    </CreatorLayout>
+  );
 }

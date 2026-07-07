@@ -13,6 +13,7 @@ interface AuthState {
   subscriptionTier: SubscriptionTier | null;
   displayName: string | null;
   email: string | null;
+  avatarUrl: string | null;
   locale: string | null;
   isAuthenticated: boolean;
   setAuth: (params: {
@@ -21,10 +22,11 @@ interface AuthState {
     subscriptionTier: SubscriptionTier;
     displayName?: string;
     email?: string | null;
+    avatarUrl?: string | null;
   }) => void;
   clearAuth: () => void;
   updateAccessToken: (accessToken: string) => void;
-  updateProfile: (params: { displayName?: string; locale?: string }) => void;
+  updateProfile: (params: { displayName?: string; locale?: string; avatarUrl?: string }) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -36,9 +38,10 @@ export const useAuthStore = create<AuthState>()(
       subscriptionTier: null,
       displayName: null,
       email: null,
+      avatarUrl: null,
       locale: null,
       isAuthenticated: false,
-      setAuth: ({ userId, accessToken, subscriptionTier, displayName, email }) =>
+      setAuth: ({ userId, accessToken, subscriptionTier, displayName, email, avatarUrl }) =>
         set({
           userId,
           accessToken,
@@ -46,6 +49,7 @@ export const useAuthStore = create<AuthState>()(
           subscriptionTier,
           displayName: displayName ?? null,
           email: email ?? null,
+          avatarUrl: avatarUrl ?? null,
           isAuthenticated: true,
         }),
       clearAuth: () =>
@@ -56,15 +60,17 @@ export const useAuthStore = create<AuthState>()(
           subscriptionTier: null,
           displayName: null,
           email: null,
+          avatarUrl: null,
           locale: null,
           isAuthenticated: false,
         }),
       updateAccessToken: (accessToken) =>
         set({ accessToken, accessTokenExpiresAt: Date.now() + ACCESS_TOKEN_TTL_MS }),
-      updateProfile: ({ displayName, locale }) =>
+      updateProfile: ({ displayName, locale, avatarUrl }) =>
         set((state) => ({
           displayName: displayName ?? state.displayName,
           locale: locale ?? state.locale,
+          avatarUrl: avatarUrl ?? state.avatarUrl,
         })),
     }),
     {
@@ -76,6 +82,7 @@ export const useAuthStore = create<AuthState>()(
         subscriptionTier: state.subscriptionTier,
         displayName: state.displayName,
         email: state.email,
+        avatarUrl: state.avatarUrl,
         locale: state.locale,
       }),
     },

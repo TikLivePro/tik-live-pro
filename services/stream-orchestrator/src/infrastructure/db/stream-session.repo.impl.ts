@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { streamSessions, streamDestinations } from './schema.js';
 import type { IStreamSessionRepository } from '../../domain/repositories/stream-session.repository.js';
@@ -52,15 +52,25 @@ export class DrizzleStreamSessionRepository implements IStreamSessionRepository 
       .from(streamSessions)
       .where(inArray(streamSessions.status, statuses));
 
-    return Promise.all(
-      rows.map(async (row) => {
-        const destRows = await this.db
-          .select()
-          .from(streamDestinations)
-          .where(eq(streamDestinations.sessionId, row.sessionId));
-        return this.mapToDomain(row, destRows);
-      }),
-    );
+    if (rows.length === 0) return [];
+
+    // Single batched fetch instead of one destination query per session.
+    const allDestRows = await this.db
+      .select()
+      .from(streamDestinations)
+      .where(inArray(streamDestinations.sessionId, rows.map((r) => r.sessionId)));
+
+    const destsBySession = new Map<string, DestDbSchema[]>();
+    for (const dest of allDestRows) {
+      const list = destsBySession.get(dest.sessionId);
+      if (list) {
+        list.push(dest);
+      } else {
+        destsBySession.set(dest.sessionId, [dest]);
+      }
+    }
+
+    return rows.map((row) => this.mapToDomain(row, destsBySession.get(row.sessionId) ?? []));
   }
 
   async save(session: StreamSession): Promise<void> {
@@ -112,13 +122,17 @@ export class DrizzleStreamSessionRepository implements IStreamSessionRepository 
       )
       .onConflictDoUpdate({
         target: streamDestinations.id,
+        // Must reference `excluded.*` (the incoming row). Referencing the table's
+        // own columns here renders as SET "status" = "stream_destinations"."status",
+        // which Postgres resolves to the EXISTING row — a silent no-op that froze
+        // destination statuses at their first-insert values.
         set: {
-          status: streamDestinations.status,
-          errorMessage: streamDestinations.errorMessage,
-          rtmpUrl: streamDestinations.rtmpUrl,
-          streamKey: streamDestinations.streamKey,
-          platformStreamId: streamDestinations.platformStreamId,
-          streamKeyExpiresAt: streamDestinations.streamKeyExpiresAt,
+          status: sql`excluded."status"`,
+          errorMessage: sql`excluded."error_message"`,
+          rtmpUrl: sql`excluded."rtmp_url"`,
+          streamKey: sql`excluded."stream_key"`,
+          platformStreamId: sql`excluded."platform_stream_id"`,
+          streamKeyExpiresAt: sql`excluded."stream_key_expires_at"`,
         },
       });
   }

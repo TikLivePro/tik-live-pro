@@ -1,6 +1,6 @@
 # TikLivePro — NATS JetStream Event Contracts
 
-> **Last updated:** 2026-05-31 (session.live gains hlsUrl; destination platform gains 'platform' value)
+> **Last updated:** 2026-07-06 (auth.user.registered gains optional avatarUrl from OAuth providers; comments-service comment.received consumer now persists comments before WebSocket fan-out)
 > Update this file whenever a stream, consumer, or event schema is added or changed.
 > The canonical stream configuration lives in `infra/nats/jetstream-config.yaml`.
 
@@ -89,6 +89,7 @@ Pre-created durable pull-consumers (all use `ack_policy: explicit`):
   userId: UserId;
   email: Email;
   displayName: string;
+  avatarUrl?: string | null;  // profile picture from the OAuth provider, when registered via OAuth
   subscriptionTier: 'free' | 'premium';
   locale: string;
 }

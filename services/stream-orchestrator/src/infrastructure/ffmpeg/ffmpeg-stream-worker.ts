@@ -6,6 +6,7 @@ import type { Logger } from '@tik-live-pro/logger';
 export class FfmpegStreamWorker implements IStreamWorker {
   private command: FfmpegCommand | null = null;
   private _isRunning = false;
+  private _stopping = false;
   private statsHandler: ((stats: StreamWorkerStats) => void) | null = null;
   private errorHandler: ((err: Error) => void) | null = null;
 
@@ -26,10 +27,12 @@ export class FfmpegStreamWorker implements IStreamWorker {
         // WHIP→RTMP path cause ffmpeg to skip frames silently, producing a
         // pixelised first few seconds or micro-cuts after a reconnect.
         '-avoid_negative_ts make_zero',
-        // Probe only 0.5s / 500 KB of input before starting output (defaults are
-        // 5s / 5 MB). Reduces the dead time between WHIP arrival and relay start.
-        '-analyzeduration 500000',
-        '-probesize 500000',
+        // Probe up to 2s of input before starting output (default is 5s / 5 MB).
+        // Keeps startup fast while still catching audio packets that arrive late
+        // on the WHIP→RTMP path — probing only 0.5s can miss the audio stream
+        // entirely, producing a silent broadcast until the worker restarts.
+        '-analyzeduration 2000000',
+        '-probesize 1000000',
       ]);
 
     cmd.on('progress', (progress: { currentFps: number; currentKbps: number; frames: number }) => {
@@ -44,6 +47,13 @@ export class FfmpegStreamWorker implements IStreamWorker {
     });
 
     cmd.on('error', (err: Error) => {
+      // A deliberate stop() kills ffmpeg with SIGTERM, which fluent-ffmpeg
+      // surfaces as an error. Suppress it so the orchestrator's retry logic
+      // doesn't restart a stream the user just stopped.
+      if (this._stopping) {
+        this.logger.debug({ err: err.message }, 'FfmpegWorker: ignoring error after deliberate stop');
+        return;
+      }
       this.logger.error({ err }, 'FfmpegWorker: stream error');
       this._isRunning = false;
       if (this.errorHandler) this.errorHandler(err);
@@ -100,6 +110,7 @@ export class FfmpegStreamWorker implements IStreamWorker {
 
   async stop(): Promise<void> {
     this.logger.debug('FfmpegWorker: stopping');
+    this._stopping = true;
     if (!this.command) return;
     this.command.kill('SIGTERM');
     this._isRunning = false;

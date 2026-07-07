@@ -24,7 +24,7 @@ export function UserMenu({ showDashboardLink = false }: UserMenuProps): React.Re
   const t = useTranslations('auth');
   const tSettings = useTranslations('settings');
   const tLandingNav = useTranslations('landing.nav');
-  const { displayName, email, subscriptionTier } = useProfile();
+  const { displayName, email, avatarUrl, subscriptionTier } = useProfile();
   const { locale, setLocale } = useLocale();
 
   const label = displayName ?? email ?? 'User';
@@ -55,9 +55,19 @@ export function UserMenu({ showDashboardLink = false }: UserMenuProps): React.Re
           open && 'bg-muted',
         )}
       >
-        <div className={cn('flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white', avatarColor)}>
-          {initials}
-        </div>
+        {avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={avatarUrl}
+            alt={label}
+            referrerPolicy="no-referrer"
+            className="h-8 w-8 flex-shrink-0 rounded-full object-cover"
+          />
+        ) : (
+          <div className={cn('flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold text-white', avatarColor)}>
+            {initials}
+          </div>
+        )}
         <div className="hidden flex-col items-start sm:flex">
           <span className="max-w-[120px] truncate text-sm font-semibold leading-tight">{label}</span>
           {subscriptionTier && (
@@ -68,20 +78,33 @@ export function UserMenu({ showDashboardLink = false }: UserMenuProps): React.Re
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-xl border border-border bg-card shadow-xl">
+        <div className="animate-scale-in absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-border/80 bg-card shadow-2xl shadow-black/10 dark:shadow-black/40">
           {/* User info header */}
-          <div className="border-b border-border px-4 py-3">
+          <div className="border-b border-border bg-muted/40 px-4 py-3">
             <div className="flex items-center gap-3">
-              <div className={cn('flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white', avatarColor)}>
-                {initials}
-              </div>
+              {avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={avatarUrl}
+                  alt={label}
+                  referrerPolicy="no-referrer"
+                  className="h-10 w-10 flex-shrink-0 rounded-full object-cover"
+                />
+              ) : (
+                <div className={cn('flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white', avatarColor)}>
+                  {initials}
+                </div>
+              )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{displayName ?? t('user')}</p>
                 {email && <p className="truncate text-xs text-muted-foreground">{email}</p>}
               </div>
             </div>
             {subscriptionTier && (
-              <span className="mt-2.5 inline-flex items-center rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand">
+              <span className="mt-2.5 inline-flex items-center gap-1 rounded-full border border-brand/25 bg-brand/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand">
+                <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M12 2l2.9 6.26L21.5 9.27l-4.75 4.63L17.8 20.5 12 17.27 6.2 20.5l1.05-6.6L2.5 9.27l6.6-1.01L12 2z" />
+                </svg>
                 {subscriptionTier}
               </span>
             )}

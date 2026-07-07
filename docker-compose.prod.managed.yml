@@ -109,8 +109,11 @@ services:
     image: nats:2.10-alpine
     command: ["-js", "-m", "8222", "--name", "tik-live-pro-prod"]
     ports:
-      - "4222:4222"
-      - "8222:8222"
+      # Loopback only: NATS is reached via the docker network (nats:4222);
+      # host binding exists solely for local debugging. Public 4222 would
+      # expose an unauthenticated JetStream to the internet.
+      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8222:8222"
     volumes:
       - nats_data:/data
     deploy:
@@ -134,8 +137,8 @@ services:
       - SPAN_STORAGE_TYPE=memory
       - MEMORY_MAX_TRACES=10000
     ports:
-      - "16686:16686"
-      - "14268:14268"
+      - "127.0.0.1:16686:16686"
+      - "127.0.0.1:14268:14268"
     deploy:
       resources:
         limits:
@@ -149,8 +152,8 @@ services:
     volumes:
       - ./infra/observability/otel-collector-config.yaml:/etc/otel/otel-collector-config.yaml:ro
     ports:
-      - "4317:4317"
-      - "4318:4318"
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
     depends_on:
       - jaeger
     deploy:
@@ -170,7 +173,7 @@ services:
       - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     deploy:
       resources:
         limits:
@@ -188,7 +191,7 @@ services:
       - grafana_data:/var/lib/grafana
       - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     depends_on:
       - prometheus
     deploy:
@@ -228,8 +231,10 @@ services:
       # only advertises its Docker-internal IP (172.x.x.x), which is unreachable.
       MTX_WEBRTCADDITIONALHOSTS: ${SERVER_PUBLIC_IP:?SERVER_PUBLIC_IP is required}
     ports:
-      - "8888:8888"     # HLS — Caddy reverse-proxies this as https://hls.tiklivepro.me
-      - "8889:8889"     # WebRTC HTTP signalling
+      # 8888/8889 loopback only — Caddy terminates TLS and proxies them.
+      # 8189/udp must stay public: browsers connect to it directly (ICE).
+      - "127.0.0.1:8888:8888" # HLS — Caddy reverse-proxies this as https://hls.tiklivepro.me
+      - "127.0.0.1:8889:8889" # WebRTC HTTP signalling
       - "8189:8189/udp" # WebRTC ICE UDP — required for browser WHIP media transport
     deploy:
       resources:
@@ -262,7 +267,7 @@ services:
       STREAM_ORCHESTRATOR_SERVICE_URL: http://stream-orchestrator:3009
       NODE_OPTIONS: "--max-old-space-size=128"
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000" # via Caddy api.tiklivepro.me
     depends_on:
       nats:
         condition: service_healthy
@@ -425,7 +430,7 @@ services:
       COMMENT_POLL_INTERVAL_MS: "2000"
       NODE_OPTIONS: "--max-old-space-size=128"
     ports:
-      - "3006:3006"   # Socket.IO WebSocket — Caddy reverse-proxies this as wss://api.tiklivepro.me/socket.io
+      - "127.0.0.1:3006:3006" # Socket.IO WebSocket — Caddy reverse-proxies this as wss://api.tiklivepro.me/socket.io
     depends_on:
       nats:
         condition: service_healthy
@@ -536,7 +541,9 @@ services:
       # create a directory here; populate it per docs/setup.md.
       - /opt/tiklivepro/yt-cookies.txt:/run/secrets/yt-cookies.txt:ro
     ports:
-      - "3009:3009"
+      # 3009 loopback only (Caddy proxies /stream-orchestrator/*);
+      # 1935 must stay public — OBS pushes RTMP to it directly.
+      - "127.0.0.1:3009:3009"
       - "1935:1935"
     depends_on:
       nats:
@@ -608,7 +615,7 @@ services:
       MEDIAMTX_API_URL: http://mediamtx:9997
       NATS_MONITORING_URL: http://nats:8222
     ports:
-      - "3011:3011"
+      - "127.0.0.1:3011:3011" # via Caddy status.tiklivepro.me
     depends_on:
       nats:
         condition: service_healthy
@@ -656,7 +663,7 @@ services:
       NEXT_PUBLIC_COMMENTS_WS_URL: ${NEXT_PUBLIC_COMMENTS_WS_URL:-https://api.tiklivepro.me}
       NEXT_PUBLIC_GIPHY_API_KEY: ${NEXT_PUBLIC_GIPHY_API_KEY:-}
     ports:
-      - "3010:3010"
+      - "127.0.0.1:3010:3010" # via Caddy tiklivepro.me
     depends_on:
       api-gateway:
         condition: service_healthy

@@ -1,6 +1,6 @@
 # TikLivePro — Infrastructure Guide
 
-> **Last updated:** 2026-06-15 (Caddyfile: CORS headers with defer on /stream-orchestrator/* proxy blocks so 502 responses also carry ACAO headers, preventing browser from misreporting backend outage as CORS error)
+> **Last updated:** 2026-07-06 (hardening: internal ports bound to 127.0.0.1 in both prod compose files — only RTMP 1935 and ICE 8189/udp stay public; Caddy blocks /stream-orchestrator/docs and /metrics; CI now runs drizzle migrations for all 9 services before every deploy)
 > Update whenever a Dockerfile, compose file, Kubernetes manifest, or build script changes.
 
 ## Table of Contents
@@ -243,7 +243,8 @@ Config file: `infra/caddy/Caddyfile` — versioned in the repo, auto-deployed by
 | `tiklivepro.me`, `www.tiklivepro.me` | `localhost:3010` | Next.js frontend |
 | `api.tiklivepro.me` OPTIONS (from `tiklivepro.me` or `app.tiklivepro.me`) | — (Caddy responds 204) | CORS preflight handled at the Caddy level so OPTIONS never reaches a backend. Allows `Authorization, Content-Type, X-Correlation-Id` with `credentials: true`, `max-age: 86400`. |
 | `api.tiklivepro.me/socket.io/*` | `localhost:3006` | Comments socket.io WebSocket — routed directly to the comments service because the API gateway's `fetch()` proxy does not handle WebSocket upgrades. **The comments container must expose `3006:3006`** in `docker-compose.prod.managed.yml` so Caddy (a host-level service) can reach it. |
-| `api.tiklivepro.me/stream-orchestrator/*` | `localhost:3009` (prefix stripped) | Stream orchestrator REST API. Caddy injects `Access-Control-Allow-Origin` and `Access-Control-Allow-Credentials` via `header { defer }` so CORS headers are present even on 502 responses, preventing the browser from misreporting a backend outage as a CORS error. |
+| `api.tiklivepro.me/stream-orchestrator/docs*`, `…/metrics` | — (Caddy responds 404) | This proxy path bypasses the API gateway, so the orchestrator's Swagger UI and Prometheus metrics would otherwise be publicly reachable. Blocked at the Caddy level; the `handle` blocks must stay **above** the `@so_*` handles (evaluated in order). |
+| `api.tiklivepro.me/stream-orchestrator/*` | `localhost:3009` (prefix stripped) | Stream orchestrator REST API. Caddy injects `Access-Control-Allow-Origin` and `Access-Control-Allow-Credentials` via `header { defer }` so CORS headers are present even on 502 responses, preventing the browser from misreporting a backend outage as a CORS error. Caddy sets `X-Forwarded-For`; the orchestrator runs with `trustProxy: true` so its per-IP rate limits key on the real client IP. |
 | `api.tiklivepro.me` (all other paths) | `localhost:3000` | API Gateway (REST) |
 | `status.tiklivepro.me` | `localhost:3011` | Status page (Next.js). Polls all service `/health` endpoints server-side and renders aggregated status. **DNS A record required**: point `status.tiklivepro.me` at the same droplet IP. The status container must expose `3011:3011`. |
 | `hls.tiklivepro.me` | `localhost:8888` | MediaMTX HLS relay. CORS headers added: `Allow-Origin *`, `Allow-Methods GET/HEAD/OPTIONS`, `Allow-Headers Range` |
@@ -277,6 +278,7 @@ Features:
 - `condition: service_healthy` on all `depends_on` blocks — services wait for infra to be ready
 - `restart: unless-stopped` on all containers
 - MediaMTX allocated 64 MB RAM limit (typical runtime: ~10 MB)
+- **Loopback port bindings** — every host port that Caddy proxies (or that is internal-only: NATS, MediaMTX API, observability stack) is bound `127.0.0.1:<port>:<port>` so it is unreachable from the internet. Only two ports are public by design: `1935` (OBS pushes RTMP directly) and `8189/udp` (WebRTC ICE — browsers connect to it directly). Any new service port must follow the same rule.
 
 **Required env vars for MediaMTX in production:**
 ```
@@ -286,9 +288,9 @@ MEDIAMTX_WEBRTC_URL=https://webrtc.tiklivepro.me # public WHIP URL broadcaster's
 Set these in your `.env.prod` or shell before running `make prod-up`. The `MEDIAMTX_RTMP_URL` defaults to `rtmp://mediamtx:1936` (container-to-container) and does not need to be set. `MEDIAMTX_API_URL` is hardcoded to `http://mediamtx:9997` in the compose file and does not need to be set.
 
 The mediamtx container itself requires no credential env vars — the prod config uses open auth (`user: any`). The mediamtx service in the prod compose exposes three ports to the host:
-- `8888:8888` — HLS (Caddy proxies as `https://hls.tiklivepro.me`)
-- `8889:8889` — WebRTC HTTP signalling (Caddy proxies as `https://webrtc.tiklivepro.me`)
-- `8189:8189/udp` — WebRTC ICE UDP mux (must be a fixed port so Docker forwards it; unreachable browser WebRTC if missing)
+- `127.0.0.1:8888:8888` — HLS (Caddy proxies as `https://hls.tiklivepro.me`; loopback-only so the plain-HTTP port is not internet-reachable)
+- `127.0.0.1:8889:8889` — WebRTC HTTP signalling (Caddy proxies as `https://webrtc.tiklivepro.me`)
+- `8189:8189/udp` — WebRTC ICE UDP mux, **public** (browsers connect to it directly; must be a fixed port so Docker forwards it; unreachable browser WebRTC if missing)
 
 `MEDIAMTX_WEBRTC_URL` must be HTTPS so that browsers grant camera/microphone access for WebRTC. Requires a DNS A record for `webrtc.tiklivepro.me` → droplet IP and the Caddy entry above.
 

@@ -13,6 +13,8 @@ export class MediaMtxStreamWatcher {
   private readonly knownPaths = new Set<string>();
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
   private readonly authHeader: string;
+  // Prevents overlapping polls piling up hung requests when MediaMTX stalls.
+  private pollInFlight = false;
 
   constructor(
     private readonly apiUrl: string,
@@ -37,9 +39,12 @@ export class MediaMtxStreamWatcher {
   }
 
   private async poll(): Promise<void> {
+    if (this.pollInFlight) return;
+    this.pollInFlight = true;
     try {
       const res = await fetch(`${this.apiUrl}/v3/paths/list`, {
         headers: { Authorization: this.authHeader },
+        signal: AbortSignal.timeout(3000),
       });
       if (!res.ok) return;
       const data = (await res.json()) as MediaMtxPathsResponse;
@@ -58,12 +63,13 @@ export class MediaMtxStreamWatcher {
           // Add before calling handler to prevent concurrent duplicate calls.
           // Removed on error so the next poll retries.
           this.knownPaths.add(name);
-          try {
-            await this.onStreamArrived(ingestKey);
-          } catch (err) {
+          // Fire-and-forget: a worker start can queue behind the 5-slot start
+          // semaphore for seconds; awaiting it here would delay end-detection
+          // for every other stream in the same tick.
+          void this.onStreamArrived(ingestKey).catch((err: unknown) => {
             this.logger.warn({ ingestKey, err }, 'Stream arrival handler failed, will retry next poll');
             this.knownPaths.delete(name);
-          }
+          });
         }
       }
 
@@ -77,6 +83,8 @@ export class MediaMtxStreamWatcher {
       }
     } catch {
       // transient errors (mediamtx not yet ready) — ignore
+    } finally {
+      this.pollInFlight = false;
     }
   }
 }

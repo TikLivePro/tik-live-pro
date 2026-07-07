@@ -7,16 +7,24 @@ import type { LiveSessionId } from '@tik-live-pro/shared-types';
 import type { Logger } from '@tik-live-pro/logger';
 import { StreamSessionStatus, RecordingStatus } from '../../domain/entities/stream-session.entity.js';
 import { isPlatformUrl, resolveWithYtDlp, YtDlpError } from '../../infrastructure/ytdlp/ytdlp-resolver.js';
+import {
+  registerVideoPush,
+  stopVideoPush,
+  unregisterVideoPush,
+} from '../../infrastructure/ffmpeg/video-push-registry.js';
 import ffmpeg from 'fluent-ffmpeg';
-import type { FfmpegCommand } from 'fluent-ffmpeg';
-
-// Map of sessionId → active video-push ffmpeg process.
-// Ensures only one push process runs per session at a time.
-const videoPushProcesses = new Map<string, FfmpegCommand>();
 
 // Crude SSRF guard shared with the merge-stream endpoint.
 const PRIVATE_IP_RE =
   /^(localhost|127\.|0\.0\.0\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1|fc|fd)/i;
+
+// The JWT `sub` of the authenticated caller. Every session-scoped route must
+// compare this against session.userId — without it any authenticated user can
+// read another host's ingest key (stream hijack) or control their session.
+function jwtSub(req: { user?: unknown }): string | null {
+  const user = req.user as { sub?: unknown } | undefined;
+  return typeof user?.sub === 'string' ? user.sub : null;
+}
 
 // ---------------------------------------------------------------------------
 // Reusable schema fragments
@@ -211,9 +219,16 @@ Scraped by the Prometheus sidecar every 15 s.
     },
     async (req, reply) => {
       await req.jwtVerify();
+      const sub = jwtSub(req);
       const raw = req.query.sessionIds ?? '';
       const ids = raw.split(',').map((s) => s.trim()).filter(Boolean);
-      const records = await deps.recordingRepo.findBySessionIds(ids);
+      // Only return recordings for sessions the caller owns.
+      const owned: string[] = [];
+      for (const id of ids) {
+        const session = await deps.sessionRepo.findBySessionId(id as LiveSessionId).catch(() => null);
+        if (session && session.userId === sub) owned.push(id);
+      }
+      const records = owned.length > 0 ? await deps.recordingRepo.findBySessionIds(owned) : [];
       await reply.status(200).send({
         items: records.map((r) => ({
           id: r.id,
@@ -274,6 +289,7 @@ A recording is active when \`record: true\` has been set on the MediaMTX path co
     },
     async (req, reply) => {
       await req.jwtVerify();
+      const sub = jwtSub(req);
       const authHeaders = deps.mediaMtxApiAuthHeader ? { Authorization: deps.mediaMtxApiAuthHeader } : {};
 
       // Fetch recordings list and config paths in parallel.
@@ -310,6 +326,8 @@ A recording is active when \`record: true\` has been set on the MediaMTX path co
         (data.items ?? []).map(async (item) => {
           const ingestKey = item.name.startsWith('live/') ? item.name.slice(5) : item.name;
           const session = await deps.sessionRepo.findByIngestKey(ingestKey).catch(() => null);
+          // Only expose recordings for sessions the caller owns.
+          if (!session || session.userId !== sub) return null;
           const isActive = activeRecordingPaths.has(item.name);
           const isPaused = session?.recordingStatus === RecordingStatus.PAUSED;
           if (!isActive && !isPaused) return null;
@@ -413,7 +431,8 @@ rtmp://<host>:<port>/live/<ingestKey>
         req.params.sessionId as LiveSessionId,
       );
 
-      if (!session) {
+      if (!session || session.userId !== jwtSub(req)) {
+        // 404 (not 403) for foreign sessions: don't leak their existence.
         await reply.status(404).send({ code: 'NOT_FOUND', message: 'Session not found' });
         return;
       }
@@ -477,7 +496,8 @@ Only valid when the session status is \`live\`.
       const session = await deps.sessionRepo.findBySessionId(
         req.params.sessionId as LiveSessionId,
       );
-      if (!session) {
+      if (!session || session.userId !== jwtSub(req)) {
+        // 404 (not 403) for foreign sessions: don't leak their existence.
         await reply.status(404).send({ code: 'NOT_FOUND', message: 'Session not found' });
         return;
       }
@@ -546,7 +566,8 @@ Only valid when the session status is \`live\`.
       const session = await deps.sessionRepo.findBySessionId(
         req.params.sessionId as LiveSessionId,
       );
-      if (!session) {
+      if (!session || session.userId !== jwtSub(req)) {
+        // 404 (not 403) for foreign sessions: don't leak their existence.
         await reply.status(404).send({ code: 'NOT_FOUND', message: 'Session not found' });
         return;
       }
@@ -622,7 +643,8 @@ Only valid when the session status is \`live\`.
     async (req, reply) => {
       await req.jwtVerify();
       const session = await deps.sessionRepo.findBySessionId(req.params.sessionId as LiveSessionId);
-      if (!session) {
+      if (!session || session.userId !== jwtSub(req)) {
+        // 404 (not 403) for foreign sessions: don't leak their existence.
         await reply.status(404).send({ code: 'NOT_FOUND', message: 'Session not found' });
         return;
       }
@@ -681,7 +703,8 @@ Only valid when the session status is \`live\`.
     async (req, reply) => {
       await req.jwtVerify();
       const session = await deps.sessionRepo.findBySessionId(req.params.sessionId as LiveSessionId);
-      if (!session) {
+      if (!session || session.userId !== jwtSub(req)) {
+        // 404 (not 403) for foreign sessions: don't leak their existence.
         await reply.status(404).send({ code: 'NOT_FOUND', message: 'Session not found' });
         return;
       }
@@ -747,7 +770,8 @@ Only valid when the session status is \`live\`.
     async (req, reply) => {
       await req.jwtVerify();
       const session = await deps.sessionRepo.findBySessionId(req.params.sessionId as LiveSessionId);
-      if (!session) {
+      if (!session || session.userId !== jwtSub(req)) {
+        // 404 (not 403) for foreign sessions: don't leak their existence.
         await reply.status(404).send({ code: 'NOT_FOUND', message: 'Session not found' });
         return;
       }
@@ -800,7 +824,8 @@ Only valid when the session status is \`live\`.
       const session = await deps.sessionRepo.findBySessionId(
         req.params.sessionId as LiveSessionId,
       );
-      if (!session) {
+      if (!session || session.userId !== jwtSub(req)) {
+        // 404 (not 403) for foreign sessions: don't leak their existence.
         await reply.status(404).send({ code: 'NOT_FOUND', message: 'Session not found' });
         return;
       }
@@ -845,6 +870,13 @@ Only valid when the session status is \`live\`.
       await req.jwtVerify();
       const recording = await deps.recordingRepo.findById(req.params.recordingId);
       if (!recording) {
+        await reply.status(404).send({ code: 'NOT_FOUND', message: 'Recording not found' });
+        return;
+      }
+      const owningSession = await deps.sessionRepo
+        .findBySessionId(recording.sessionId as LiveSessionId)
+        .catch(() => null);
+      if (!owningSession || owningSession.userId !== jwtSub(req)) {
         await reply.status(404).send({ code: 'NOT_FOUND', message: 'Recording not found' });
         return;
       }
@@ -925,7 +957,8 @@ Only valid when the session status is \`live\`.
         req.params.sessionId as LiveSessionId,
       );
 
-      if (!session) {
+      if (!session || session.userId !== jwtSub(req)) {
+        // 404 (not 403) for foreign sessions: don't leak their existence.
         await reply.status(404).send({ code: 'NOT_FOUND', message: 'Session not found' });
         return;
       }
@@ -952,6 +985,18 @@ Only valid when the session status is \`live\`.
             'Local device paths (file://, /storage/, etc.) are not supported — ' +
             'host the video on a reachable server and pass the HTTP URL.',
         });
+        return;
+      }
+
+      // SSRF guard — same policy as merge-stream: no private/loopback hosts.
+      try {
+        const parsedUri = new URL(rawUri);
+        if (PRIVATE_IP_RE.test(parsedUri.hostname)) {
+          await reply.status(400).send({ code: 'PRIVATE_URL', message: 'Private or loopback URLs are not allowed.' });
+          return;
+        }
+      } catch {
+        await reply.status(400).send({ code: 'INVALID_URI', message: 'videoUri is not a valid URL.' });
         return;
       }
 
@@ -982,11 +1027,8 @@ Only valid when the session status is \`live\`.
       }
 
       // Kill any existing video-push process for this session before starting a new one.
-      const existing = videoPushProcesses.get(session.sessionId);
-      if (existing) {
-        req.log.info({ sessionId: session.sessionId }, 'video-push: killing previous ffmpeg process');
-        existing.kill('SIGKILL');
-        videoPushProcesses.delete(session.sessionId);
+      if (stopVideoPush(session.sessionId)) {
+        req.log.info({ sessionId: session.sessionId }, 'video-push: killed previous ffmpeg process');
       }
 
       // The RTMP ingest URL for this session — same as what GET /ingest returns
@@ -1023,15 +1065,15 @@ Only valid when the session status is \`live\`.
         })
         .on('error', (err: Error) => {
           req.log.error({ err, sessionId }, 'video-push ffmpeg error');
-          videoPushProcesses.delete(sessionId);
+          unregisterVideoPush(sessionId, proc);
         })
         .on('end', () => {
           req.log.info({ sessionId }, 'video-push ffmpeg ended');
-          videoPushProcesses.delete(sessionId);
+          unregisterVideoPush(sessionId, proc);
         });
 
       proc.run();
-      videoPushProcesses.set(sessionId, proc);
+      registerVideoPush(sessionId, proc);
 
       await reply.status(200).send({ status: 'started' });
     },

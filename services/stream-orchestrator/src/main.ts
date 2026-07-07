@@ -26,6 +26,7 @@ import { StopBroadcastUseCase } from './application/use-cases/stop-broadcast.use
 import { HandleStreamArrivedUseCase } from './application/use-cases/handle-stream-arrived.use-case.js';
 import { registerRoutes } from './interfaces/http/routes.js';
 import { RecordingUploader } from './infrastructure/storage/recording-uploader.js';
+import { stopAllVideoPushes } from './infrastructure/ffmpeg/video-push-registry.js';
 
 const envSchema = baseEnvSchema.extend({
   DATABASE_URL: z.string().url(),
@@ -248,6 +249,10 @@ async function main(): Promise<void> {
   // HTTP server
   const app = Fastify({
     logger: false,
+    // Behind the API gateway / Caddy: without this, req.ip is always the proxy
+    // container's IP, which turned the per-IP rate limits on /video-proxy/*
+    // into platform-global limits shared by every user.
+    trustProxy: true,
     ajv: { customOptions: { keywords: ['example'] } },
   });
   await app.register(cors, {
@@ -354,6 +359,14 @@ This service is primarily driven by NATS JetStream events from the \`live-sessio
     rtmpServer.stop();
     mediaMtxWatcher.stop();
     recordingUploader?.stop();
+    // Kill all ffmpeg children (relay workers + video pushes). On bare-process
+    // restarts they would otherwise survive as orphans, and crash recovery
+    // would then spawn duplicates pushing to the same platform RTMP keys.
+    const stoppedPushes = stopAllVideoPushes();
+    if (stoppedPushes.length > 0) {
+      logger.info({ sessions: stoppedPushes }, 'Stopped video-push processes on shutdown');
+    }
+    await streamArrivalHandler.stopAllWorkers();
     await nats.drain();
     await pool.end();
     process.exit(0);

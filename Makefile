@@ -56,7 +56,7 @@ PACKAGES := \
   typecheck typecheck-services typecheck-web typecheck-status typecheck-mobile typecheck-packages \
   lint lint-fix \
   format \
-  clean clean-dist clean-deps \
+  clean clean-dist clean-deps kill-service kill-all \
   db-create db-create-prod db-generate db-migrate db-migrate-prod db-studio db-seed db-seed-billing db-seed-prod \
   db-logs nats-logs nats-streams nats-streams-prod mediamtx-logs mediamtx-ps \
   logs-gateway logs-auth logs-users logs-integrations logs-live-session \
@@ -432,6 +432,63 @@ clean-dist:
 clean-deps:
 	find . -name "node_modules" -type d -prune -exec rm -rf {} + 2>/dev/null || true
 	@echo "All node_modules removed. Run 'make install' to reinstall."
+
+## kill-all: Kill all processes running on development ports (3000-3011)
+kill-all:
+	@echo "Killing all processes listening on ports 3000-3011..."
+	@for port in $$(seq 3000 3011); do \
+		if command -v fuser >/dev/null 2>&1; then \
+			if fuser $$port/tcp >/dev/null 2>&1; then \
+				echo "Killing process on port $$port..." ; \
+				fuser -k -9 $$port/tcp 2>/dev/null || true ; \
+			fi ; \
+		else \
+			pid=$$(lsof -t -i :$$port 2>/dev/null) ; \
+			if [ -n "$$pid" ]; then \
+				echo "Killing process $$pid on port $$port..." ; \
+				kill -9 $$pid 2>/dev/null || true ; \
+			fi ; \
+		fi ; \
+	done
+	@echo "All development ports cleared."
+
+## kill-service: Kill process running on a specific service's port
+##               Usage: make kill-service svc=web
+kill-service:
+ifndef svc
+	$(error svc is required. Usage: make kill-service svc=web)
+endif
+	@case "$(svc)" in \
+		api-gateway|gateway) port=3000 ;; \
+		auth|auth-service) port=3001 ;; \
+		users|users-service) port=3002 ;; \
+		live-session|live-session-service) port=3003 ;; \
+		billing|billing-service) port=3004 ;; \
+		integrations|integrations-service) port=3005 ;; \
+		comments|comments-service) port=3006 ;; \
+		notifications|notifications-service) port=3007 ;; \
+		analytics|analytics-service) port=3008 ;; \
+		stream-orchestrator|orchestrator) port=3009 ;; \
+		web) port=3010 ;; \
+		status) port=3011 ;; \
+		*) echo "Unknown service: $(svc). Choose from: api-gateway, auth, users, live-session, billing, integrations, comments, notifications, analytics, stream-orchestrator, web, status" && exit 1 ;; \
+	esac; \
+	if command -v fuser >/dev/null 2>&1; then \
+		if fuser $$port/tcp >/dev/null 2>&1; then \
+			echo "Killing process on port $$port ($(svc))..." ; \
+			fuser -k -9 $$port/tcp 2>/dev/null || true ; \
+		else \
+			echo "No process running on port $$port ($(svc))." ; \
+		fi ; \
+	else \
+		pid=$$(lsof -t -i :$$port 2>/dev/null) ; \
+		if [ -n "$$pid" ]; then \
+			echo "Killing process $$pid on port $$port ($(svc))..." ; \
+			kill -9 $$pid 2>/dev/null || true ; \
+		else \
+			echo "No process running on port $$port ($(svc))." ; \
+		fi ; \
+	fi
 
 # ==============================================================================
 # SERVICE LOGS  (individual service log tailing via pnpm/turbo filter)

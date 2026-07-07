@@ -52,13 +52,30 @@
       "sessionExpired": "Votre session a expiré. Veuillez vous reconnecter",
       "generic": "Une erreur s'est produite. Veuillez réessayer",
       "oauthFailed": "Connexion sociale échouée. Veuillez réessayer"
-    }
+    },
+    "welcomeBack": "Bon retour",
+    "welcomeSubtitle": "Connectez-vous pour gérer vos streams et engager votre audience.",
+    "signUpToStream": "Inscrivez-vous pour streamer",
+    "testimonial": {
+      "quote": "Passer à TikLivePro a complètement changé ma façon d'interagir avec ma communauté. La latence est quasi nulle et les statistiques me donnent un contrôle total sur mon contenu.",
+      "name": "Sarah Jenkins",
+      "role": "Top 1 % des créateurs"
+    },
+    "callback": {
+      "connecting": "Connexion de votre compte…",
+      "redirectMoment": "Vous allez être redirigé dans un instant.",
+      "failedTitle": "Échec de la connexion",
+      "failedBody": "Nous n'avons pas pu connecter votre compte en toute sécurité. Veuillez réessayer ou revenir à la connexion.",
+      "tryAgain": "Réessayer",
+      "backToLogin": "Retour à la connexion"
+    },
+    "signUpSubtitle": "Créez votre compte et commencez à streamer partout à la fois."
   },
   "stream": {
     "title": "Titre du stream",
     "description": "Description (optionnelle)",
     "goLive": "Démarrer le live",
-    "goLiveHeading": "Démarrer votre live",
+    "goLiveHeading": "Configuration du stream",
     "goLiveSubtitle": "Configurez votre stream et choisissez les comptes sur lesquels diffuser",
     "selectAccounts": "Diffuser sur",
     "noAccountsConnected": "Aucun compte connecté",
@@ -244,6 +261,71 @@
       "endFailed": "Échec de la fin du stream",
       "pauseFailed": "Échec de la mise en pause du stream",
       "resumeFailed": "Échec de la reprise du stream"
+    },
+    "greeting": "Prêt à passer en direct, {name} ?",
+    "thisMonth": {
+      "title": "Ce mois-ci",
+      "totalStreams": "Streams totaux",
+      "hoursLive": "Heures en direct",
+      "peakViewers": "Pic de spectateurs"
+    },
+    "recentSessions": {
+      "title": "Sessions récentes",
+      "streamCol": "Stream",
+      "dateCol": "Date et durée",
+      "destinationsCol": "Destinations",
+      "actionCol": "Action",
+      "replay": "Revoir",
+      "viewAll": "Voir tout",
+      "viewersCol": "Spectateurs",
+      "peakLabel": "pic"
+    },
+    "greetingGeneric": "Prêt à passer en direct ?",
+    "obs": {
+      "tabLabel": "OBS / RTMP",
+      "rtmpUrl": "URL RTMP",
+      "streamKey": "Clé de stream",
+      "copy": "Copier",
+      "copied": "Copié !",
+      "showKey": "Afficher la clé de stream",
+      "hideKey": "Masquer la clé de stream",
+      "generatedOnStart": "Votre URL RTMP et votre clé de stream sont générées au lancement du direct."
+    },
+    "controlRoom": {
+      "viewers": "Spectateurs",
+      "peakViewers": "Pic de spectateurs",
+      "commentsCount": "Commentaires",
+      "reactions": "Réactions",
+      "settings": "Réglages du stream",
+      "settingsHint": "Résolution, source et liens du stream",
+      "links": "Liens du stream",
+      "watchLink": "Lien de visionnage",
+      "hlsLink": "Flux HLS",
+      "webrtcLink": "WebRTC (faible latence)",
+      "endConfirmTitle": "Terminer ce direct ?",
+      "endConfirmBody": "La diffusion s’arrêtera sur toutes les destinations. Cette action est irréversible.",
+      "endConfirmAction": "Terminer le direct",
+      "chatTab": "Chat",
+      "viewersTab": "Spectateurs",
+      "dashboardNav": "Tableau de bord",
+      "healthStreaming": "En diffusion",
+      "healthConnecting": "Reconnexion",
+      "healthError": "Erreur",
+      "healthEnded": "Terminé",
+      "healthPending": "En attente",
+      "sidebar": {
+        "label": "Navigation du Creator Studio",
+        "creatorStudio": "Creator Studio",
+        "overview": "Aperçu",
+        "streaming": "Streaming",
+        "analytics": "Analyses",
+        "accounts": "Comptes",
+        "settings": "Paramètres",
+        "soon": "Bientôt",
+        "upgradePro": "Passer à Pro",
+        "help": "Aide",
+        "logout": "Se déconnecter"
+      }
     }
   },
   "comments": {
@@ -264,7 +346,14 @@
     "insertLinkConfirm": "Insérer",
     "viewAttachment": "Voir la pièce jointe",
     "dismissPreview": "Masquer l'aperçu",
-    "addReaction": "Ajouter une réaction"
+    "addReaction": "Ajouter une réaction",
+    "filterAll": "Tous",
+    "pauseAutoscroll": "Suspendre le défilement",
+    "resumeAutoscroll": "Reprendre le défilement",
+    "newMessages": "Nouveaux messages",
+    "pinned": "Épinglé",
+    "pin": "Épingler",
+    "unpin": "Désépingler"
   },
   "accounts": {
     "title": "Comptes connectés",
@@ -277,11 +366,14 @@
     "status": {
       "connected": "Connecté",
       "disconnected": "Déconnecté",
-      "error": "Erreur"
+      "error": "Erreur",
+      "ready": "Prêt"
     },
     "limit": {
       "freemium": "Le plan gratuit permet jusqu'à 2 comptes connectés",
-      "upgrade": "Passez au Premium pour des comptes illimités"
+      "upgrade": "Passez au Premium pour des comptes illimités",
+      "freemiumShort": "Plan gratuit · 2 comptes max",
+      "upgradeCta": "Mettre à niveau"
     },
     "modal": {
       "title": "Connecter un compte",
@@ -291,7 +383,9 @@
       "connectFailed": "Échec de la connexion du compte",
       "disconnectFailed": "Échec de la déconnexion du compte",
       "limitReached": "Limite de comptes atteinte. Passez au Premium pour en connecter davantage"
-    }
+    },
+    "manage": "Gérer",
+    "reconnect": "Reconnecter"
   },
   "billing": {
     "title": "Abonnement",
@@ -300,7 +394,10 @@
       "free": {
         "name": "Gratuit",
         "description": "Commencez à streamer en direct",
-        "features": ["Jusqu'à 2 comptes connectés", "Fonctionnalités de streaming de base"]
+        "features": [
+          "Jusqu'à 2 comptes connectés",
+          "Fonctionnalités de streaming de base"
+        ]
       },
       "premium": {
         "name": "Premium",
@@ -572,6 +669,11 @@
       "open": "Qualité du flux",
       "hd": "HD · En direct",
       "saveData": "Économise la bande passante"
+    },
+    "replay": {
+      "title": "Replay du chat",
+      "summary": "{comments, plural, one {# commentaire} other {# commentaires}} · {reactions, plural, one {# réaction} other {# réactions}}",
+      "empty": "Aucun commentaire ni réaction envoyé pendant ce direct."
     }
   },
   "notFound": {
@@ -583,14 +685,32 @@
     "nav": {
       "signIn": "Se connecter",
       "getStarted": "Commencer gratuitement",
-      "goToDashboard": "Aller au tableau de bord"
+      "goToDashboard": "Aller au tableau de bord",
+      "features": "Fonctionnalités",
+      "howItWorks": "Comment ça marche",
+      "pricing": "Tarifs",
+      "goLiveFree": "Passer en direct",
+      "openMenu": "Ouvrir le menu",
+      "closeMenu": "Fermer le menu"
     },
     "hero": {
       "badge": "Streaming multi-plateforme",
-      "headline": "Diffusez sur TikTok\net Facebook simultanément",
       "subtext": "Diffusez sur toutes vos plateformes en même temps. Gérez les commentaires en direct, suivez vos statistiques et développez votre audience — depuis un seul tableau de bord.",
       "cta": "Commencer gratuitement",
-      "ctaSecondary": "Se connecter"
+      "ctaSecondary": "Se connecter",
+      "preview": {
+        "live": "EN DIRECT",
+        "viewers": "12,4K spectateurs",
+        "duration": "00:42:17",
+        "c1": "C'est incroyable 🔥",
+        "c2": "Salut depuis Paris !",
+        "c3": "Comment tu passes en live sur les deux ?!"
+      },
+      "headlineStart": "Passez en direct ",
+      "headlineHighlight": "partout",
+      "headlineEnd": ".\nEn même temps.",
+      "socialProof": "Adopté par plus de 12 000 créateurs",
+      "socialProofMore": "+9k"
     },
     "features": {
       "sectionLabel": "FONCTIONNALITÉS",
@@ -610,6 +730,14 @@
       "latency": {
         "title": "Latence ultra-faible",
         "description": "Le streaming WebRTC délivre votre contenu aux spectateurs en moins de 500 millisecondes."
+      },
+      "obsIngest": {
+        "title": "Ingest OBS & RTMP",
+        "description": "Utilisez votre configuration OBS ou Streamlabs existante — une clé RTMP unique relie votre studio à chaque destination."
+      },
+      "security": {
+        "title": "Connexion de comptes sécurisée",
+        "description": "Flux OAuth officiels et jetons chiffrés AES-256 pour protéger vos comptes TikTok et Facebook."
       }
     },
     "pricing": {
@@ -627,23 +755,67 @@
         "f3": "Fil de commentaires unifié",
         "cta": "Commencer gratuitement"
       },
-      "premium": {
-        "name": "Premium",
-        "price": "19 $",
+      "billingToggleLabel": "Période de facturation",
+      "monthly": "Mensuel",
+      "yearly": "Annuel",
+      "billedYearly": "Facturé annuellement",
+      "pro": {
+        "name": "Pro",
+        "priceMonthly": "19 $",
+        "priceYearly": "15 $",
         "description": "Pour les streamers sérieux",
         "f1": "Comptes connectés illimités",
         "f2": "Tableau de bord analytique",
         "f3": "Outils de modération des commentaires",
         "f4": "Enregistrement du stream",
         "f5": "Support prioritaire",
-        "cta": "Passer au Premium"
+        "cta": "Passer au Pro"
+      },
+      "studio": {
+        "name": "Studio",
+        "priceMonthly": "49 $",
+        "priceYearly": "39 $",
+        "description": "Pour les équipes et les créateurs exigeants",
+        "f1": "Tout le contenu de Pro",
+        "f2": "Qualité 4K Ultra HD",
+        "f3": "Ingest RTMP personnalisé",
+        "f4": "Support dédié",
+        "cta": "Choisir Studio"
       }
     },
     "footer": {
       "tagline": "La façon la plus simple de streamer partout.",
       "rights": "© 2026 TikLivePro. Tous droits réservés.",
-      "terms": "Conditions",
-      "privacy": "Confidentialité"
+      "terms": "Conditions d'utilisation",
+      "privacy": "Politique de confidentialité",
+      "productTitle": "Produit",
+      "legalTitle": "Mentions légales",
+      "languageTitle": "Langue",
+      "features": "Fonctionnalités",
+      "howItWorks": "Comment ça marche",
+      "pricing": "Tarifs",
+      "dataDeletion": "Suppression des données"
+    },
+    "howItWorks": {
+      "sectionLabel": "COMMENT ÇA MARCHE",
+      "heading": "En direct en trois étapes",
+      "step1": {
+        "title": "Connectez vos comptes",
+        "description": "Liez TikTok et Facebook en toute sécurité depuis votre tableau de bord en quelques clics."
+      },
+      "step2": {
+        "title": "Préparez votre stream",
+        "description": "Choisissez vos destinations, ajoutez un titre et diffusez depuis votre caméra ou OBS."
+      },
+      "step3": {
+        "title": "Passez en direct partout",
+        "description": "Un seul bouton pour diffuser à toute votre audience en même temps."
+      }
+    },
+    "finalCta": {
+      "heading": "Prêt à passer à l’échelle ?",
+      "subtext": "Rejoignez des milliers de créateurs qui maximisent leur portée à chaque stream.",
+      "cta": "Commencer gratuitement"
     }
   }
 }

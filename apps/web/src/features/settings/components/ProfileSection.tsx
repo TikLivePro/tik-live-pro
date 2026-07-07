@@ -17,7 +17,7 @@ const LOCALES: { value: SupportedLocale; label: string }[] = [
 
 export function ProfileSection(): React.JSX.Element {
   const t = useTranslations('settings');
-  const { displayName, email } = useProfile();
+  const { displayName, email, avatarUrl } = useProfile();
   const { locale: currentLocale } = useLocale();
   const router = useRouter();
   const { mutate: updateProfile, isPending } = useUpdateProfile();
@@ -50,15 +50,25 @@ export function ProfileSection(): React.JSX.Element {
   }
 
   return (
-    <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
+    <section className="card-surface space-y-4 p-5">
       <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
         {t('profile.sectionTitle')}
       </p>
 
       <div className="flex items-center gap-4">
-        <div className={cn('flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white', avatarColor)}>
-          {initials}
-        </div>
+        {avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={avatarUrl}
+            alt={displayName ?? ''}
+            referrerPolicy="no-referrer"
+            className="h-14 w-14 shrink-0 rounded-full object-cover"
+          />
+        ) : (
+          <div className={cn('flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white', avatarColor)}>
+            {initials}
+          </div>
+        )}
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{displayName ?? t('profile.unnamed')}</p>
           {email && <p className="truncate text-xs text-muted-foreground">{email}</p>}
@@ -118,9 +128,9 @@ export function ProfileSection(): React.JSX.Element {
             type="submit"
             disabled={isPending}
             className={cn(
-              'rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white',
-              'hover:bg-brand/90 transition-colors',
-              'disabled:cursor-not-allowed disabled:opacity-50',
+              'bg-gradient-brand shadow-brand-glow rounded-lg px-4 py-2 text-sm font-semibold text-white',
+              'transition-all hover:brightness-110 active:scale-[0.98]',
+              'disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none',
             )}
           >
             {isPending ? t('profile.saving') : t('profile.save')}

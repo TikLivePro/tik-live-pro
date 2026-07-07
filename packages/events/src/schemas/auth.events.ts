@@ -5,6 +5,8 @@ export interface UserRegisteredPayload {
   userId: UserId;
   email: Email;
   displayName: string;
+  /** Profile picture from the OAuth provider, when the user registered via OAuth. */
+  avatarUrl?: string | null;
   subscriptionTier: SubscriptionTier;
   locale: string;
 }

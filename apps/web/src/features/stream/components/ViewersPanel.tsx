@@ -34,6 +34,11 @@ interface Props {
   videoControlEnabled?: boolean;
   /** Live viewer display names pushed from socket (viewer mode, bypasses REST stub) */
   publicViewerNames?: string[];
+  /**
+   * Embedded (control-room rail tab) variant: no own header/close button,
+   * fills the parent and uses theme surface tokens instead of dark glass.
+   */
+  embedded?: boolean;
 }
 
 export function ViewersPanel({
@@ -50,6 +55,7 @@ export function ViewersPanel({
   onGrantViewerControl,
   videoControlEnabled = false,
   publicViewerNames,
+  embedded = false,
 }: Props): React.ReactElement {
   const t = useTranslations('watch');
   const tStream = useTranslations('stream');
@@ -71,12 +77,18 @@ export function ViewersPanel({
     if (!socket) return;
 
     socket.emit('join_as_streamer');
+    // Re-register after reconnects — the server-side registry is in-memory.
+    const rejoin = (): void => { socket.emit('join_as_streamer'); };
+    socket.on('connect', rejoin);
 
     const handler = (data: { viewers: Viewer[] }) => {
       setSocketViewers(data.viewers ?? []);
     };
     socket.on('viewers_update', handler);
-    return () => { socket.off('viewers_update', handler); };
+    return () => {
+      socket.off('viewers_update', handler);
+      socket.off('connect', rejoin);
+    };
   }, [showAudienceToggle, socketRef]);
 
   // Viewer mode: poll REST for the public audience list (skipped when publicViewerNames supplied)
@@ -118,11 +130,14 @@ export function ViewersPanel({
   return (
     <div
       className={cn(
-        'flex flex-col border-white/20 bg-black/80 backdrop-blur-2xl',
-        className ?? 'absolute inset-y-0 right-0 z-40 w-72 border-l sm:w-80',
+        embedded
+          ? 'flex h-full min-h-0 flex-col'
+          : 'flex flex-col border-white/20 bg-black/80 backdrop-blur-2xl',
+        embedded ? className : (className ?? 'absolute inset-y-0 right-0 z-40 w-72 border-l sm:w-80'),
       )}
     >
-      {/* Header */}
+      {/* Header — the embedded variant gets its title from the rail tab */}
+      {!embedded && (
       <div className="flex items-center justify-between border-b border-white/20 px-4 py-3">
         <div className="flex items-center gap-2">
           <svg
@@ -167,11 +182,19 @@ export function ViewersPanel({
           </svg>
         </button>
       </div>
+      )}
 
       {/* Audience visibility toggle (sharer only) */}
       {showAudienceToggle && (
-        <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.04] px-4 py-2.5">
-          <span className="text-xs text-white/60">
+        <div
+          className={cn(
+            'flex items-center justify-between border-b px-4 py-2.5',
+            embedded
+              ? 'border-[var(--card-border-color)] bg-muted/40'
+              : 'border-white/10 bg-white/[0.04]',
+          )}
+        >
+          <span className={cn('text-xs', embedded ? 'text-muted-foreground' : 'text-white/60')}>
             {viewersVisible
               ? tStream('viewers.showAudience')
               : tStream('viewers.hideAudience')}
@@ -189,7 +212,9 @@ export function ViewersPanel({
               'relative h-5 w-9 rounded-full border transition-colors focus:outline-none disabled:opacity-50',
               viewersVisible
                 ? 'border-brand/50 bg-brand'
-                : 'border-white/20 bg-white/10',
+                : embedded
+                  ? 'border-[var(--input-border-color)] bg-muted'
+                  : 'border-white/20 bg-white/10',
             )}
           >
             <span
@@ -204,8 +229,18 @@ export function ViewersPanel({
 
       {/* Video-control section header (streamer only, when feature enabled) */}
       {showAudienceToggle && videoControlEnabled && viewers.length > 0 && (
-        <div className="border-b border-white/10 bg-white/[0.02] px-4 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-white/35">
+        <div
+          className={cn(
+            'border-b px-4 py-2',
+            embedded ? 'border-[var(--card-border-color)]' : 'border-white/10 bg-white/[0.02]',
+          )}
+        >
+          <p
+            className={cn(
+              'text-[10px] font-semibold uppercase tracking-widest',
+              embedded ? 'text-muted-foreground/70' : 'text-white/35',
+            )}
+          >
             {tStream('viewers.videoControl')}
           </p>
         </div>
@@ -228,7 +263,12 @@ export function ViewersPanel({
             </svg>
           </div>
         ) : viewers.length === 0 ? (
-          <p className="mt-12 text-center text-xs text-white/25">
+          <p
+            className={cn(
+              'mt-12 text-center text-xs',
+              embedded ? 'text-muted-foreground/60' : 'text-white/25',
+            )}
+          >
             {t('noViewers')}
           </p>
         ) : (
@@ -236,10 +276,20 @@ export function ViewersPanel({
             const hasControl = allowedViewerIds?.has(viewer.id) ?? false;
             return (
               <div key={viewer.id} className="flex items-center gap-3 px-4 py-2.5">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-[11px] font-bold text-white/70">
+                <div
+                  className={cn(
+                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold',
+                    embedded ? 'bg-muted text-muted-foreground' : 'bg-white/10 text-white/70',
+                  )}
+                >
                   {getInitials(viewer.displayName)}
                 </div>
-                <span className="flex-1 truncate text-sm text-white/80">
+                <span
+                  className={cn(
+                    'flex-1 truncate text-sm',
+                    embedded ? 'text-foreground' : 'text-white/80',
+                  )}
+                >
                   {viewer.displayName}
                 </span>
                 {/* Per-viewer video control toggle — only in streamer mode when feature is enabled */}
@@ -261,7 +311,9 @@ export function ViewersPanel({
                       'relative h-5 w-9 shrink-0 rounded-full border transition-colors focus:outline-none',
                       hasControl
                         ? 'border-green-500/50 bg-green-600'
-                        : 'border-white/20 bg-white/10',
+                        : embedded
+                          ? 'border-[var(--input-border-color)] bg-muted'
+                          : 'border-white/20 bg-white/10',
                     )}
                   >
                     <span

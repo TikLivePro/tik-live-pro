@@ -16,7 +16,8 @@ import type { SessionCreatedPayload, CommentReceivedPayload } from '@tik-live-pr
 import { StringCodec, consumerOpts, createInbox } from 'nats';
 import { AdapterRegistry, TikTokAdapter, FacebookAdapter } from '@tik-live-pro/platform-adapters';
 import { registerCommentsRoutes, broadcastComment, setIo } from './interfaces/http/comments.routes.js';
-import { reactions } from './infrastructure/db/schema.js';
+import { sql } from 'drizzle-orm';
+import { comments, reactions, viewerPeaks } from './infrastructure/db/schema.js';
 import { CommentPoller } from './application/comment-poller.js';
 import { CommentPoster } from './application/comment-poster.js';
 import { SessionRegistry } from './application/session-registry.js';
@@ -90,12 +91,19 @@ async function bootstrap(): Promise<void> {
     return o;
   };
 
+  // Session owner registry: userId of the host per session, used to gate
+  // streamer-only socket events (join_as_streamer, video_state, grants).
+  // In-memory like the rest of the socket state — when unknown (service
+  // restarted mid-session) we still require a valid JWT, just not ownership.
+  const sessionOwners = new Map<string, string>();
+
   // session.created → register accounts in session registry
   const sessionCreatedSub = await js.subscribe(Subjects.SESSION_CREATED, mkOpts('comments-session-created'));
   void (async () => {
     for await (const msg of sessionCreatedSub) {
       try {
         const event = JSON.parse(sc.decode(msg.data)) as BaseEvent<SessionCreatedPayload>;
+        sessionOwners.set(event.payload.sessionId, event.payload.userId);
         sessionRegistry.register(
           event.payload.sessionId,
           event.payload.destinationAccountIds.map((id) => ({
@@ -111,19 +119,43 @@ async function bootstrap(): Promise<void> {
     }
   })();
 
-  // session.starting → start polling
+  // session.starting → resolve real platforms + tokens, then start polling.
+  // session.created only carries account IDs (platform 'unknown'); starting a
+  // poller with 'unknown' would make every poll throw ADAPTER_NOT_FOUND and
+  // error-loop for the whole session without ever fetching a comment.
   const sessionStartingSub = await js.subscribe(Subjects.SESSION_STARTING, mkOpts('comments-session-starting'));
   void (async () => {
     for await (const msg of sessionStartingSub) {
       try {
         const event = JSON.parse(sc.decode(msg.data)) as BaseEvent<{ sessionId: LiveSessionId; userId: string }>;
+        if (event.payload.userId) sessionOwners.set(event.payload.sessionId, event.payload.userId);
         const accounts = sessionRegistry.getAccounts(event.payload.sessionId);
+        const tokenMap = accounts.length > 0
+          ? await commentPoster.fetchTokens(accounts.map((a) => a.socialAccountId))
+          : {};
+        // Persist resolved platforms back into the registry so the poster's
+        // later lookups see real platforms too.
+        sessionRegistry.register(
+          event.payload.sessionId,
+          accounts.map((a) => ({
+            socialAccountId: a.socialAccountId,
+            platform: (tokenMap[a.socialAccountId]?.platform ?? a.platform) as SocialPlatform,
+          })),
+        );
         for (const account of accounts) {
+          const info = tokenMap[account.socialAccountId];
+          if (!info) {
+            logger.warn(
+              { sessionId: event.payload.sessionId, accountId: account.socialAccountId },
+              'No token info for account — skipping comment poller',
+            );
+            continue;
+          }
           commentPoller.start({
             sessionId: event.payload.sessionId,
             socialAccountId: account.socialAccountId,
-            platform: account.platform,
-            accessToken: '', // Token will be fetched dynamically by poster; poller uses integrations service
+            platform: info.platform as SocialPlatform,
+            accessToken: info.accessToken,
             cursor: null,
             intervalMs: env.COMMENT_POLL_INTERVAL_MS,
           });
@@ -136,6 +168,11 @@ async function bootstrap(): Promise<void> {
     }
   })();
 
+  // Assigned once the Socket.io state maps exist below; called on session.ended
+  // so per-session socket state (viewers, streamer, control grants, reaction
+  // windows) doesn't leak for the lifetime of the process.
+  let cleanupSessionSocketState: (sessionId: string) => void = () => {};
+
   // session.ended → stop polling, clean up registry
   const sessionEndedSub = await js.subscribe(Subjects.SESSION_ENDED, mkOpts('comments-session-ended'));
   void (async () => {
@@ -144,6 +181,7 @@ async function bootstrap(): Promise<void> {
         const event = JSON.parse(sc.decode(msg.data)) as BaseEvent<{ sessionId: LiveSessionId }>;
         commentPoller.stopAll(event.payload.sessionId);
         sessionRegistry.remove(event.payload.sessionId);
+        cleanupSessionSocketState(event.payload.sessionId);
         msg.ack();
       } catch (err) {
         logger.error({ err }, 'Failed to process session.ended event');
@@ -152,13 +190,31 @@ async function bootstrap(): Promise<void> {
     }
   })();
 
-  // comment.received → push to WebSocket clients
+  // comment.received → persist, then push to WebSocket clients. Persisting
+  // here is what makes GET /comments (history for late joiners / pagination)
+  // include platform comments — the poller only publishes to NATS. The unique
+  // (session_id, platform, platform_comment_id) constraint makes redeliveries
+  // and overlapping poll windows idempotent.
   const commentReceivedSub = await js.subscribe(Subjects.COMMENT_RECEIVED, mkOpts('comments-comment-received'));
   void (async () => {
     for await (const msg of commentReceivedSub) {
       try {
         const event = JSON.parse(sc.decode(msg.data)) as BaseEvent<CommentReceivedPayload>;
-        broadcastComment(event.payload.sessionId, event.payload);
+        const c = event.payload;
+        await db.insert(comments).values({
+          id: c.id,
+          sessionId: c.sessionId,
+          platform: c.platform,
+          platformCommentId: c.platformCommentId,
+          authorName: c.authorName,
+          authorPlatformUserId: c.authorPlatformUserId ?? '',
+          authorAvatarUrl: c.authorAvatarUrl ?? null,
+          content: c.content,
+          mediaUrls: c.mediaUrls ?? null,
+          replyToCommentId: c.replyToCommentId ?? null,
+          receivedAt: new Date(c.receivedAt),
+        }).onConflictDoNothing();
+        broadcastComment(c.sessionId, c);
         msg.ack();
       } catch (err) {
         logger.error({ err }, 'Failed to process comment.received event');
@@ -269,6 +325,74 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
   const sessionVideoControlAllowed = new Map<string, Set<string>>();
   // Pending debounce timers — prevents broadcast storms when many viewers join simultaneously
   const pendingViewerBroadcasts = new Map<string, ReturnType<typeof setTimeout>>();
+  // Highest viewer count seen this process — avoids a DB write per broadcast.
+  // GREATEST() in the upsert keeps the stored peak monotonic across restarts.
+  const sessionPeakCache = new Map<string, number>();
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  function persistViewerPeak(sid: string, count: number): void {
+    // sessionId comes from the socket handshake — skip junk before it hits the uuid column
+    if (!UUID_RE.test(sid)) return;
+    sessionPeakCache.set(sid, count);
+    void db
+      .insert(viewerPeaks)
+      .values({ sessionId: sid, peakViewers: count })
+      .onConflictDoUpdate({
+        target: viewerPeaks.sessionId,
+        set: {
+          // In ON CONFLICT DO UPDATE the table-qualified column resolves to the
+          // existing row — GREATEST(existing, incoming) keeps the peak monotonic
+          // even when the in-memory cache is empty after a restart.
+          peakViewers: sql`GREATEST(${viewerPeaks.peakViewers}, excluded."peak_viewers")`,
+          updatedAt: sql`now()`,
+        },
+      })
+      .catch((err: unknown) => logger.error({ err, sid }, 'Failed to persist viewer peak'));
+  }
+
+  // Reaction rate limits: unauthenticated sockets can emit reactions, so both
+  // per-socket and per-session caps are needed. Each accepted reaction costs a
+  // DB insert and a room-wide broadcast — unbounded, N viewers tapping fast is
+  // O(N²) socket fan-out and an unbounded insert stream.
+  const REACTION_MAX_PER_SOCKET_PER_SEC = 5;
+  const REACTION_MAX_PER_SESSION_PER_SEC = 20;
+  const socketReactionWindows = new Map<string, { count: number; windowStart: number }>();
+  const sessionReactionWindows = new Map<string, { count: number; windowStart: number }>();
+
+  function allowInWindow(
+    windows: Map<string, { count: number; windowStart: number }>,
+    key: string,
+    max: number,
+  ): boolean {
+    const now = Date.now();
+    const entry = windows.get(key);
+    if (!entry || now - entry.windowStart >= 1000) {
+      windows.set(key, { count: 1, windowStart: now });
+      return true;
+    }
+    if (entry.count >= max) return false;
+    entry.count++;
+    return true;
+  }
+
+  // Cap the public name list: sending every name to every socket is O(N²)
+  // bytes per update window. Viewers still get the exact count via
+  // viewer_count; the streamer gets the full list via viewers_update.
+  const PUBLIC_VIEWER_LIST_CAP = 50;
+
+  cleanupSessionSocketState = (sid: string): void => {
+    sessionViewers.delete(sid);
+    sessionStreamers.delete(sid);
+    sessionOwners.delete(sid);
+    sessionVideoControlAllowed.delete(sid);
+    sessionReactionWindows.delete(sid);
+    sessionPeakCache.delete(sid);
+    const timer = pendingViewerBroadcasts.get(sid);
+    if (timer) {
+      clearTimeout(timer);
+      pendingViewerBroadcasts.delete(sid);
+    }
+  };
 
   function broadcastViewersUpdate(sid: string): void {
     // Debounce: cancel any pending broadcast for this session and schedule a new one.
@@ -287,10 +411,17 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
       if (streamerSocketId) {
         io.to(streamerSocketId).emit('viewers_update', { viewers });
       }
-      // Broadcast public-facing count and name list to all clients in the session
+      // Record the all-time viewer peak (debounced path — at most one write per
+      // 250 ms window, and only when the count actually exceeds the known peak)
+      const count = registry?.size ?? 0;
+      if (count > (sessionPeakCache.get(sid) ?? 0)) {
+        persistViewerPeak(sid, count);
+      }
+
+      // Broadcast public-facing count and a capped name list to all clients
       io.to(sid).emit('viewer_count', { count: registry?.size ?? 0 });
       io.to(sid).emit('public_viewers', {
-        viewers: viewers.map(({ displayName }) => ({ displayName })),
+        viewers: viewers.slice(0, PUBLIC_VIEWER_LIST_CAP).map(({ displayName }) => ({ displayName })),
       });
     }, 250);
 
@@ -304,7 +435,29 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
     void socket.join(sessionId);
     logger.info({ sessionId, socketId: socket.id }, 'Comment client connected via Socket.io');
 
+    // Optional handshake auth: viewers may be anonymous, but streamer-only
+    // events require a valid JWT. Verified once per connection — clients pass
+    // a fresh token on every (re)connect via the socket.io auth callback.
+    let authUserId: string | null = null;
+    const handshakeToken = (socket.handshake.auth as Record<string, unknown> | undefined)?.['token'];
+    if (typeof handshakeToken === 'string' && handshakeToken.length > 0) {
+      try {
+        const decoded = fastify.jwt.verify<{ sub?: string }>(handshakeToken);
+        authUserId = decoded.sub ?? null;
+      } catch {
+        // Invalid or expired token — treat as an anonymous viewer.
+      }
+    }
+
+    const isRegisteredStreamer = (): boolean => sessionStreamers.get(sessionId) === socket.id;
+
     socket.on('emit_reaction', (data: { emoji?: string }) => {
+      if (
+        !allowInWindow(socketReactionWindows, socket.id, REACTION_MAX_PER_SOCKET_PER_SEC) ||
+        !allowInWindow(sessionReactionWindows, sessionId, REACTION_MAX_PER_SESSION_PER_SEC)
+      ) {
+        return; // silently dropped — the sender already played its local animation
+      }
       const emoji = (data?.emoji ?? '❤️').slice(0, 10);
       void (async () => {
         try {
@@ -327,8 +480,22 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
       broadcastViewersUpdate(sessionId);
     });
 
-    // Streamer identifies itself — store its socket ID for direct targeting
+    // Streamer identifies itself — store its socket ID for direct targeting.
+    // Guarded: without this check any anonymous viewer could register as the
+    // streamer, receive the full viewer name list, and intercept video
+    // control commands. Ownership is enforced when the owner is known (from
+    // session.created/session.starting); after a service restart mid-session
+    // the owner map is empty, so we fall back to requiring a valid JWT.
     socket.on('join_as_streamer', () => {
+      if (!authUserId) {
+        logger.warn({ sessionId, socketId: socket.id }, '[join_as_streamer] rejected: unauthenticated socket');
+        return;
+      }
+      const ownerId = sessionOwners.get(sessionId);
+      if (ownerId && ownerId !== authUserId) {
+        logger.warn({ sessionId, socketId: socket.id, authUserId }, '[join_as_streamer] rejected: not the session owner');
+        return;
+      }
       logger.debug({ sessionId, socketId: socket.id }, '[join_as_streamer] streamer registered');
       sessionStreamers.set(sessionId, socket.id);
       broadcastViewersUpdate(sessionId);
@@ -336,6 +503,7 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
 
     // Streamer grants or revokes video control for a specific viewer
     socket.on('grant_video_control', (data: unknown) => {
+      if (!isRegisteredStreamer()) return;
       const d = data as Record<string, unknown> | null;
       if (!d) return;
       const viewerId = String(d['viewerId'] ?? '');
@@ -351,9 +519,18 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
 
     // Streamer broadcasts current video playback state to all viewers in the session
     socket.on('video_state', (data: unknown) => {
+      if (!isRegisteredStreamer()) return;
       const d = data as Record<string, unknown> | null;
       if (!d) return;
+      // Forward sourceType: viewers rely on `sourceType === 'camera'` to clear
+      // the video-control overlay when the host switches back to camera.
+      const sourceType =
+        typeof d['sourceType'] === 'string' &&
+        ['camera', 'local-file', 'online-url'].includes(d['sourceType'])
+          ? d['sourceType']
+          : undefined;
       socket.to(sessionId).emit('video_state', {
+        ...(sourceType ? { sourceType } : {}),
         playing: Boolean(d['playing']),
         currentTime: Number(d['currentTime'] ?? 0),
         duration: Number(d['duration'] ?? 0),
@@ -392,6 +569,7 @@ The \`CommentPoller\` runs a per-session, per-platform polling loop (default int
         broadcastViewersUpdate(sessionId);
       }
       sessionVideoControlAllowed.get(sessionId)?.delete(socket.id);
+      socketReactionWindows.delete(socket.id);
     });
   });
 

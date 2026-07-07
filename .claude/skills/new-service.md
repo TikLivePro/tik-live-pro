@@ -132,11 +132,22 @@ Add domain-specific subjects.
 
 ### 8. Add DB migration
 Create: `services/<service-name>/src/infrastructure/db/migrations/0000_initial.sql`
+**and** register it in `migrations/meta/_journal.json` (drizzle skips unjournaled files).
+Add a `db:migrate` script (`tsx src/migrate.ts` — copy `services/auth/src/migrate.ts`, it is Neon-aware),
+then add the service to the CI `migrate` job in `.github/workflows/deploy.yml` with its
+`*_DATABASE_URL` secret. Migrations do NOT run at container startup.
 
-### 9. Add to docker-compose.dev.yml
+### 9. Add to docker-compose.dev.yml AND the prod compose files
 Add a service entry pointing to its Docker image or build context.
+In `docker-compose.prod.managed.yml` / `docker-compose.prod.yml`, bind the host port
+to loopback (`127.0.0.1:<port>:<port>`) — Caddy proxies via localhost; only RTMP 1935
+and ICE 8189/udp are public. Add a memory limit and update the RAM budget table in
+`docs/deploy-github-student.md`.
 
 ### 10. Add to turbo.json if the service has a non-standard pipeline.
+
+### 11. Add to the CI build matrix
+Add the service to the `build-services` matrix in `.github/workflows/deploy.yml`.
 
 ## Rules
 - Keep dependencies pointing inward: infrastructure → application → domain
@@ -145,3 +156,5 @@ Add a service entry pointing to its Docker image or build context.
 - Validate env at startup — fail fast
 - **Every route must have a Swagger schema** — no schema-less routes committed
 - Protected routes must include `security: [{ BearerAuth: [] }]`
+- Resource-scoped routes must also check ownership (`resource.userId === jwt sub`, 404 on mismatch) — see CLAUDE.md Security Notes
+- `Fastify({ trustProxy: true })` — services sit behind Caddy/the gateway; per-IP logic breaks without it

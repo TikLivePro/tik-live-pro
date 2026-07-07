@@ -5,6 +5,7 @@ import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useAuthStore } from '../store/auth.store';
+import { LAST_OAUTH_PROVIDER_STORAGE_KEY } from '../consts/auth.consts';
 import { API_BASE } from '@/lib/api';
 import type { OAuthProvider, LoginCredentials, RegisterCredentials } from '../interfaces/auth.interfaces';
 import type { SubscriptionTier, UserId } from '@tik-live-pro/shared-types';
@@ -18,6 +19,7 @@ interface AuthResponse {
   subscriptionTier: SubscriptionTier;
   displayName?: string;
   email?: string;
+  avatarUrl?: string | null;
 }
 
 async function persistRefreshCookie(refreshToken: string): Promise<void> {
@@ -114,6 +116,11 @@ export function useAuth() {
       setIsLoading(true);
       setError(null);
       try {
+        try {
+          sessionStorage.setItem(LAST_OAUTH_PROVIDER_STORAGE_KEY, provider);
+        } catch {
+          // Storage unavailable (private mode) — "Try again" falls back to the login page.
+        }
         const next = callbackUrl
           ? `/auth/social-callback?next=${encodeURIComponent(callbackUrl)}`
           : '/auth/social-callback';

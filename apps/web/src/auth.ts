@@ -17,6 +17,7 @@ declare module 'next-auth' {
     appSubscriptionTier?: string;
     appDisplayName?: string;
     appEmail?: string | null;
+    appAvatarUrl?: string | null;
     error?: string;
   }
 }
@@ -29,6 +30,7 @@ declare module 'next-auth/jwt' {
     appSubscriptionTier?: string;
     appDisplayName?: string;
     appEmail?: string | null;
+    appAvatarUrl?: string | null;
     appAccessTokenExpiresAt?: number;
     error?: string;
   }
@@ -184,6 +186,7 @@ export const authOptions: AuthOptions = {
               subscriptionTier: string;
               displayName?: string;
               email?: string | null;
+              avatarUrl?: string | null;
             };
           };
           token.appUserId = json.data.userId;
@@ -193,6 +196,7 @@ export const authOptions: AuthOptions = {
           token.appAccessTokenExpiresAt = getTokenExpiry(json.data.accessToken);
           if (json.data.displayName !== undefined) token.appDisplayName = json.data.displayName;
           if (json.data.email !== undefined) token.appEmail = json.data.email;
+          if (json.data.avatarUrl !== undefined) token.appAvatarUrl = json.data.avatarUrl;
         } catch {
           token.error = 'OAuthExchangeFailed';
         }
@@ -239,6 +243,7 @@ export const authOptions: AuthOptions = {
       if (token.appSubscriptionTier !== undefined) session.appSubscriptionTier = token.appSubscriptionTier;
       if (token.appDisplayName !== undefined) session.appDisplayName = token.appDisplayName;
       if (token.appEmail !== undefined) session.appEmail = token.appEmail;
+      if (token.appAvatarUrl !== undefined) session.appAvatarUrl = token.appAvatarUrl;
       if (token.error !== undefined) session.error = token.error;
       return session;
     },
