@@ -1,6 +1,6 @@
 # TikLivePro — Infrastructure Guide
 
-> **Last updated:** 2026-07-06 (hardening: internal ports bound to 127.0.0.1 in both prod compose files — only RTMP 1935 and ICE 8189/udp stay public; Caddy blocks /stream-orchestrator/docs and /metrics; CI now runs drizzle migrations for all 9 services before every deploy)
+> **Last updated:** 2026-07-15 (documented the `net.core.rmem_max`/`wmem_max` host sysctl required for WebRTC viewer WHEP sessions to complete — without it, viewers loop `deadline exceeded while waiting connection` in mediamtx logs) · 2026-07-06 (hardening: internal ports bound to 127.0.0.1 in both prod compose files — only RTMP 1935 and ICE 8189/udp stay public; Caddy blocks /stream-orchestrator/docs and /metrics; CI now runs drizzle migrations for all 9 services before every deploy)
 > Update whenever a Dockerfile, compose file, Kubernetes manifest, or build script changes.
 
 ## Table of Contents
@@ -195,6 +195,15 @@ make mediamtx-ps      # MediaMTX container status
 Config files:
 - **Dev:** `infra/mediamtx/mediamtx.yml` — open auth (`user: any`, no password). Any credentials accepted.
 - **Prod:** `infra/mediamtx/mediamtx.prod.yml` — also open auth (`user: any`). MediaMTX does not interpolate `$VAR` references in `user:` / `pass:` config fields, so named credentials cannot be passed via environment variables. Session security is enforced at the application layer: only the authenticated session owner knows their UUID `ingestKey`. Ports 9997 and 1936 are not externally exposed.
+
+**Host UDP buffer sysctl (required for WebRTC viewers to work at all):**
+MediaMTX's WebRTC stack (pion) needs `net.core.rmem_max` / `net.core.wmem_max` raised above the Linux default (208 KB) to complete the ICE/DTLS handshake with browser viewers. On modern kernels these `net.core.*` values cannot be set from inside the container — runc blocks container access to the host-namespaced procfs entries — so they must be set on the **host** once:
+```bash
+sudo sysctl -w net.core.rmem_max=7500000 net.core.wmem_max=7500000
+# persist across reboots:
+echo -e 'net.core.rmem_max=7500000\nnet.core.wmem_max=7500000' | sudo tee /etc/sysctl.d/99-mediamtx.conf
+```
+Without this, viewer WHEP sessions loop endlessly: MediaMTX logs `session created` → 10s later `closed: deadline exceeded while waiting connection` (hitting `readTimeout`), while the client falls back to HLS and retries WebRTC every ~10s (`WhepPlayer` fallback timer + auto-retry effect in `apps/web/src/features/stream/components/WatchView.tsx`), producing a repeating churn of failed sessions in the mediamtx logs. This only affects **viewers** (the streamer's own tab doesn't open a WHEP `RTCPeerConnection`), so it's easy to miss when testing solo. In production, `docker-compose.prod.yml` also sets these via the container-level `sysctls:` block, but the same host-level fix is applied during droplet provisioning (see `docs/deploy-github-student.md`, Étape 6a) as the reliable fallback for kernels where the container-level `sysctls:` doesn't take effect. Restart the `mediamtx` container after changing host sysctls.
 
 Environment variables wired in stream-orchestrator (`.env`):
 ```

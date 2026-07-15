@@ -18,15 +18,15 @@
 #   POSTGRES_PASSWORD=unused  # kept for compat, not used by managed version
 #
 #   # Neon connection strings (one per service — same host, different DB name)
-#   AUTH_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_auth?sslmode=require
-#   USERS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_users?sslmode=require
-#   SESSIONS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_sessions?sslmode=require
-#   BILLING_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_billing?sslmode=require
-#   INTEGRATIONS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_integrations?sslmode=require
-#   COMMENTS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_comments?sslmode=require
-#   NOTIFICATIONS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_notifications?sslmode=require
-#   ANALYTICS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_analytics?sslmode=require
-#   STREAM_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_stream?sslmode=require
+#   AUTH_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_auth?sslmode=verify-full
+#   USERS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_users?sslmode=verify-full
+#   SESSIONS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_sessions?sslmode=verify-full
+#   BILLING_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_billing?sslmode=verify-full
+#   INTEGRATIONS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_integrations?sslmode=verify-full
+#   COMMENTS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_comments?sslmode=verify-full
+#   NOTIFICATIONS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_notifications?sslmode=verify-full
+#   ANALYTICS_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_analytics?sslmode=verify-full
+#   STREAM_DATABASE_URL=postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_stream?sslmode=verify-full
 #
 #   # Upstash Redis (TLS URL from the Upstash console)
 #   REDIS_URL=rediss://default:TOKEN@HOST.upstash.io:6379

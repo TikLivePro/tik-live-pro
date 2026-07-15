@@ -248,15 +248,27 @@ export function FullscreenLiveView(): React.ReactElement {
     }
   }, [currentSession?.status, disconnectWhip]);
 
+  // Reset the backoff counter once WHIP is healthy again.
+  const whipRetryCountRef = useRef(0);
+  useEffect(() => {
+    if (whipState === 'connected') whipRetryCountRef.current = 0;
+  }, [whipState]);
+
   // Auto-reconnect WHIP when the connection drops mid-stream.
   // Resets whipStartedRef so the start effect can retry, then increments a trigger counter
   // to force the start effect to re-run (its session deps haven't changed).
+  // Exponential backoff with jitter (3s, 6s, 12s, capped at 20s) — a flat 3s retry
+  // opens a brand-new RTCPeerConnection + WHIP POST every 3s, which on a genuinely
+  // poor connection rarely succeeds and never gives the network a chance to settle.
   useEffect(() => {
     if (whipState !== 'failed') return;
     if (!currentSession?.id) return;
     if (currentSession.status !== 'live' && currentSession.status !== 'starting') return;
     whipStartedRef.current = false;
-    const timer = setTimeout(() => setWhipRetryTrigger((n) => n + 1), 3000);
+    const attempt = whipRetryCountRef.current++;
+    const backoff = Math.min(3000 * 2 ** attempt, 20_000);
+    const jitter = backoff * 0.3 * Math.random();
+    const timer = setTimeout(() => setWhipRetryTrigger((n) => n + 1), backoff + jitter);
     return (): void => clearTimeout(timer);
   }, [whipState, currentSession?.id, currentSession?.status]);
 

@@ -35,6 +35,7 @@ const POLL_INTERVAL_STARTING_MS = 3000;
 const POLL_INTERVAL_LIVE_MS = 15000;
 const POLL_INTERVAL_MAX_MS = 30000;
 const MAX_REACTIONS = 20;
+const MAX_WHEP_AUTO_RETRIES = 3;
 
 const GUEST_ADJECTIVES = ['Swift', 'Lucky', 'Bold', 'Brave', 'Cool', 'Quick', 'Wild', 'Clever', 'Sharp', 'Bright'];
 const GUEST_ANIMALS = ['Fox', 'Eagle', 'Tiger', 'Wolf', 'Bear', 'Hawk', 'Lion', 'Panda', 'Lynx', 'Shark'];
@@ -398,6 +399,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const [publicViewerNames, setPublicViewerNames] = useState<string[]>([]);
   const [whepFailed, setWhepFailed] = useState(false);
   const [whepKey, setWhepKey] = useState(0);
+  const whepRetryCountRef = useRef(0);
 
   // Viewer quality selection
   const [hlsLevels, setHlsLevels] = useState<HlsQualityLevel[]>([]);
@@ -593,13 +595,24 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id, isLive]);
 
-  // Auto-retry WHEP after failure so viewers recover when the stream comes back
+  // Auto-retry WHEP after failure so viewers recover when the stream comes back.
+  // Exponential backoff with jitter, capped at MAX_WHEP_AUTO_RETRIES — a flat 10s
+  // retry punishes a viewer whose network can't complete the ICE handshake by
+  // flipping the player between WHEP and HLS (re-showing the loading spinner and
+  // interrupting playback) roughly every 18s, forever. After a few failed
+  // attempts, settle on the already-working HLS fallback for the rest of the
+  // session; the quality picker's "HD" option still lets the viewer retry
+  // WebRTC manually.
   useEffect(() => {
     if (!whepFailed || !isLive) return;
+    if (whepRetryCountRef.current >= MAX_WHEP_AUTO_RETRIES) return;
+    const attempt = whepRetryCountRef.current++;
+    const backoff = Math.min(10_000 * 2 ** attempt, 60_000);
+    const jitter = backoff * 0.3 * Math.random();
     const timer = setTimeout(() => {
       setWhepFailed(false);
       setWhepKey((k) => k + 1);
-    }, 10_000);
+    }, backoff + jitter);
     return () => clearTimeout(timer);
   }, [whepFailed, isLive]);
 
@@ -888,7 +901,13 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
         src={whepUrl}
         title={session.title}
         onError={() => setWhepFailed(true)}
-        onLoadingChange={setIsVideoLoading}
+        onLoadingChange={(loading) => {
+          setIsVideoLoading(loading);
+          // A successful connect (loading → false) means the network can
+          // complete the ICE handshake right now — give a future drop the
+          // full retry budget instead of carrying over exhausted attempts.
+          if (!loading) whepRetryCountRef.current = 0;
+        }}
         volume={volume}
         isMuted={isMuted}
       />
@@ -1044,6 +1063,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                         onClick={() => {
                           setForceLowBandwidth(false);
                           setWhepFailed(false);
+                          whepRetryCountRef.current = 0;
                           setWhepKey((k) => k + 1);
                           setQualityPickerOpen(false);
                         }}

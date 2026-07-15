@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-07-15 (fix disque plein en prod : `docker image prune -f` → `-af` dans le workflow de déploiement, les anciennes images taguées n'étaient jamais nettoyées) · 2026-07-06 (hardening + migrations : job CI `migrate` — les migrations drizzle des 9 services sont jouées sur Neon avant chaque deploy ; ports internes bindés sur 127.0.0.1 — seuls 1935/tcp (RTMP OBS) et 8189/udp (ICE WebRTC) restent publics ; Caddy bloque /stream-orchestrator/docs et /metrics)
+> Dernière mise à jour : 2026-07-15 (connection strings Neon : `sslmode=require` → `sslmode=verify-full` — `pg`/`pg-connection-string` traite `require` comme un mode ambigu qui perdra sa vérification stricte du certificat dans `pg` v9 ; `verify-full` fige le comportement actuel et supprime le warning au démarrage) · 2026-07-15 (ajout de `net.core.rmem_max`/`wmem_max=7500000` aux sysctls hôte de l'étape 6a — requis pour que le handshake WebRTC/ICE des viewers aboutisse, sinon boucle `deadline exceeded while waiting connection` dans mediamtx) · 2026-07-15 (fix disque plein en prod : `docker image prune -f` → `-af` dans le workflow de déploiement, les anciennes images taguées n'étaient jamais nettoyées) · 2026-07-06 (hardening + migrations : job CI `migrate` — les migrations drizzle des 9 services sont jouées sur Neon avant chaque deploy ; ports internes bindés sur 127.0.0.1 — seuls 1935/tcp (RTMP OBS) et 8189/udp (ICE WebRTC) restent publics ; Caddy bloque /stream-orchestrator/docs et /metrics)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -143,11 +143,11 @@ Neon remplace le conteneur PostgreSQL auto-hébergé — économie de 512 MB sur
    tiklivepro_analytics
    tiklivepro_stream
    ```
-4. Récupérez la **connection string** depuis **Dashboard > Connection Details** (format `postgresql://user:pass@ep-xxx.region.aws.neon.tech/DATABASE?sslmode=require`)
+4. Récupérez la **connection string** depuis **Dashboard > Connection Details** (format `postgresql://user:pass@ep-xxx.region.aws.neon.tech/DATABASE?sslmode=verify-full`)
 5. Exécutez les migrations SQL initiales sur Neon :
    ```bash
    # Depuis votre machine locale (remplacez l'URL par votre vraie URL Neon)
-   psql "postgresql://user:pass@ep-xxx.neon.tech/tiklivepro_auth?sslmode=require" \
+   psql "postgresql://user:pass@ep-xxx.neon.tech/tiklivepro_auth?sslmode=verify-full" \
      -f infra/docker/postgres/init.sql
    ```
 
@@ -181,8 +181,12 @@ mkswap /swapfile
 swapon /swapfile
 echo '/swapfile none swap sw 0 0' >> /etc/fstab
 echo 'vm.swappiness=10' >> /etc/sysctl.conf
+echo 'net.core.rmem_max=7500000' >> /etc/sysctl.conf
+echo 'net.core.wmem_max=7500000' >> /etc/sysctl.conf
 sysctl -p
 ```
+
+> **Pourquoi `net.core.rmem_max`/`wmem_max` :** MediaMTX (WebRTC/pion) a besoin de buffers UDP plus grands que le défaut noyau (208 KB) pour que le handshake ICE/DTLS des viewers WHEP aboutisse. `docker-compose.prod.yml` définit déjà ces valeurs via `sysctls:` au niveau du conteneur, mais sur les noyaux récents ces sysctls `net.core.*` ne sont pas toujours modifiables depuis l'intérieur d'un conteneur (runc bloque l'accès aux entrées procfs à espace de noms hôte) — les poser aussi sur l'hôte à l'étape ci-dessus est indispensable, sinon les sessions WebRTC des viewers échouent en boucle avec `deadline exceeded while waiting connection` dans les logs mediamtx.
 
 ### 6b — Docker
 
@@ -435,7 +439,7 @@ Ces valeurs sont écrites dans `/opt/tiklivepro/.env` sur le serveur à chaque d
 | `ANALYTICS_DATABASE_URL` | `tiklivepro_analytics` |
 | `STREAM_DATABASE_URL` | `tiklivepro_stream` |
 
-Format attendu : `postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_auth?sslmode=require`
+Format attendu : `postgresql://user:pass@ep-xxx.region.aws.neon.tech/tiklivepro_auth?sslmode=verify-full`
 
 **Upstash (Redis)**
 
@@ -680,7 +684,7 @@ Le job `migrate` du workflow (`.github/workflows/deploy.yml`) exécute `pnpm --f
 Pour jouer une migration manuellement (dépannage) :
 ```bash
 # depuis votre machine locale
-DATABASE_URL="postgresql://user:pass@ep-xxx.neon.tech/tiklivepro_stream?sslmode=require" \
+DATABASE_URL="postgresql://user:pass@ep-xxx.neon.tech/tiklivepro_stream?sslmode=verify-full" \
   pnpm --filter @tik-live-pro/stream-orchestrator db:migrate
 ```
 

@@ -9,8 +9,20 @@ interface MediaMtxPathsResponse {
   items: MediaMtxPath[];
 }
 
+// A dropped WHIP/RTMP source that reappears within this window is treated as
+// the same stream, not a new arrival — poor-connection publishers/relays can
+// flap their WebRTC session every few seconds, and tearing down the ffmpeg
+// relay (and its in-progress RTMP handshake to TikTok/Facebook) on every blip
+// means markLive() never gets a long enough window to fire, so the session
+// sits in "starting" forever. Consecutive missed polls (1/s) gate the
+// end-detection instead of the very first miss.
+const STREAM_END_GRACE_POLLS = 8;
+
 export class MediaMtxStreamWatcher {
   private readonly knownPaths = new Set<string>();
+  // Consecutive poll ticks a known path has been missing from MediaMTX's
+  // active list. Reset to 0 (i.e. removed) as soon as the path reappears.
+  private readonly missingStreak = new Map<string, number>();
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
   private readonly authHeader: string;
   // Prevents overlapping polls piling up hung requests when MediaMTX stalls.
@@ -57,6 +69,13 @@ export class MediaMtxStreamWatcher {
       }
 
       for (const name of active) {
+        // Reappeared before its grace period elapsed — same flapping stream,
+        // not a new arrival. Clear the streak and skip onStreamArrived so the
+        // existing ffmpeg relay (and its RTMP handshake) is left untouched.
+        if (this.missingStreak.has(name)) {
+          this.missingStreak.delete(name);
+          continue;
+        }
         if (!this.knownPaths.has(name)) {
           const ingestKey = name.slice('live/'.length);
           this.logger.info({ ingestKey }, 'MediaMTX stream arrived');
@@ -74,12 +93,17 @@ export class MediaMtxStreamWatcher {
       }
 
       for (const name of this.knownPaths) {
-        if (!active.has(name)) {
-          const ingestKey = name.slice('live/'.length);
-          this.logger.info({ ingestKey }, 'MediaMTX stream ended');
-          this.knownPaths.delete(name);
-          this.onStreamEnded(ingestKey);
+        if (active.has(name)) continue;
+        const streak = (this.missingStreak.get(name) ?? 0) + 1;
+        if (streak < STREAM_END_GRACE_POLLS) {
+          this.missingStreak.set(name, streak);
+          continue;
         }
+        const ingestKey = name.slice('live/'.length);
+        this.logger.info({ ingestKey }, 'MediaMTX stream ended');
+        this.knownPaths.delete(name);
+        this.missingStreak.delete(name);
+        this.onStreamEnded(ingestKey);
       }
     } catch {
       // transient errors (mediamtx not yet ready) — ignore
