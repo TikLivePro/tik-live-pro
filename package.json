@@ -41,13 +41,18 @@
   "pnpm": {
     "overrides": {
       "drizzle-orm": ">=0.45.2",
-      "ws": ">=8.20.1",
+      "ws": ">=8.21.0",
       "postcss": ">=8.5.10",
       "@xmldom/xmldom": ">=0.8.13",
-      "esbuild": ">=0.25.0",
+      "esbuild": ">=0.28.1",
       "fast-xml-parser": ">=5.7.0",
       "uuid": ">=11.1.1",
-      "shell-quote": ">=1.8.4"
+      "shell-quote": ">=1.8.4",
+      "joi": ">=17.13.4 <18",
+      "launch-editor": ">=2.14.1",
+      "js-yaml@3": ">=3.15.0 <4",
+      "js-yaml@4": ">=4.2.0 <5",
+      "@babel/core": ">=7.29.6 <8"
     }
   }
 }
