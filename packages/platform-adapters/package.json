@@ -20,7 +20,7 @@
   "dependencies": {
     "@tik-live-pro/shared-types": "workspace:*",
     "@tik-live-pro/logger": "workspace:*",
-    "zod": "^3.23.0"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/jest": "^29.0.0",
