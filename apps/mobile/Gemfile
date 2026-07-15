@@ -8,7 +8,13 @@ ruby ">= 2.6.10"
 gem 'cocoapods', '>= 1.13', '!= 1.15.0', '!= 1.15.1'
 gem 'activesupport', '>= 7.2.3.1'
 gem 'xcodeproj', '< 1.26.0'
-gem 'concurrent-ruby', '< 1.3.4'
+# concurrent-ruby < 1.3.7 has CVE-2026-54904 (AtomicReference#update NaN livelock), CVE-2026-54905
+# (ReentrantReadWriteLock overflow grants non-exclusive write lock), and CVE-2026-54906
+# (ReadWriteLock wrong-thread release / counter corruption). concurrent-ruby 1.3.5 dropped its
+# implicit `require "logger"`, but that's covered here by the explicit `gem 'logger'` below and by
+# activesupport >= 7.2.3.1 (which requires logger itself, see rails/rails#49372), so it's safe to
+# allow the patched version.
+gem 'concurrent-ruby', '>= 1.3.7'
 
 # Ruby 3.4.0 has removed some libraries from the standard library.
 gem 'bigdecimal'
