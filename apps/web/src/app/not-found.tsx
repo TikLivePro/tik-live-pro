@@ -1,63 +1,67 @@
-import Link from 'next/link';
-import { getTranslations } from 'next-intl/server';
+'use client';
 
-export default async function NotFound(): Promise<React.ReactElement> {
-  const t = await getTranslations('notFound');
+import Link from 'next/link';
+import { useTranslations } from 'next-intl';
+import { useAuthStore } from '@/features/auth/store/auth.store';
+
+export default function NotFound(): React.ReactElement {
+  const t = useTranslations('notFound');
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background px-6 text-center">
-      {/* Ambient glow behind the 404 */}
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-surface-0 px-6 text-center">
       <div
+        aria-hidden="true"
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            'radial-gradient(ellipse 60% 40% at 50% 30%, hsl(4 82% 55% / 0.07) 0%, transparent 70%)',
+            'radial-gradient(ellipse 60% 40% at 50% 30%, hsl(var(--brand) / 0.1) 0%, transparent 70%)',
         }}
       />
 
-      {/* Brand mark */}
-      <div className="relative z-10 mb-8 flex items-center gap-2">
-        <img src="/logo.png" alt="TikLive Pro" className="h-6 w-6 object-contain" />
-        <span className="text-base font-bold tracking-tight text-foreground">TikLivePro</span>
-      </div>
+      <div className="glass-overlay relative z-10 flex w-full max-w-md flex-col items-center gap-5 rounded-card p-10">
+        <div className="relative mb-2 flex h-24 w-24 items-center justify-center">
+          <span
+            aria-hidden="true"
+            className="text-gradient-brand absolute inset-0 flex items-center justify-center text-7xl font-black opacity-20"
+          >
+            404
+          </span>
+          <div className="animate-float-gentle">
+            <svg
+              className="h-14 w-14 text-muted-foreground"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M15 8l6-4v16l-6-4" />
+              <rect x="1" y="6" width="14" height="12" rx="2" />
+              <line x1="1" y1="6" x2="15" y2="18" />
+            </svg>
+          </div>
+          <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-4 border-surface-0 bg-destructive">
+            <svg className="h-3 w-3 text-white" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </span>
+        </div>
 
-      {/* 404 numeral */}
-      <p
-        className="relative z-10 select-none text-[8rem] font-black leading-none tracking-tighter text-brand sm:text-[11rem]"
-        aria-hidden="true"
-      >
-        404
-      </p>
+        <h1 className="text-xl font-bold text-foreground">{t('heading')}</h1>
+        <p className="text-sm text-muted-foreground">{t('message')}</p>
 
-      {/* Heading + message */}
-      <div className="relative z-10 mt-4 space-y-2">
-        <h1 className="text-2xl font-bold text-foreground sm:text-3xl">{t('heading')}</h1>
-        <p className="max-w-sm text-sm text-muted-foreground">{t('message')}</p>
-      </div>
-
-      {/* CTA */}
-      <Link
-        href="/auth/login"
-        className="relative z-10 mt-8 inline-flex items-center gap-2 rounded-xl border border-border bg-card px-5 py-2.5 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-muted"
-      >
-        <svg
-          className="h-4 w-4 text-muted-foreground"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
+        <Link
+          href={isAuthenticated ? '/dashboard' : '/'}
+          className="btn-gradient mt-2 px-6 py-2.5 text-sm font-semibold"
         >
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-          <polyline points="9 22 9 12 15 12 15 22" />
-        </svg>
-        {t('goHome')}
-      </Link>
+          {isAuthenticated ? t('goDashboard') : t('goHome')}
+        </Link>
+      </div>
 
-      {/* Divider line */}
-      <div className="relative z-10 mt-16 flex items-center gap-3">
+      <div className="relative z-10 mt-10 flex items-center gap-3">
         <div className="h-px w-12 bg-border" />
         <p className="text-[11px] font-medium text-muted-foreground/50">tiklivepro.me</p>
         <div className="h-px w-12 bg-border" />

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { useStreamStore } from '../store/stream.store';
+import { showLiveToast } from '../components/LiveToast';
 import { API_BASE, apiFetch } from '@/lib/api';
 import type { LiveSession, LiveSessionId, SocialAccountId } from '@tik-live-pro/shared-types';
 
@@ -69,7 +70,7 @@ export function useStream() {
           return;
         }
         updateSessionStatus('starting');
-        toast.success(t('sessionStarted'));
+        showLiveToast(t('sessionStarted'), t('liveToastSubtitle'));
       } catch {
         toast.error(t('errors.startFailed'));
       } finally {
@@ -135,7 +136,7 @@ export function useStream() {
           return;
         }
         updateSessionStatus('starting');
-        toast.success(t('sessionStarted'));
+        showLiveToast(t('sessionStarted'), t('liveToastSubtitle'));
         router.push(`/live/${sessionId}`);
       } catch {
         toast.error(t('errors.createFailed'));

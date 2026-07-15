@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { useSessionReplay } from '../hooks/useSessionReplay';
 import { ReplayCommentRow } from './ReplayCommentRow';
 import { ReplayReactionRow } from './ReplayReactionRow';
+import { CommentRowSkeleton } from '@/components/skeletons/CommentRowSkeleton';
 
 interface Props {
   sessionId: string;
@@ -36,9 +37,9 @@ export function ReplayTimeline({ sessionId }: Props): React.ReactElement | null 
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {loading ? (
-          <div className="space-y-2">
+          <div className="space-y-3 px-1 py-1">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-12 animate-pulse rounded-xl bg-white/5" />
+              <CommentRowSkeleton key={i} />
             ))}
           </div>
         ) : items.length === 0 ? (

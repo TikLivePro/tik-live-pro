@@ -1,9 +1,11 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { TikTokIcon, FacebookIcon } from '@/features/auth/components/AuthIcons';
-import { useConnectTikTok } from '@/features/settings/hooks/useConnectTikTok';
-import { useConnectFacebook } from '@/features/settings/hooks/useConnectFacebook';
+import { TikTokIcon, FacebookIcon, LockIcon } from '@/features/auth/components/AuthIcons';
+import { useConnectTikTok } from '../hooks/useConnectTikTok';
+import { useConnectFacebook } from '../hooks/useConnectFacebook';
+
+const COMING_SOON_TILE_COUNT = 2;
 
 interface ConnectAccountModalProps {
   open: boolean;
@@ -59,29 +61,44 @@ export function ConnectAccountModal({ open, onClose }: ConnectAccountModalProps)
           </button>
         </div>
 
-        <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-3">
           {platforms.map(({ id, icon, onConnect }) => (
             <button
               key={id}
               onClick={onConnect}
-              className="w-full flex items-center gap-4 rounded-xl border border-border p-4 text-left transition-colors hover:border-brand/60 hover:bg-muted/40 active:scale-[0.99]"
+              className="flex flex-col items-center justify-center gap-2 rounded-xl border border-border p-4 text-center transition-colors hover:border-brand/60 hover:bg-muted/40 active:scale-[0.99]"
             >
-              <span className="shrink-0 text-foreground">{icon}</span>
-              <span className="flex-1 text-sm font-semibold text-foreground">
-                {t(`platform.${id}`)}
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-foreground">
+                {icon}
               </span>
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="none"
-                className="shrink-0 text-muted-foreground"
-                aria-hidden="true"
-              >
-                <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <span className="text-sm font-semibold text-foreground">{t(`platform.${id}`)}</span>
             </button>
           ))}
+
+          {Array.from({ length: COMING_SOON_TILE_COUNT }).map((_, i) => (
+            <div
+              key={i}
+              className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-muted/10 p-4 text-center opacity-40"
+            >
+              <span className="flex h-12 w-12 items-center justify-center rounded-full border border-border">
+                <LockIcon className="h-5 w-5" />
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t('modal.comingSoon')}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-start gap-2">
+          <svg className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="8" cy="8" r="6.5" />
+            <line x1="8" y1="7.5" x2="8" y2="11" />
+            <circle cx="8" cy="5" r="0.5" fill="currentColor" />
+          </svg>
+          <p className="text-[11px] italic leading-relaxed text-muted-foreground">
+            {t('modal.privacyNote')}
+          </p>
         </div>
       </div>
     </div>

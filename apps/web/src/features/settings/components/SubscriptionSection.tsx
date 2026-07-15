@@ -6,6 +6,10 @@ import { useAuthStore } from '@/features/auth/store/auth.store';
 import { usePlans } from '../hooks/usePlans';
 import { useSubscription } from '../hooks/useSubscription';
 import { PlanCard } from './PlanCard';
+import { CurrentPlanCard } from './CurrentPlanCard';
+import { UsageMeters } from './UsageMeters';
+import { PaymentMethodsRow } from './PaymentMethodsRow';
+import { DashboardCardSkeleton } from '@/components/skeletons/DashboardCardSkeleton';
 import type { SubscriptionTier } from '@tik-live-pro/shared-types';
 
 export function SubscriptionSection(): React.JSX.Element {
@@ -15,37 +19,31 @@ export function SubscriptionSection(): React.JSX.Element {
   const { data: subscription } = useSubscription();
 
   const currentTier: SubscriptionTier = subscriptionTier ?? 'free';
-
-  const renewalDate = subscription?.currentPeriodEnd
-    ? new Date(subscription.currentPeriodEnd).toLocaleDateString(undefined, {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      })
-    : null;
+  const currentPlan = plans?.find((p) => p.slug === currentTier);
 
   return (
-    <section className="card-surface space-y-4 p-5">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-          {t('subscription.sectionTitle')}
-        </p>
-        {renewalDate && subscription?.status === 'active' && (
-          <p className="text-xs text-muted-foreground">
-            {t('subscription.renewsOn', { date: renewalDate })}
-          </p>
-        )}
-        {subscription?.status === 'canceled' && renewalDate && (
-          <p className="text-xs text-destructive">
-            {t('subscription.cancelsOn', { date: renewalDate })}
-          </p>
-        )}
+    <section className="space-y-4">
+      <h3 className="text-display text-lg font-bold">{t('subscription.title')}</h3>
+
+      {plansLoading ? (
+        <DashboardCardSkeleton pills={0} />
+      ) : (
+        <CurrentPlanCard plan={currentPlan} subscription={subscription} />
+      )}
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <UsageMeters plan={currentPlan} />
+        <PaymentMethodsRow />
       </div>
+
+      <p className="pt-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+        {t('subscription.availablePlans')}
+      </p>
 
       {plansLoading ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="h-52 animate-pulse rounded-2xl bg-muted" />
+            <DashboardCardSkeleton key={i} />
           ))}
         </div>
       ) : (

@@ -1,13 +1,14 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/features/auth';
 import { useSidebar } from '@/components/SidebarContext';
 import { useStream } from '../hooks/useStream';
+import { NoActiveStreamModal } from './NoActiveStreamModal';
 
 interface NavItemMeta {
   key: 'overview' | 'streaming' | 'analytics' | 'accounts' | 'settings';
@@ -83,41 +84,39 @@ interface Props {
 export function CreatorSidebar({ className }: Props): React.ReactElement {
   const t = useTranslations('stream.controlRoom.sidebar');
   const pathname = usePathname();
+  const router = useRouter();
   const { currentSession } = useStream();
   const { logout } = useAuth();
   const { isCollapsed } = useSidebar();
-
-  const [hash, setHash] = useState('');
-
-  useEffect(() => {
-    setHash(window.location.hash);
-    const handleHashChange = () => setHash(window.location.hash);
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  const [notLiveModalOpen, setNotLiveModalOpen] = useState(false);
 
   const navItems = NAV_ITEMS_META.map((item) => {
     let href = '';
     let active = false;
+    let needsModal = false;
 
     if (item.key === 'overview') {
       href = '/dashboard';
       active = pathname === '/dashboard';
     } else if (item.key === 'streaming') {
-      href = currentSession?.id ? `/live/${currentSession.id}` : '/dashboard';
       active = pathname.startsWith('/live');
+      if (currentSession?.id) {
+        href = `/live/${currentSession.id}`;
+      } else {
+        needsModal = true;
+      }
     } else if (item.key === 'analytics') {
       href = ''; // soon
       active = false;
     } else if (item.key === 'accounts') {
-      href = '/settings#accounts';
-      active = pathname === '/settings' && hash === '#accounts';
+      href = '/accounts';
+      active = pathname === '/accounts';
     } else if (item.key === 'settings') {
       href = '/settings';
-      active = pathname === '/settings' && hash !== '#accounts';
+      active = pathname === '/settings';
     }
 
-    return { ...item, href, active };
+    return { ...item, href, active, needsModal };
   });
 
   const itemBase =
@@ -165,6 +164,21 @@ export function CreatorSidebar({ className }: Props): React.ReactElement {
               <span className="text-brand">{item.icon}</span>
               <span className={cn(isCollapsed && 'lg:hidden')}>{t(item.key)}</span>
             </span>
+          ) : item.needsModal ? (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setNotLiveModalOpen(true)}
+              title={isCollapsed ? t(item.key) : undefined}
+              className={cn(
+                itemBase,
+                'w-full text-left text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                isCollapsed && 'lg:mx-1.5 lg:px-0 lg:justify-center',
+              )}
+            >
+              {item.icon}
+              <span className={cn(isCollapsed && 'lg:hidden')}>{t(item.key)}</span>
+            </button>
           ) : item.href ? (
             <Link
               key={item.key}
@@ -253,6 +267,15 @@ export function CreatorSidebar({ className }: Props): React.ReactElement {
           <span className={cn(isCollapsed && 'lg:hidden')}>{t('logout')}</span>
         </button>
       </div>
+
+      <NoActiveStreamModal
+        open={notLiveModalOpen}
+        onClose={() => setNotLiveModalOpen(false)}
+        onGoToDashboard={() => {
+          setNotLiveModalOpen(false);
+          router.push('/dashboard');
+        }}
+      />
     </nav>
   );
 }

@@ -14,6 +14,7 @@ interface Props {
 
 export function DashboardHeader({ onOpenHistory, onOpenRecordings }: Props): React.ReactElement {
   const t = useTranslations('stream');
+  const tCommon = useTranslations('common');
   const { toggleCollapse, toggleOpen } = useSidebar();
 
   return (
@@ -30,7 +31,7 @@ export function DashboardHeader({ onOpenHistory, onOpenRecordings }: Props): Rea
               }
             }}
             className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground mr-1"
-            aria-label="Toggle sidebar"
+            aria-label={tCommon('toggleSidebar')}
           >
             <svg
               className="h-5 w-5"

@@ -14,7 +14,7 @@ import { SidebarProvider } from '@/components/SidebarContext';
 
 function ThemedToaster() {
   const { theme } = useTheme();
-  return <Toaster theme={theme} richColors position="top-right" closeButton />;
+  return <Toaster theme={theme} position="top-right" closeButton />;
 }
 
 export function Providers({

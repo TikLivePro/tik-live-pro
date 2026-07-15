@@ -6,9 +6,9 @@ import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { getPlatformIdentityColor } from '@/lib/platform.consts';
 import { TikTokIcon, FacebookIcon, SettingsGearIcon } from '@/features/auth/components/AuthIcons';
-import { useConnectTikTok } from '@/features/settings/hooks/useConnectTikTok';
-import { useConnectFacebook } from '@/features/settings/hooks/useConnectFacebook';
-import { useRemoveAccount } from '@/features/settings/hooks/useRemoveAccount';
+import { useConnectTikTok } from '../hooks/useConnectTikTok';
+import { useConnectFacebook } from '../hooks/useConnectFacebook';
+import { useRemoveAccount } from '../hooks/useRemoveAccount';
 import type { SocialAccount } from '@tik-live-pro/shared-types';
 
 interface AccountCardProps {
@@ -99,7 +99,7 @@ export function AccountCard({ account }: AccountCardProps): React.ReactElement {
         {menuOpen && (
           <div className="animate-scale-in absolute right-0 top-8 z-30 w-44 overflow-hidden rounded-xl border border-border/80 bg-card py-1 shadow-xl shadow-black/10 dark:shadow-black/40">
             <Link
-              href="/settings"
+              href="/accounts"
               onClick={() => setMenuOpen(false)}
               className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium transition-colors hover:bg-muted"
             >

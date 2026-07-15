@@ -10,6 +10,7 @@ import { SessionThumbnail } from './SessionThumbnail';
 import { DestinationIcon } from './DestinationIcon';
 import { ReplayLink } from './ReplayLink';
 import { ShareEmailButton } from './ShareEmailButton';
+import { VideoTileSkeleton } from '@/components/skeletons/VideoTileSkeleton';
 
 interface Props {
   hideHeader?: boolean;
@@ -25,7 +26,24 @@ export function SessionHistory({ hideHeader = false, open }: Props): React.React
     if (open) void refresh();
   }, [open, refresh]);
 
-  if (loading) return <></>;
+  if (loading) {
+    return (
+      <section className="space-y-2">
+        {!hideHeader && (
+          <p className="px-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            {t('history.sectionLabel')}
+          </p>
+        )}
+        <ul className="space-y-2">
+          {[1, 2, 3].map((i) => (
+            <li key={i} className="card-surface px-4 py-3">
+              <VideoTileSkeleton />
+            </li>
+          ))}
+        </ul>
+      </section>
+    );
+  }
 
   if (sessions.length === 0) {
     return (

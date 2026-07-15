@@ -1,6 +1,7 @@
 {
   "common": {
     "loading": "Loading...",
+    "toggleSidebar": "Toggle sidebar",
     "error": "Something went wrong",
     "retry": "Retry",
     "cancel": "Cancel",
@@ -103,7 +104,9 @@
       "hideCamera": "Hide video",
       "showCamera": "Show video",
       "notDetected": "No webcam detected",
-      "enableWebcam": "Enable webcam"
+      "enableWebcam": "Enable webcam",
+      "showOverlay": "Show webcam overlay",
+      "hideOverlay": "Hide webcam overlay"
     },
     "share": {
       "sectionLabel": "SHARE YOUR LIVE",
@@ -144,6 +147,7 @@
       "latency": "Latency"
     },
     "sessionStarted": "Stream is live!",
+    "liveToastSubtitle": "Broadcast started",
     "sessionEnded": "Stream ended",
     "history": {
       "sectionLabel": "PAST STREAMS",
@@ -298,6 +302,12 @@
       "reactions": "Reactions",
       "settings": "Stream settings",
       "settingsHint": "Resolution, source & stream links",
+      "advancedSettings": "Advanced settings",
+      "shareSource": "Upload / share a video source",
+      "viewersCollaborators": "Viewers & collaborators",
+      "mic": "Mic",
+      "cam": "Cam",
+      "source": "Source",
       "links": "Stream links",
       "watchLink": "Watch link",
       "hlsLink": "HLS stream",
@@ -313,6 +323,8 @@
       "healthError": "Error",
       "healthEnded": "Ended",
       "healthPending": "Waiting",
+      "fullscreen": "Fullscreen",
+      "exitFullscreen": "Exit fullscreen",
       "sidebar": {
         "label": "Creator Studio Navigation",
         "creatorStudio": "Creator Studio",
@@ -324,7 +336,13 @@
         "soon": "Soon",
         "upgradePro": "Upgrade Pro",
         "help": "Help",
-        "logout": "Logout"
+        "logout": "Logout",
+        "notLiveModal": {
+          "title": "No stream is live",
+          "body": "You don't have an active broadcast right now. Start one from your dashboard to open the control room.",
+          "cta": "Go to dashboard",
+          "close": "Close"
+        }
       }
     }
   },
@@ -367,7 +385,8 @@
       "connected": "Connected",
       "disconnected": "Disconnected",
       "error": "Error",
-      "ready": "Ready"
+      "ready": "Ready",
+      "expired": "Expired"
     },
     "limit": {
       "freemium": "Free plan allows up to 2 connected accounts",
@@ -377,7 +396,9 @@
     },
     "modal": {
       "title": "Connect an account",
-      "subtitle": "Choose a platform to connect to your stream"
+      "subtitle": "Choose a platform to connect to your stream",
+      "comingSoon": "More coming soon",
+      "privacyNote": "You will be redirected to the platform to authorize TikLivePro. We never store your passwords."
     },
     "errors": {
       "connectFailed": "Failed to connect account",
@@ -385,7 +406,34 @@
       "limitReached": "Account limit reached. Upgrade to connect more accounts"
     },
     "manage": "Manage",
-    "reconnect": "Reconnect"
+    "reconnect": "Reconnect",
+    "page": {
+      "title": "Connected accounts",
+      "subtitle": "Connect, monitor and disconnect the social accounts you broadcast to.",
+      "accountsUsed": "{n} of {max} accounts used",
+      "freePlan": "Free plan",
+      "connectPlatform": "Connect a platform",
+      "connectPlatformHint": "Add TikTok or Facebook",
+      "permissionsLabel": "Permissions",
+      "permissionsDisabledLabel": "Permissions (disabled)",
+      "scopes": {
+        "liveVideo": "Live video",
+        "comments": "Comments",
+        "profileInfo": "Profile info",
+        "pages": "Pages"
+      },
+      "connectedSince": "Connected since {date}",
+      "reconnectHint": "Reconnect to resume streaming",
+      "disconnect": "Disconnect",
+      "removed": "Account disconnected",
+      "removeFailed": "Failed to disconnect account",
+      "lockedTitle": "Account slot locked",
+      "lockedDescription": "Free plan is limited to {max} concurrent account connections.",
+      "lockedUpgrade": "Upgrade to Pro to connect more accounts",
+      "emptyTitle": "No connected accounts",
+      "emptyDescription": "Your livestream isn't connected to any platforms yet. Get started by adding one.",
+      "emptyCta": "Connect your first account"
+    }
   },
   "billing": {
     "title": "Subscription",
@@ -431,8 +479,13 @@
   "legal": {
     "backHome": "Back to home",
     "lastUpdated": "Last updated: May 26, 2026",
+    "summaryLabel": "The short version",
+    "toc": {
+      "title": "Contents"
+    },
     "terms": {
       "title": "Terms of Service",
+      "summary": "By using TikLivePro you agree to stream lawfully, follow TikTok's and Facebook's own rules on the platforms you connect, and accept that paid subscriptions are billed on a recurring basis until you cancel.",
       "sections": {
         "acceptance": {
           "title": "1. Acceptance of Terms",
@@ -486,6 +539,7 @@
     },
     "privacy": {
       "title": "Privacy Policy",
+      "summary": "We collect your account details, stream analytics, and device info to keep TikLivePro running smoothly. We don't sell your raw data. You own your content, and social platform tokens are encrypted and deleted the moment you disconnect an account.",
       "sections": {
         "intro": {
           "title": "1. Introduction",
@@ -528,6 +582,57 @@
           "body": "For privacy inquiries, data access requests, or to exercise your rights, contact our Data Protection team at: privacy@tiklivepro.pro. We are committed to resolving your concerns promptly."
         }
       }
+    },
+    "dataDeletion": {
+      "title": "Delete your data",
+      "subtitle": "Requested deletions are permanent and cannot be reversed after the processing period.",
+      "checklist": {
+        "account": {
+          "title": "Account",
+          "description": "Profile info & identity"
+        },
+        "socialTokens": {
+          "title": "Social Tokens",
+          "description": "API access & connections"
+        },
+        "streamHistory": {
+          "title": "Stream History",
+          "description": "Past broadcast logs"
+        },
+        "recordings": {
+          "title": "Recordings",
+          "description": "Stored video assets"
+        }
+      },
+      "gracePeriodNote": "Requests are processed within a 30-day grace period.",
+      "form": {
+        "emailLabel": "Confirm email address",
+        "emailPlaceholder": "streamer@example.com",
+        "reasonLabel": "Reason for deletion (optional)",
+        "reasonPlaceholder": "Select a reason",
+        "reasons": {
+          "privacy": "Privacy concerns",
+          "switching": "Switching to another platform",
+          "quitting": "I'm no longer streaming",
+          "technical": "Technical difficulties",
+          "other": "Other"
+        },
+        "submit": "Request deletion"
+      },
+      "confirm": {
+        "title": "Send deletion request?",
+        "description": "This opens your email app with a pre-filled message to our support team. Your data will be deleted within a 30-day grace period.",
+        "cta": "Open email app"
+      },
+      "success": {
+        "manualTitle": "Request drafted",
+        "manualDescription": "Your email app should have opened with a pre-filled request — send it to reach our support team.",
+        "facebookTitle": "Request received",
+        "facebookDescription": "Your request to delete your Facebook-linked data from TikLivePro has been processed. Your Facebook account connection has been removed.",
+        "referenceLabel": "Ref ID",
+        "confirmationNote": "You'll get a confirmation email once it's processed."
+      },
+      "contactSupport": "Contact support"
     }
   },
   "settings": {
@@ -541,7 +646,14 @@
       "saving": "Saving...",
       "saved": "Profile saved",
       "saveError": "Failed to save profile",
-      "unnamed": "Unnamed user"
+      "unnamed": "Unnamed user",
+      "title": "Profile information",
+      "avatarHint": "JPG or PNG. Max 5 MB.",
+      "changeAvatar": "Change profile picture",
+      "verified": "Verified",
+      "avatarUploaded": "Profile picture updated",
+      "avatarUploadFailed": "Failed to upload profile picture",
+      "avatarTooLarge": "Image is too large — 5 MB maximum"
     },
     "appearance": {
       "sectionTitle": "APPEARANCE",
@@ -549,7 +661,10 @@
       "themeLight": "Light",
       "themeDark": "Dark",
       "currentLight": "Currently: Light",
-      "currentDark": "Currently: Dark"
+      "currentDark": "Currently: Dark",
+      "title": "Appearance",
+      "themeSystem": "System",
+      "language": "Language"
     },
     "notifications": {
       "sectionTitle": "NOTIFICATIONS",
@@ -560,7 +675,10 @@
       "accountConnected": "Account connected",
       "accountConnectedDesc": "Get notified when a social account is linked",
       "paymentFailed": "Payment issue",
-      "paymentFailedDesc": "Get notified when a payment requires attention"
+      "paymentFailedDesc": "Get notified when a payment requires attention",
+      "title": "Notifications",
+      "groupStream": "Stream activity",
+      "groupAccount": "Account & billing"
     },
     "subscription": {
       "sectionTitle": "SUBSCRIPTION",
@@ -596,6 +714,26 @@
         "cancel": "Cancel",
         "orderPending": "Order placed — we will activate your plan once payment is confirmed.",
         "phoneInvalid": "Enter a valid international phone number"
+      },
+      "title": "Subscription & billing",
+      "currentPlanTitle": "Your plan",
+      "availablePlans": "Available plans",
+      "usage": {
+        "title": "Usage",
+        "accounts": "Connected accounts",
+        "hours": "Hours streamed this month",
+        "hoursValue": "{n} h",
+        "unlimitedValue": "{n} connected"
+      },
+      "paymentMethodsTitle": "Payment methods",
+      "paymentMethodsSubtitle": "Accepted at checkout",
+      "upgradeModal": {
+        "proFeatureBadge": "Pro Feature",
+        "title": "Unlock Pro",
+        "monthly": "Monthly",
+        "yearly": "Yearly",
+        "billedYearly": "Billed yearly (-{percent}%)",
+        "upgradeNow": "Upgrade now — {price}/mo"
       }
     },
     "security": {
@@ -613,22 +751,68 @@
       "cancel": "Cancel",
       "twoFactor": "Two-factor authentication",
       "twoFactorNotConfigured": "Not configured",
-      "twoFactorEnable": "Enable"
+      "twoFactorEnable": "Enable",
+      "title": "Security",
+      "passwordHint": "Use a strong, unique password",
+      "sessions": {
+        "title": "Active sessions",
+        "signedInNow": "Signed in now",
+        "current": "Current"
+      },
+      "danger": {
+        "title": "Danger zone",
+        "deleteAccount": "Delete my account",
+        "description": "Permanently delete your account, connected platforms, sessions and billing data. This cannot be undone.",
+        "confirmTitle": "Delete this account?",
+        "confirmDescription": "All your data — profile, connected accounts, session history and subscription — will be permanently erased. This action is irreversible.",
+        "confirmLabel": "Type {word} to confirm",
+        "confirmWord": "DELETE",
+        "confirmCta": "Delete account",
+        "deleting": "Deleting…",
+        "deleted": "Account deleted",
+        "liveSessionError": "You cannot delete your account while a live session is running. End the stream first.",
+        "failed": "Failed to delete the account"
+      }
     },
-    "connectedAccounts": {
-      "sectionTitle": "CONNECTED ACCOUNTS",
-      "add": "+ Add",
-      "noAccounts": "No connected accounts",
-      "connectTikTok": "Connect TikTok",
-      "connectFacebook": "Connect Facebook",
-      "tiktokSection": "TikTok",
-      "facebookSection": "Facebook",
-      "removed": "Account disconnected",
-      "removeFailed": "Failed to disconnect account"
+    "subtitle": "Manage your account preferences.",
+    "nav": {
+      "profile": "Profile",
+      "subscription": "Subscription",
+      "notifications": "Notifications",
+      "appearance": "Appearance",
+      "security": "Security"
     }
   },
   "watch": {
     "liveOn": "Live on",
+    "nav": {
+      "login": "Log in",
+      "goLive": "Go Live",
+      "dashboard": "Dashboard"
+    },
+    "liveChat": "Live Chat",
+    "messagesCount": "{count, plural, one {# message} other {# messages}}",
+    "logInToChat": "Log in to chat",
+    "quickReactions": "Quick reactions",
+    "fullscreen": "Fullscreen",
+    "endedTitle": "This stream has ended",
+    "replyingTo": "Replying to",
+    "replyPlaceholder": "Reply to {name}…",
+    "attachFile": "Attach file",
+    "creator": {
+      "host": "Live host",
+      "watching": "{count} watching now",
+      "follow": "Follow",
+      "following": "Following"
+    },
+    "stats": {
+      "viewers": "Viewers",
+      "uptime": "Uptime",
+      "platformSync": "Platform sync",
+      "syncStable": "Stable",
+      "syncPaused": "Paused",
+      "syncOffline": "Offline"
+    },
     "startingDesc": "The stream is starting up — hang tight…",
     "endedDesc": "This live stream has ended.",
     "notFound": "Stream Not Found",
@@ -679,6 +863,16 @@
   "notFound": {
     "heading": "Page Not Found",
     "message": "The page you're looking for doesn't exist or has been moved.",
+    "goHome": "Back to home",
+    "goDashboard": "Back to dashboard"
+  },
+  "errorPage": {
+    "label": "System Error",
+    "title": "Something went wrong",
+    "message": "We encountered an unexpected error. You can try again, or head back if it keeps happening.",
+    "technicalDetails": "Technical Details",
+    "errorCode": "ERROR",
+    "retry": "Retry",
     "goHome": "Back to home"
   },
   "landing": {

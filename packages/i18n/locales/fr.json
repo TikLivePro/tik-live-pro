@@ -1,6 +1,7 @@
 {
   "common": {
     "loading": "Chargement...",
+    "toggleSidebar": "Afficher/masquer la barre latérale",
     "error": "Une erreur s'est produite",
     "retry": "Réessayer",
     "cancel": "Annuler",
@@ -103,7 +104,9 @@
       "hideCamera": "Masquer la vidéo",
       "showCamera": "Afficher la vidéo",
       "notDetected": "Aucune webcam détectée",
-      "enableWebcam": "Activer la webcam"
+      "enableWebcam": "Activer la webcam",
+      "showOverlay": "Afficher l'incrustation webcam",
+      "hideOverlay": "Masquer l'incrustation webcam"
     },
     "share": {
       "sectionLabel": "PARTAGER VOTRE LIVE",
@@ -144,6 +147,7 @@
       "latency": "Latence"
     },
     "sessionStarted": "Le stream est en direct !",
+    "liveToastSubtitle": "Diffusion démarrée",
     "sessionEnded": "Stream terminé",
     "history": {
       "sectionLabel": "STREAMS PASSÉS",
@@ -298,6 +302,12 @@
       "reactions": "Réactions",
       "settings": "Réglages du stream",
       "settingsHint": "Résolution, source et liens du stream",
+      "advancedSettings": "Réglages avancés",
+      "shareSource": "Importer / partager une source vidéo",
+      "viewersCollaborators": "Spectateurs et collaborateurs",
+      "mic": "Micro",
+      "cam": "Cam",
+      "source": "Source",
       "links": "Liens du stream",
       "watchLink": "Lien de visionnage",
       "hlsLink": "Flux HLS",
@@ -313,6 +323,8 @@
       "healthError": "Erreur",
       "healthEnded": "Terminé",
       "healthPending": "En attente",
+      "fullscreen": "Plein écran",
+      "exitFullscreen": "Quitter le plein écran",
       "sidebar": {
         "label": "Navigation du Creator Studio",
         "creatorStudio": "Creator Studio",
@@ -324,7 +336,13 @@
         "soon": "Bientôt",
         "upgradePro": "Passer à Pro",
         "help": "Aide",
-        "logout": "Se déconnecter"
+        "logout": "Se déconnecter",
+        "notLiveModal": {
+          "title": "Aucun direct en cours",
+          "body": "Vous n'avez pas de diffusion active pour le moment. Démarrez-en une depuis votre tableau de bord pour ouvrir la régie.",
+          "cta": "Aller au tableau de bord",
+          "close": "Fermer"
+        }
       }
     }
   },
@@ -367,7 +385,8 @@
       "connected": "Connecté",
       "disconnected": "Déconnecté",
       "error": "Erreur",
-      "ready": "Prêt"
+      "ready": "Prêt",
+      "expired": "Expiré"
     },
     "limit": {
       "freemium": "Le plan gratuit permet jusqu'à 2 comptes connectés",
@@ -377,7 +396,9 @@
     },
     "modal": {
       "title": "Connecter un compte",
-      "subtitle": "Choisissez une plateforme à connecter à votre stream"
+      "subtitle": "Choisissez une plateforme à connecter à votre stream",
+      "comingSoon": "Bientôt disponible",
+      "privacyNote": "Vous serez redirigé vers la plateforme pour autoriser TikLivePro. Nous ne stockons jamais vos mots de passe."
     },
     "errors": {
       "connectFailed": "Échec de la connexion du compte",
@@ -385,7 +406,34 @@
       "limitReached": "Limite de comptes atteinte. Passez au Premium pour en connecter davantage"
     },
     "manage": "Gérer",
-    "reconnect": "Reconnecter"
+    "reconnect": "Reconnecter",
+    "page": {
+      "title": "Comptes connectés",
+      "subtitle": "Connectez, surveillez et déconnectez les comptes sociaux vers lesquels vous diffusez.",
+      "accountsUsed": "{n} compte(s) sur {max} utilisés",
+      "freePlan": "Plan gratuit",
+      "connectPlatform": "Connecter une plateforme",
+      "connectPlatformHint": "Ajoutez TikTok ou Facebook",
+      "permissionsLabel": "Autorisations",
+      "permissionsDisabledLabel": "Autorisations (désactivées)",
+      "scopes": {
+        "liveVideo": "Vidéo en direct",
+        "comments": "Commentaires",
+        "profileInfo": "Infos du profil",
+        "pages": "Pages"
+      },
+      "connectedSince": "Connecté depuis {date}",
+      "reconnectHint": "Reconnectez-vous pour reprendre la diffusion",
+      "disconnect": "Déconnecter",
+      "removed": "Compte déconnecté",
+      "removeFailed": "Échec de la déconnexion du compte",
+      "lockedTitle": "Emplacement verrouillé",
+      "lockedDescription": "Le plan gratuit est limité à {max} connexions de comptes simultanées.",
+      "lockedUpgrade": "Passez à Pro pour connecter plus de comptes",
+      "emptyTitle": "Aucun compte connecté",
+      "emptyDescription": "Votre livestream n'est connecté à aucune plateforme pour le moment. Commencez par en ajouter une.",
+      "emptyCta": "Connectez votre premier compte"
+    }
   },
   "billing": {
     "title": "Abonnement",
@@ -431,8 +479,13 @@
   "legal": {
     "backHome": "Retour à l'accueil",
     "lastUpdated": "Dernière mise à jour : 26 mai 2026",
+    "summaryLabel": "En bref",
+    "toc": {
+      "title": "Sommaire"
+    },
     "terms": {
       "title": "Conditions d'utilisation",
+      "summary": "En utilisant TikLivePro, vous acceptez de diffuser dans le respect de la loi, de suivre les règles propres à TikTok et Facebook sur les plateformes que vous connectez, et vous reconnaissez que les abonnements payants sont facturés de façon récurrente jusqu'à annulation.",
       "sections": {
         "acceptance": {
           "title": "1. Acceptation des conditions",
@@ -486,6 +539,7 @@
     },
     "privacy": {
       "title": "Politique de confidentialité",
+      "summary": "Nous collectons vos informations de compte, les statistiques de streaming et des données sur votre appareil pour faire fonctionner TikLivePro. Nous ne vendons pas vos données brutes. Vous restez propriétaire de votre contenu, et les jetons des plateformes sociales sont chiffrés puis supprimés dès la déconnexion d'un compte.",
       "sections": {
         "intro": {
           "title": "1. Introduction",
@@ -528,6 +582,57 @@
           "body": "Pour toute demande relative à la confidentialité, l'accès aux données ou l'exercice de vos droits, contactez notre équipe Protection des données à : privacy@tiklivepro.pro. Nous nous engageons à traiter vos demandes dans les meilleurs délais."
         }
       }
+    },
+    "dataDeletion": {
+      "title": "Supprimer vos données",
+      "subtitle": "Les demandes de suppression sont définitives et ne peuvent pas être annulées après la période de traitement.",
+      "checklist": {
+        "account": {
+          "title": "Compte",
+          "description": "Informations de profil et identité"
+        },
+        "socialTokens": {
+          "title": "Jetons sociaux",
+          "description": "Accès API et connexions"
+        },
+        "streamHistory": {
+          "title": "Historique des streams",
+          "description": "Journaux de diffusion passés"
+        },
+        "recordings": {
+          "title": "Enregistrements",
+          "description": "Fichiers vidéo stockés"
+        }
+      },
+      "gracePeriodNote": "Les demandes sont traitées sous 30 jours.",
+      "form": {
+        "emailLabel": "Confirmer l'adresse email",
+        "emailPlaceholder": "streamer@example.com",
+        "reasonLabel": "Raison de la suppression (facultatif)",
+        "reasonPlaceholder": "Choisir une raison",
+        "reasons": {
+          "privacy": "Préoccupations liées à la confidentialité",
+          "switching": "Passage à une autre plateforme",
+          "quitting": "Je ne diffuse plus",
+          "technical": "Difficultés techniques",
+          "other": "Autre"
+        },
+        "submit": "Demander la suppression"
+      },
+      "confirm": {
+        "title": "Envoyer la demande de suppression ?",
+        "description": "Ceci ouvre votre application e-mail avec un message pré-rempli à destination de notre équipe support. Vos données seront supprimées sous 30 jours.",
+        "cta": "Ouvrir l'application e-mail"
+      },
+      "success": {
+        "manualTitle": "Demande préparée",
+        "manualDescription": "Votre application e-mail devrait s'être ouverte avec une demande pré-remplie — envoyez-la pour joindre notre équipe support.",
+        "facebookTitle": "Demande reçue",
+        "facebookDescription": "Votre demande de suppression des données liées à Facebook sur TikLivePro a été traitée. La connexion à votre compte Facebook a été supprimée.",
+        "referenceLabel": "N° de référence",
+        "confirmationNote": "Vous recevrez un e-mail de confirmation une fois la demande traitée."
+      },
+      "contactSupport": "Contacter le support"
     }
   },
   "settings": {
@@ -541,7 +646,14 @@
       "saving": "Enregistrement...",
       "saved": "Profil enregistré",
       "saveError": "Échec de l'enregistrement du profil",
-      "unnamed": "Utilisateur sans nom"
+      "unnamed": "Utilisateur sans nom",
+      "title": "Informations du profil",
+      "avatarHint": "JPG ou PNG. 5 Mo max.",
+      "changeAvatar": "Changer la photo de profil",
+      "verified": "Vérifiée",
+      "avatarUploaded": "Photo de profil mise à jour",
+      "avatarUploadFailed": "Échec de l'envoi de la photo de profil",
+      "avatarTooLarge": "Image trop lourde — 5 Mo maximum"
     },
     "appearance": {
       "sectionTitle": "APPARENCE",
@@ -549,7 +661,10 @@
       "themeLight": "Clair",
       "themeDark": "Sombre",
       "currentLight": "Actuellement : Clair",
-      "currentDark": "Actuellement : Sombre"
+      "currentDark": "Actuellement : Sombre",
+      "title": "Apparence",
+      "themeSystem": "Système",
+      "language": "Langue"
     },
     "notifications": {
       "sectionTitle": "NOTIFICATIONS",
@@ -560,7 +675,10 @@
       "accountConnected": "Compte connecté",
       "accountConnectedDesc": "Soyez notifié quand un compte social est lié",
       "paymentFailed": "Problème de paiement",
-      "paymentFailedDesc": "Soyez notifié quand un paiement nécessite votre attention"
+      "paymentFailedDesc": "Soyez notifié quand un paiement nécessite votre attention",
+      "title": "Notifications",
+      "groupStream": "Activité de diffusion",
+      "groupAccount": "Compte et facturation"
     },
     "subscription": {
       "sectionTitle": "ABONNEMENT",
@@ -596,6 +714,26 @@
         "cancel": "Annuler",
         "orderPending": "Commande enregistrée — votre plan sera activé dès confirmation du paiement.",
         "phoneInvalid": "Saisissez un numéro de téléphone international valide"
+      },
+      "title": "Abonnement et facturation",
+      "currentPlanTitle": "Votre offre",
+      "availablePlans": "Offres disponibles",
+      "usage": {
+        "title": "Utilisation",
+        "accounts": "Comptes connectés",
+        "hours": "Heures diffusées ce mois-ci",
+        "hoursValue": "{n} h",
+        "unlimitedValue": "{n} connecté(s)"
+      },
+      "paymentMethodsTitle": "Moyens de paiement",
+      "paymentMethodsSubtitle": "Acceptés au paiement",
+      "upgradeModal": {
+        "proFeatureBadge": "Fonctionnalité Pro",
+        "title": "Débloquer Pro",
+        "monthly": "Mensuel",
+        "yearly": "Annuel",
+        "billedYearly": "Facturé annuellement (-{percent}%)",
+        "upgradeNow": "Passer à Pro — {price}/mois"
       }
     },
     "security": {
@@ -613,22 +751,68 @@
       "cancel": "Annuler",
       "twoFactor": "Authentification à deux facteurs",
       "twoFactorNotConfigured": "Non configurée",
-      "twoFactorEnable": "Activer"
+      "twoFactorEnable": "Activer",
+      "title": "Sécurité",
+      "passwordHint": "Utilisez un mot de passe fort et unique",
+      "sessions": {
+        "title": "Sessions actives",
+        "signedInNow": "Connecté maintenant",
+        "current": "Actuelle"
+      },
+      "danger": {
+        "title": "Zone de danger",
+        "deleteAccount": "Supprimer mon compte",
+        "description": "Supprime définitivement votre compte, vos plateformes connectées, vos sessions et vos données de facturation. Cette action est irréversible.",
+        "confirmTitle": "Supprimer ce compte ?",
+        "confirmDescription": "Toutes vos données — profil, comptes connectés, historique des sessions et abonnement — seront définitivement effacées. Cette action est irréversible.",
+        "confirmLabel": "Saisissez {word} pour confirmer",
+        "confirmWord": "SUPPRIMER",
+        "confirmCta": "Supprimer le compte",
+        "deleting": "Suppression…",
+        "deleted": "Compte supprimé",
+        "liveSessionError": "Impossible de supprimer votre compte pendant une session en direct. Terminez d'abord le stream.",
+        "failed": "Échec de la suppression du compte"
+      }
     },
-    "connectedAccounts": {
-      "sectionTitle": "COMPTES CONNECTÉS",
-      "add": "+ Ajouter",
-      "noAccounts": "Aucun compte connecté",
-      "connectTikTok": "Connecter TikTok",
-      "connectFacebook": "Connecter Facebook",
-      "tiktokSection": "TikTok",
-      "facebookSection": "Facebook",
-      "removed": "Compte déconnecté",
-      "removeFailed": "Échec de la déconnexion du compte"
+    "subtitle": "Gérez les préférences de votre compte.",
+    "nav": {
+      "profile": "Profil",
+      "subscription": "Abonnement",
+      "notifications": "Notifications",
+      "appearance": "Apparence",
+      "security": "Sécurité"
     }
   },
   "watch": {
     "liveOn": "En direct sur",
+    "nav": {
+      "login": "Se connecter",
+      "goLive": "Lancer un live",
+      "dashboard": "Tableau de bord"
+    },
+    "liveChat": "Chat en direct",
+    "messagesCount": "{count, plural, one {# message} other {# messages}}",
+    "logInToChat": "Connectez-vous pour discuter",
+    "quickReactions": "Réactions rapides",
+    "fullscreen": "Plein écran",
+    "endedTitle": "Ce direct est terminé",
+    "replyingTo": "Réponse à",
+    "replyPlaceholder": "Répondre à {name}…",
+    "attachFile": "Joindre un fichier",
+    "creator": {
+      "host": "Hôte du direct",
+      "watching": "{count} spectateurs en ce moment",
+      "follow": "Suivre",
+      "following": "Suivi"
+    },
+    "stats": {
+      "viewers": "Spectateurs",
+      "uptime": "Durée du direct",
+      "platformSync": "Synchro plateformes",
+      "syncStable": "Stable",
+      "syncPaused": "En pause",
+      "syncOffline": "Hors ligne"
+    },
     "startingDesc": "Le stream démarre — patientez quelques instants…",
     "endedDesc": "Ce live est terminé.",
     "notFound": "Stream introuvable",
@@ -679,6 +863,16 @@
   "notFound": {
     "heading": "Page introuvable",
     "message": "La page que vous recherchez n'existe pas ou a été déplacée.",
+    "goHome": "Retour à l'accueil",
+    "goDashboard": "Retour au tableau de bord"
+  },
+  "errorPage": {
+    "label": "Erreur système",
+    "title": "Une erreur est survenue",
+    "message": "Nous avons rencontré une erreur inattendue. Vous pouvez réessayer, ou revenir en arrière si le problème persiste.",
+    "technicalDetails": "Détails techniques",
+    "errorCode": "ERREUR",
+    "retry": "Réessayer",
     "goHome": "Retour à l'accueil"
   },
   "landing": {

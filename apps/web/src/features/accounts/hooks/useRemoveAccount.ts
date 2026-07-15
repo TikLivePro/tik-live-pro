@@ -7,7 +7,7 @@ import { API_BASE, apiFetch } from '@/lib/api';
 
 export function useRemoveAccount() {
   const queryClient = useQueryClient();
-  const t = useTranslations('settings.connectedAccounts');
+  const t = useTranslations('accounts.page');
 
   return useMutation({
     mutationFn: async (accountId: string) => {

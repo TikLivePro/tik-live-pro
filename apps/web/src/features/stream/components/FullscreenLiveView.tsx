@@ -500,6 +500,7 @@ export function FullscreenLiveView(): React.ReactElement {
 
   const [shareCopied, setShareCopied] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // ── Compositor output resolution — kept in sync with the stream quality preset ──
   // Initialized from the persisted quality preset so it survives page refreshes.
@@ -513,11 +514,43 @@ export function FullscreenLiveView(): React.ReactElement {
   const monitorRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLElement>(null);
 
+  // Keep isFullscreen in sync with the browser's fullscreen state (handles the
+  // streamer pressing Esc or a browser/OS fullscreen shortcut directly).
+  useEffect(() => {
+    function onFullscreenChange(): void {
+      setIsFullscreen(document.fullscreenElement === monitorRef.current);
+    }
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return (): void => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  const handleToggleFullscreen = useCallback(() => {
+    const el = monitorRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else {
+      void el.requestFullscreen();
+    }
+  }, []);
+
   // ── Webcam PiP overlay ──────────────────────────────────────
   // Shows the streamer's webcam in a small rounded inset (draggable)
   // when the main feed is a video file/URL (not camera mode).
   const [webcamPipVisible, setWebcamPipVisible] = useState(true);
   const pipVideoRef = useRef<HTMLVideoElement>(null);
+
+  // The camera/webcam button is overloaded: in camera-source mode it toggles
+  // isCameraOff (disables the video track); in video-share mode it toggles
+  // webcamPipVisible instead, so isCameraOff becomes unreachable from the UI.
+  // If the streamer turned the camera off before switching source, the disabled
+  // track would otherwise keep the PiP permanently hidden (`!isCameraOff` below)
+  // with no way left to re-enable it — re-enable the track on leaving camera mode.
+  useEffect(() => {
+    if (shareSourceType !== 'camera' && isCameraOff) {
+      toggleCamera();
+    }
+  }, [shareSourceType]);
 
   // PiP position — in monitor-container coordinates; placed bottom-right once mounted
   const [pipPos, setPipPos] = useState<{ x: number; y: number }>({ x: 16, y: 16 });
@@ -530,14 +563,44 @@ export function FullscreenLiveView(): React.ReactElement {
     const raf = requestAnimationFrame(() => {
       const monitor = monitorRef.current;
       if (!monitor) return;
-      const pw = pipWrapperRef.current?.offsetWidth ?? 112;
-      const ph = pipWrapperRef.current?.offsetHeight ?? 160;
+      const pw = pipWrapperRef.current?.offsetWidth ?? 160;
+      const ph = pipWrapperRef.current?.offsetHeight ?? 90;
       setPipPos({
         x: Math.max(8, monitor.clientWidth - pw - 16),
         y: Math.max(8, monitor.clientHeight - ph - 16),
       });
     });
     return (): void => cancelAnimationFrame(raf);
+  }, []);
+
+  // Keep the PiP anchored to the same relative spot when the monitor container
+  // resizes — most notably entering/exiting fullscreen, which changes the
+  // monitor's pixel dimensions but previously left pipPos at its stale
+  // pre-resize pixel coordinates (e.g. still "bottom-right" of the small
+  // panel, which lands mid-screen once the panel fills the viewport).
+  const monitorSizeRef = useRef<{ width: number; height: number } | null>(null);
+  useEffect(() => {
+    const monitor = monitorRef.current;
+    if (!monitor) return;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      const prevSize = monitorSizeRef.current;
+      if (prevSize && prevSize.width > 0 && prevSize.height > 0) {
+        const scaleX = width / prevSize.width;
+        const scaleY = height / prevSize.height;
+        const pw = pipWrapperRef.current?.offsetWidth ?? 160;
+        const ph = pipWrapperRef.current?.offsetHeight ?? 90;
+        setPipPos((prev) => ({
+          x: Math.max(8, Math.min(width - pw - 8, prev.x * scaleX)),
+          y: Math.max(8, Math.min(height - ph - 8, prev.y * scaleY)),
+        }));
+      }
+      monitorSizeRef.current = { width, height };
+    });
+    ro.observe(monitor);
+    return (): void => ro.disconnect();
   }, []);
 
   // Drag state
@@ -559,8 +622,8 @@ export function FullscreenLiveView(): React.ReactElement {
     const rect = monitorRef.current?.getBoundingClientRect();
     if (!rect) return;
     const wrapper = pipWrapperRef.current;
-    const pw = wrapper?.offsetWidth ?? 110;
-    const ph = wrapper?.offsetHeight ?? 160;
+    const pw = wrapper?.offsetWidth ?? 160;
+    const ph = wrapper?.offsetHeight ?? 90;
     const newX = Math.max(
       0,
       Math.min(rect.width - pw, e.clientX - rect.left - dragOffsetRef.current.ox),
@@ -984,7 +1047,7 @@ export function FullscreenLiveView(): React.ReactElement {
                   !videoShare.isPlaying && (
                     <button
                       type="button"
-                      aria-label="Lire la vidéo"
+                      aria-label={t('videoShare.play')}
                       onClick={() => videoShare.play()}
                       className="absolute left-1/2 top-1/2 z-10 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/30 bg-black/60 text-white backdrop-blur-sm transition-opacity hover:bg-black/80"
                     >
@@ -1027,37 +1090,33 @@ export function FullscreenLiveView(): React.ReactElement {
                   onPointerUp={handlePipPointerUp}
                   style={{ left: pipPos.x, top: pipPos.y }}
                   className={cn(
-                    'absolute z-30 cursor-grab select-none transition-opacity duration-300 ease-out active:cursor-grabbing',
+                    'absolute z-30 aspect-video w-40 cursor-grab select-none overflow-hidden rounded-lg border-2 border-brand/30 bg-black shadow-2xl shadow-black/60 backdrop-blur-xl transition-opacity duration-300 ease-out active:cursor-grabbing sm:w-56',
                     videoShare.sourceType !== 'camera' && !isCameraOff && webcamPipVisible
                       ? 'pointer-events-auto scale-100 opacity-100'
                       : 'pointer-events-none scale-90 opacity-0',
                   )}
                 >
-                  {/* Outer glow ring */}
-                  <div className="rounded-2xl bg-gradient-to-br from-white/30 via-white/10 to-white/5 p-[2px] shadow-2xl shadow-black/60">
-                    <div className="relative overflow-hidden rounded-[14px] border border-white/10">
-                      <video
-                        ref={pipVideoRef}
-                        autoPlay
-                        muted
-                        playsInline
-                        className="block h-32 w-[90px] object-cover [transform:scaleX(-1)] sm:h-40 sm:w-28"
-                      />
-                      {/* Subtle vignette */}
-                      <div className="pointer-events-none absolute inset-0 rounded-[14px] bg-gradient-to-b from-black/10 via-transparent to-black/20" />
-                      {/* Live indicator dot */}
-                      <div className="absolute left-2 top-2 flex items-center gap-1">
-                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.8)]" />
-                      </div>
-                      {/* Drag hint — shows on hover */}
-                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity hover:opacity-100">
-                        <svg className="h-5 w-5 text-white/60 drop-shadow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <polyline points="5 9 2 12 5 15" /><polyline points="9 5 12 2 15 5" />
-                          <polyline points="15 19 12 22 9 19" /><polyline points="19 9 22 12 19 15" />
-                          <line x1="2" y1="12" x2="22" y2="12" /><line x1="12" y1="2" x2="12" y2="22" />
-                        </svg>
-                      </div>
-                    </div>
+                  <video
+                    ref={pipVideoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    className="h-full w-full object-cover [transform:scaleX(-1)]"
+                  />
+                  {/* Subtle vignette */}
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/20" />
+                  {/* Mic + camera connectivity dots */}
+                  <div className="absolute bottom-2 left-2 flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_4px_rgba(52,211,153,0.8)]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_4px_rgba(52,211,153,0.8)]" />
+                  </div>
+                  {/* Drag hint — shows on hover */}
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition-opacity hover:opacity-100">
+                    <svg className="h-5 w-5 text-white/60 drop-shadow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polyline points="5 9 2 12 5 15" /><polyline points="9 5 12 2 15 5" />
+                      <polyline points="15 19 12 22 9 19" /><polyline points="19 9 22 12 19 15" />
+                      <line x1="2" y1="12" x2="22" y2="12" /><line x1="12" y1="2" x2="12" y2="22" />
+                    </svg>
                   </div>
                 </div>
 
@@ -1101,6 +1160,26 @@ export function FullscreenLiveView(): React.ReactElement {
                       <span className={cn('h-1.5 w-1.5 rounded-full', whipHealthDot)} />
                       {qualityPreset.label} · {(qualityPreset.bitrate / 1_000_000).toLocaleString()} Mbps
                     </span>
+                    <button
+                      type="button"
+                      onClick={handleToggleFullscreen}
+                      aria-label={isFullscreen ? t('controlRoom.exitFullscreen') : t('controlRoom.fullscreen')}
+                      title={isFullscreen ? t('controlRoom.exitFullscreen') : t('controlRoom.fullscreen')}
+                      className={cn(GLASS_PILL, 'pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full hover:bg-black/60')}
+                    >
+                      {isFullscreen ? (
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <polyline points="4 14 10 14 10 20" />
+                          <polyline points="20 10 14 10 14 4" />
+                          <line x1="14" y1="10" x2="21" y2="3" />
+                          <line x1="3" y1="21" x2="10" y2="14" />
+                        </svg>
+                      ) : (
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
+                        </svg>
+                      )}
+                    </button>
                   </div>
                 </div>
 
@@ -1127,144 +1206,171 @@ export function FullscreenLiveView(): React.ReactElement {
               className="shrink-0 px-4 lg:px-0"
             />
 
-            {/* ── Media controls row (translucent glass bar matching Stitch design) ── */}
+            {/* ── Media controls dock (centered glass pill matching Stitch design) ── */}
             <div className="mx-4 shrink-0 lg:mx-0">
-              <div className="flex items-center justify-between rounded-xl border border-white/5 bg-surface-1/80 px-4 py-3 backdrop-blur-md">
-                {/* Left controls */}
-                <div className="flex items-center gap-3">
-                  {/* Microphone toggle */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (cameraState === 'active') {
-                        toggleMic();
-                      } else {
-                        void startCamera();
-                      }
-                    }}
-                    title={isMicMuted ? t('camera.unmute') : t('camera.mute')}
-                    className={cn(
-                      'flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-foreground transition-all',
-                      cameraState === 'active' && !isMicMuted
-                        ? 'bg-brand text-white border-transparent shadow-[0_0_8px_rgba(255,45,85,0.4)]'
-                        : 'bg-surface-2 hover:bg-muted text-muted-foreground',
-                    )}
-                  >
-                    {isMicMuted || cameraState !== 'active' ? (
-                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <line x1="1" y1="1" x2="23" y2="23" />
-                        <path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6" />
-                        <path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23M12 20v4M8 20h8" />
-                      </svg>
-                    ) : (
-                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
-                        <path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" />
-                      </svg>
-                    )}
-                  </button>
-
-                  {/* Camera/Webcam toggle */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (cameraState !== 'active') {
-                        void startCamera();
-                      } else {
-                        if (videoShare.sourceType === 'camera') {
-                          toggleCamera();
-                        } else {
-                          setWebcamPipVisible((v) => !v);
-                        }
-                      }
-                    }}
-                    title={
-                      cameraState !== 'active'
-                        ? t('camera.enableWebcam')
-                        : videoShare.sourceType === 'camera'
-                          ? isCameraOff
-                            ? t('camera.showCamera')
-                            : t('camera.hideCamera')
-                          : webcamPipVisible
-                            ? 'Hide webcam overlay'
-                            : 'Show webcam overlay'
+              <div className="mx-auto flex w-fit items-center gap-1 rounded-2xl border border-white/5 bg-surface-1/80 p-2 backdrop-blur-md sm:gap-1.5">
+                {/* Microphone toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (cameraState === 'active') {
+                      toggleMic();
+                    } else {
+                      void startCamera();
                     }
-                    className={cn(
-                      'flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-foreground transition-all',
-                      cameraState === 'active' &&
-                        (videoShare.sourceType === 'camera' ? !isCameraOff : webcamPipVisible)
-                        ? 'bg-brand text-white border-transparent shadow-[0_0_8px_rgba(255,45,85,0.4)]'
-                        : 'bg-surface-2 hover:bg-muted text-muted-foreground',
-                    )}
-                  >
-                    {cameraState === 'active' &&
-                    (videoShare.sourceType === 'camera' ? isCameraOff : !webcamPipVisible) ? (
-                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M16 16v1a2 2 0 01-2 2H3a2 2 0 01-2-2V7a2 2 0 012-2h2m5.66 0H14a2 2 0 012 2v3.34l1 1L23 7v10M1 1l22 22" />
-                      </svg>
-                    ) : (
-                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <polygon points="23 7 16 12 23 17 23 7" />
-                        <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                      </svg>
-                    )}
-                  </button>
+                  }}
+                  title={
+                    cameraState !== 'active'
+                      ? t('camera.enableWebcam')
+                      : isMicMuted
+                        ? t('camera.unmute')
+                        : t('camera.mute')
+                  }
+                  className={cn(
+                    'flex h-12 w-12 flex-col items-center justify-center gap-1 rounded-xl transition-colors',
+                    cameraState === 'active' && !isMicMuted
+                      ? 'bg-brand text-white shadow-[0_0_8px_rgba(255,45,85,0.4)]'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  {isMicMuted || cameraState !== 'active' ? (
+                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                      <path d="M9 9v3a3 3 0 005.12 2.12M15 9.34V4a3 3 0 00-5.94-.6" />
+                      <path d="M17 16.95A7 7 0 015 12v-2m14 0v2a7 7 0 01-.11 1.23M12 20v4M8 20h8" />
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+                      <path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8" />
+                    </svg>
+                  )}
+                  <span className="text-[9px] font-bold uppercase tracking-wide">{t('controlRoom.mic')}</span>
+                </button>
 
-                  {/* Upload/Share screen button */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSettingsOpen(!settingsOpen);
-                      // Scroll settings into view on open
-                      if (!settingsOpen) {
-                        setTimeout(() => {
-                          const el = document.getElementById('stream-source-picker');
-                          el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }, 100);
+                {/* Camera/Webcam toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (cameraState !== 'active') {
+                      void startCamera();
+                    } else {
+                      if (videoShare.sourceType === 'camera') {
+                        toggleCamera();
+                      } else {
+                        setWebcamPipVisible((v) => !v);
                       }
-                    }}
-                    title="Upload / Share video source"
-                    className={cn(
-                      'flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-foreground transition-all hover:bg-muted',
-                      settingsOpen
-                        ? 'bg-surface-3 border-white/20 text-white'
-                        : 'bg-surface-2 text-muted-foreground',
-                    )}
-                  >
+                    }
+                  }}
+                  title={
+                    cameraState !== 'active'
+                      ? t('camera.enableWebcam')
+                      : videoShare.sourceType === 'camera'
+                        ? isCameraOff
+                          ? t('camera.showCamera')
+                          : t('camera.hideCamera')
+                        : webcamPipVisible
+                          ? t('camera.hideOverlay')
+                          : t('camera.showOverlay')
+                  }
+                  className={cn(
+                    'flex h-12 w-12 flex-col items-center justify-center gap-1 rounded-xl transition-colors',
+                    cameraState === 'active' &&
+                      (videoShare.sourceType === 'camera' ? !isCameraOff : webcamPipVisible)
+                      ? 'bg-brand text-white shadow-[0_0_8px_rgba(255,45,85,0.4)]'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  {cameraState === 'active' &&
+                  (videoShare.sourceType === 'camera' ? isCameraOff : !webcamPipVisible) ? (
                     <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="17 8 12 3 7 8" />
-                      <line x1="12" y1="3" x2="12" y2="15" />
+                      <path d="M16 16v1a2 2 0 01-2 2H3a2 2 0 01-2-2V7a2 2 0 012-2h2m5.66 0H14a2 2 0 012 2v3.34l1 1L23 7v10M1 1l22 22" />
                     </svg>
-                  </button>
-
-                  {/* Collaborator/Add-User button */}
-                  <button
-                    type="button"
-                    onClick={handleViewersClick}
-                    title="Viewers & Collaborators"
-                    className={cn(
-                      'flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-foreground transition-all hover:bg-muted',
-                      railTab === 'viewers'
-                        ? 'bg-surface-3 border-white/20 text-white'
-                        : 'bg-surface-2 text-muted-foreground',
-                    )}
-                  >
+                  ) : (
                     <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                      <circle cx="9" cy="7" r="4" />
-                      <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+                      <polygon points="23 7 16 12 23 17 23 7" />
+                      <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
                     </svg>
-                  </button>
-                </div>
+                  )}
+                  <span className="text-[9px] font-bold uppercase tracking-wide">{t('controlRoom.cam')}</span>
+                </button>
 
-                {/* Right controls: Advanced Settings toggle */}
+                <div className="mx-0.5 h-8 w-px bg-white/10" />
+
+                {/* Source picker toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsOpen(!settingsOpen);
+                    // Scroll settings into view on open
+                    if (!settingsOpen) {
+                      setTimeout(() => {
+                        const el = document.getElementById('stream-source-picker');
+                        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }, 100);
+                    }
+                  }}
+                  title={t('controlRoom.shareSource')}
+                  className={cn(
+                    'flex h-12 w-12 flex-col items-center justify-center gap-1 rounded-xl transition-colors',
+                    settingsOpen
+                      ? 'bg-surface-3 text-white'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  <span className="text-[9px] font-bold uppercase tracking-wide">{t('controlRoom.source')}</span>
+                </button>
+
+                {/* Recording toggle */}
+                <button
+                  type="button"
+                  onClick={() => currentSession && void toggleRecording(currentSession.id)}
+                  disabled={!isLive || isTogglingRecording}
+                  title={isRecording ? t('recording.stop') : t('recording.start')}
+                  className={cn(
+                    'flex h-12 w-12 flex-col items-center justify-center gap-1 rounded-xl transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+                    isRecording
+                      ? 'text-red-500 hover:bg-red-500/10'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  <span className={cn('h-3 w-3 rounded-full', isRecording ? 'bg-red-500 animate-pulse' : 'border-2 border-current')} />
+                  <span className="text-[9px] font-bold uppercase tracking-wide">{t('recording.active')}</span>
+                </button>
+
+                <div className="mx-0.5 h-8 w-px bg-white/10" />
+
+                {/* Viewers/collaborators shortcut */}
+                <button
+                  type="button"
+                  onClick={handleViewersClick}
+                  title={t('controlRoom.viewersCollaborators')}
+                  className={cn(
+                    'flex h-12 w-12 flex-col items-center justify-center gap-1 rounded-xl transition-colors',
+                    railTab === 'viewers'
+                      ? 'bg-surface-3 text-white'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+                  </svg>
+                  <span className="text-[9px] font-bold uppercase tracking-wide">{t('controlRoom.viewersTab')}</span>
+                </button>
+
+                {/* Advanced settings toggle */}
                 <button
                   type="button"
                   onClick={() => setSettingsOpen(!settingsOpen)}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                  className="flex h-12 items-center gap-2 rounded-xl px-4 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
-                  <span>Advanced Settings</span>
                   <svg
                     className={cn('h-4 w-4 transition-transform duration-200', settingsOpen && 'rotate-180')}
                     viewBox="0 0 24 24"
@@ -1276,6 +1382,7 @@ export function FullscreenLiveView(): React.ReactElement {
                   >
                     <polyline points="18 15 12 9 6 15" />
                   </svg>
+                  <span className="text-[11px] font-bold uppercase tracking-wide">{t('controlRoom.advancedSettings')}</span>
                 </button>
               </div>
             </div>
@@ -1493,24 +1600,8 @@ export function FullscreenLiveView(): React.ReactElement {
 
                     <div className="my-1 h-px bg-white/5" />
 
-                    {/* Stream Actions: Recording & Reactions */}
+                    {/* Stream Actions: Reactions (recording is now in the main control dock) */}
                     <div className="flex items-center gap-2">
-                      {/* Recording toggle — visible only when live */}
-                      {isLive && (
-                        <button
-                          type="button"
-                          onClick={() => currentSession && void toggleRecording(currentSession.id)}
-                          disabled={isTogglingRecording}
-                          className={cn(
-                            'flex flex-1 items-center justify-center gap-2 rounded-xl border border-[var(--input-border-color)] bg-surface-2 py-2 text-xs font-semibold text-foreground transition-all hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50',
-                            isRecording && 'border-red-400/50 bg-red-500/10 text-red-500 hover:bg-red-500/20',
-                          )}
-                        >
-                          <span className={cn('h-2 w-2 rounded-full', isRecording ? 'bg-red-500 animate-pulse' : 'border border-current')} />
-                          {isRecording ? t('recording.stop') : t('recording.start')}
-                        </button>
-                      )}
-
                       {/* Reactions Button */}
                       <button
                         type="button"

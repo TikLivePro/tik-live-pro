@@ -428,7 +428,7 @@ Callback URL invoked by the social platform after the user completes the OAuth c
     async (request, reply) => {
       const { platform } = request.params;
       const { code, state, error } = request.query;
-      const failureUrl = `${deps.frontendUrl}/settings?error=connect_failed`;
+      const failureUrl = `${deps.frontendUrl}/accounts?error=connect_failed`;
 
       if (error || !code || !state) {
         return reply.redirect(failureUrl);
@@ -516,7 +516,7 @@ Callback URL invoked by the social platform after the user completes the OAuth c
           displayName,
         });
 
-        return reply.redirect(`${deps.frontendUrl}/settings?connected=${platform}`);
+        return reply.redirect(`${deps.frontendUrl}/accounts?connected=${platform}`);
       } catch (err) {
         deps.logger.error({ err, platform }, 'OAuth callback processing failed');
         return reply.redirect(failureUrl);

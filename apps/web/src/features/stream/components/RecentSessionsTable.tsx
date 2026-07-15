@@ -9,6 +9,7 @@ import { StatusBadge } from './StatusBadge';
 import { SessionThumbnail } from './SessionThumbnail';
 import { DestinationIcon } from './DestinationIcon';
 import { ReplayLink } from './ReplayLink';
+import { VideoTileSkeleton } from '@/components/skeletons/VideoTileSkeleton';
 
 const MAX_ROWS = 5;
 
@@ -38,9 +39,11 @@ export function RecentSessionsTable({ onViewAll }: Props): React.ReactElement {
       </div>
 
       {loading ? (
-        <div className="space-y-2 p-5">
+        <div className="divide-y divide-border/70">
           {[1, 2, 3].map((i) => (
-            <div key={i} className="skeleton h-12 rounded-lg" />
+            <div key={i} className="px-5 py-3">
+              <VideoTileSkeleton />
+            </div>
           ))}
         </div>
       ) : rows.length === 0 ? (

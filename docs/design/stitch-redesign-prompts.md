@@ -1,6 +1,6 @@
 # TikLivePro — Google Stitch Full Redesign Prompts
 
-> Last updated: 2026-07-06
+> Last updated: 2026-07-08
 
 This file contains ready-to-paste prompts for [Google Stitch](https://stitch.withgoogle.com) to completely redesign the TikLivePro web app. Use the **Master Design Brief** as the first prompt of your Stitch project (it sets the design system), then generate each screen with its dedicated prompt. Each screen prompt is self-contained, so it also works standalone.
 
@@ -130,9 +130,21 @@ icon, "We couldn't connect your account", explanation line, and two buttons:
 Design the main dashboard of TikLivePro, a live-streaming control center
 (dark theme, red→orange gradient brand).
 
-LAYOUT: top app bar + content grid.
-- App bar: logo left; center: nothing; right: notification bell with unread dot,
-  theme toggle, user avatar menu.
+LAYOUT: persistent left nav rail + top app bar + content grid.
+- Left nav rail ("Creator Studio"): logo, then Overview / Streaming / Analytics
+  (soon) / Accounts / Settings, an "Upgrade Pro" gradient CTA, Help and Logout
+  at the bottom. Collapsible to icon-only on desktop; on tablet/mobile it
+  becomes an off-canvas drawer opened by a hamburger button in the app bar,
+  sliding in over a dimmed backdrop.
+  - The "Streaming" item normally opens the live control room for the
+    creator's in-progress session. If no stream is currently live, tapping it
+    instead opens a small centered modal: broadcast icon, "No stream is live",
+    "You don't have an active broadcast right now. Start one from your
+    dashboard to open the control room.", a ghost "Close" button and a
+    gradient "Go to dashboard" button. The drawer stays open behind the modal
+    on mobile.
+- App bar: hamburger/sidebar-toggle + logo left; center: nothing; right:
+  notification bell with unread dot, theme toggle, user avatar menu.
 
 CONTENT (desktop, 12-col grid):
 
@@ -184,10 +196,15 @@ DESKTOP LAYOUT (3 zones):
 
 2. LEFT/CENTER (≈65%): large 16:9 video monitor tile of the outgoing stream with
    a thin gradient border, overlay chips top-left (LIVE + timer) and top-right
-   (bitrate/health "6.2 Mbps · Excellent"). Under it a stats strip of 4 compact
-   tiles: Current viewers, Peak viewers, New followers, Reactions — each with a
-   tiny sparkline. Below, a collapsible "Stream settings" row: resolution,
-   ingest source, copy stream key.
+   (bitrate/health "6.2 Mbps · Excellent", plus a small circular glass
+   "Fullscreen" icon button — expand-arrows glyph). Clicking it requests true
+   browser fullscreen on the monitor tile only (not the whole page): the video,
+   its PiP webcam inset, floating reactions and the LIVE/health chips all stay
+   visible edge-to-edge, while the fullscreen button glyph swaps to a
+   "collapse" icon to exit (also exits on Esc). Under the monitor a stats strip
+   of 4 compact tiles: Current viewers, Peak viewers, New followers, Reactions
+   — each with a tiny sparkline. Below, a collapsible "Stream settings" row:
+   resolution, ingest source, copy stream key.
 
 3. RIGHT PANEL (≈35%): unified live comment feed, the hero feature:
    - Header "Live comments" with filter chips: All / TikTok / Facebook and a
@@ -239,7 +256,9 @@ chat takes the remaining height, reaction bar floats above the chat input.
 ## 8. Settings — `/settings`
 
 ```
-Design the settings area of TikLivePro (dark theme, red→orange gradient brand).
+Design the general settings area of TikLivePro (dark theme, red→orange gradient
+brand). Connected social accounts are NOT part of this screen — they live on a
+dedicated "Connected accounts" page.
 
 LAYOUT: left vertical section nav (icons + labels) with the active item highlighted
 by a gradient accent bar; content area on the right. Sections:
@@ -248,27 +267,20 @@ by a gradient accent bar; content area on the right. Sections:
    "verified" check), username, bio textarea, "Save changes" gradient button
    (disabled until dirty).
 
-2. CONNECTED ACCOUNTS: cards per platform — TikTok and Facebook. Each card:
-   platform logo, connected @handle + profile picture, status pill
-   (Connected / Expired), granted permissions summary, "Disconnect" danger ghost
-   button. A "+ Connect a platform" card with dashed border. Show the freemium
-   limit state: a locked third slot with a padlock and "Upgrade to Pro to connect
-   more accounts" gradient link.
-
-3. SUBSCRIPTION & BILLING: current plan card ("Pro — $19/mo" with gradient border,
+2. SUBSCRIPTION & BILLING: current plan card ("Pro — $19/mo" with gradient border,
    renewal date, "Manage plan" and "Cancel" links), usage meters (connected
    accounts 2/2, streamed hours), payment method row (Visa •••• 4242 with "Edit"
    opening a card modal), invoice history table (date, amount, status, download
    icon).
 
-4. NOTIFICATIONS: grouped toggle switches — Email (stream summary, billing
+3. NOTIFICATIONS: grouped toggle switches — Email (stream summary, billing
    receipts, product news) and Push (stream went live, comment spikes, follower
    milestones). Toggles use the brand gradient when on.
 
-5. APPEARANCE: theme selector as 3 visual preview cards (Dark / Light / System)
+4. APPEARANCE: theme selector as 3 visual preview cards (Dark / Light / System)
    with the active one gradient-bordered; language select EN/FR.
 
-6. SECURITY: change-password form, active sessions list (device icon, browser,
+5. SECURITY: change-password form, active sessions list (device icon, browser,
    location, "current" badge, "Revoke" link), and a red-tinted DANGER ZONE card:
    "Delete my account" with an explanation and a destructive confirm modal variant
    (type-to-confirm input).
@@ -278,7 +290,37 @@ Mobile: the section nav becomes horizontal scrollable pills under the page title
 
 ---
 
-## 9. Legal — Privacy `/legal/privacy` & Terms `/legal/terms`
+## 9. Connected Accounts — `/accounts`
+
+```
+Design the connected-accounts management page of TikLivePro (dark theme,
+red→orange gradient brand) — a standalone page, separate from general settings,
+reached from the sidebar item "Accounts".
+
+- Page header: title "Connected accounts", one-line subtitle "Connect, monitor
+  and disconnect the social accounts you broadcast to", and a right-aligned
+  usage chip "1 of 2 accounts used" (free plan).
+- Content: a responsive 2-column card grid (1 column on mobile) of connected
+  platform accounts — TikTok and Facebook. Each card: platform logo, connected
+  @handle + profile picture, status pill (Connected green / Expired amber with
+  "Reconnect" link), granted permissions summary line, kebab menu, and a
+  "Disconnect" danger ghost button.
+- A "+ Connect a platform" card with dashed border that opens the connect-account
+  modal (platform choice grid).
+- Freemium limit state: when the free-plan limit is reached the dashed card is
+  replaced by a locked slot with a padlock icon, "Account slot locked" and an
+  "Upgrade to Pro to connect more accounts" gradient link.
+- States to include: loading skeleton cards, an empty state ("No connected
+  accounts" with a big gradient "Connect your first account" CTA), and a success
+  toast variant "TikTok account connected".
+
+Mobile: single-column stacked cards, page header keeps the usage chip below the
+subtitle.
+```
+
+---
+
+## 10. Legal — Privacy `/legal/privacy` & Terms `/legal/terms`
 
 ```
 Design a clean legal document template page for TikLivePro used for both the
@@ -298,7 +340,7 @@ Mobile: TOC collapses into a "Contents" dropdown above the prose.
 
 ---
 
-## 10. Data Deletion — `/data-deletion`
+## 11. Data Deletion — `/data-deletion`
 
 ```
 Design a "Data deletion request" page for TikLivePro (dark theme, red→orange
@@ -318,7 +360,7 @@ gradient brand) — required for Facebook/TikTok platform compliance.
 
 ---
 
-## 11. Shared States (generate once, reuse)
+## 12. Shared States (generate once, reuse)
 
 ```
 Design a set of shared UI states for TikLivePro (dark theme, red→orange gradient):
@@ -343,8 +385,8 @@ Design a set of shared UI states for TikLivePro (dark theme, red→orange gradie
 
 1. New Stitch project → paste the **Master Design Brief**.
 2. Generate screens in this order (later screens reuse earlier components):
-   Landing → Dashboard → Live Streamer View → Watch → Settings → Login →
-   Callback → Legal → Data deletion → Shared states.
+   Landing → Dashboard → Live Streamer View → Watch → Settings → Connected
+   Accounts → Login → Callback → Legal → Data deletion → Shared states.
 3. For each screen: generate desktop, then prompt *"Adapt this exact screen for
    a 375px mobile viewport, keeping the same components and hierarchy."*
 4. Iterate with targeted prompts (e.g. *"make the comment feed denser"*,

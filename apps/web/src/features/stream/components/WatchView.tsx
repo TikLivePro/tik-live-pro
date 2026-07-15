@@ -16,10 +16,14 @@ import { EmojiPickerPopover } from '@/features/comments/components/EmojiPickerPo
 import { GifPickerPopover } from '@/features/comments/components/GifPickerPopover';
 import { CommentReactionPicker } from '@/features/comments/components/CommentReactionPicker';
 import { ReplayTimeline } from '@/features/comments/components/ReplayTimeline';
+import { PLATFORM_IDENTITY_COLORS, getPlatformIdentityColor } from '@/lib/platform.consts';
 import { useElapsedTime } from '../hooks/useElapsedTime';
 import { LiveReactionFloat } from './LiveReactionFloat';
 import { ViewersPanel } from './ViewersPanel';
 import { ViewerVideoControls } from './ViewerVideoControls';
+import { WatchTopBar } from './WatchTopBar';
+import { WatchStatTiles } from './WatchStatTiles';
+import { WatchQuickReactions } from './WatchQuickReactions';
 import type { ViewerVideoState } from './ViewerVideoControls';
 import type { Comment } from '@tik-live-pro/shared-types';
 
@@ -30,8 +34,6 @@ const WEBRTC_BASE =
 const POLL_INTERVAL_STARTING_MS = 3000;
 const POLL_INTERVAL_LIVE_MS = 15000;
 const POLL_INTERVAL_MAX_MS = 30000;
-const REACTION_EMOJIS = ['❤️', '🔥', '😍', '👏', '💯', '🎉'];
-const MAX_FLOATING = 5;
 const MAX_REACTIONS = 20;
 
 const GUEST_ADJECTIVES = ['Swift', 'Lucky', 'Bold', 'Brave', 'Cool', 'Quick', 'Wild', 'Clever', 'Sharp', 'Bright'];
@@ -311,82 +313,12 @@ function WhepPlayer({
   );
 }
 
-// ── Floating comment bubble ───────────────────────────────────
+// ── Chat row platform dots ────────────────────────────────────
 
 const PLATFORM_DOT: Record<string, string> = {
   tiktok: 'bg-[#ff0050]',
   facebook: 'bg-[#1877f2]',
 };
-
-const IS_IMAGE_URL = (url: string) =>
-  url.startsWith('data:image') ||
-  url.includes('giphy.com') ||
-  /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(url);
-
-function CommentBubble({
-  comment,
-  animate,
-  onClick,
-}: {
-  comment: Comment;
-  animate?: boolean;
-  onClick?: () => void;
-}): React.ReactElement {
-  const dot = PLATFORM_DOT[comment.platform] ?? 'bg-white/40';
-  const mediaUrls = comment.mediaUrls ?? [];
-  const imageUrl = mediaUrls.find(IS_IMAGE_URL);
-  const fileCount = mediaUrls.filter((u) => !IS_IMAGE_URL(u)).length;
-
-  return (
-    <div
-      onClick={onClick}
-      className={cn(
-        'flex max-w-[230px] items-start gap-2 rounded-2xl border border-white/15 bg-black/60 px-3 py-2 shadow-lg backdrop-blur-lg',
-        animate && 'animate-float-comment',
-        onClick && 'cursor-pointer hover:bg-black/75 transition-colors',
-      )}
-    >
-      <div className="relative mt-0.5 shrink-0">
-        <div className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-white/20 text-[9px] font-bold text-white">
-          {getInitials(comment.authorName)}
-        </div>
-        <span
-          className={cn(
-            'absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-black/50',
-            dot,
-          )}
-        />
-      </div>
-      <div className="min-w-0">
-        <p className="truncate text-[11px] font-semibold text-white/80">
-          {comment.authorName}
-        </p>
-        {comment.replyToCommentId && (
-          <p className="text-[9px] text-white/40 leading-tight mb-0.5">↩ reply</p>
-        )}
-        {comment.content && (
-          <p className="line-clamp-2 break-words text-xs leading-snug text-white">
-            {comment.content}
-          </p>
-        )}
-        {imageUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={imageUrl}
-            alt="attachment"
-            className="mt-1 rounded-lg max-h-20 max-w-[120px] object-cover"
-            loading="lazy"
-          />
-        )}
-        {fileCount > 0 && (
-          <p className="text-[9px] text-white/50 mt-0.5">
-            📎 {fileCount} file{fileCount > 1 ? 's' : ''}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ── Auth gate modal ───────────────────────────────────────────
 
@@ -394,7 +326,7 @@ function AuthGateModal({ onClose, onSignIn }: { onClose: () => void; onSignIn: (
   const t = useTranslations('watch');
   return (
     <div
-      className="absolute inset-0 z-50 flex items-end justify-center bg-black/40 pb-16 backdrop-blur-sm sm:items-center sm:pb-0"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 pb-16 backdrop-blur-sm sm:items-center sm:pb-0"
       onClick={onClose}
     >
       <div
@@ -453,7 +385,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const tStream = useTranslations('stream');
 
   const pathname = usePathname();
-  const { isAuthenticated, accessToken, displayName, email } = useAuthStore();
+  const { isAuthenticated, displayName, email } = useAuthStore();
 
   // Stable guest name for unauthenticated viewers, persisted per browser session
   const [guestName] = useState(() => getOrCreateGuestName());
@@ -481,14 +413,12 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   }, [session.platformHlsUrl, whepFailed, forceLowBandwidth, whepKey]);
 
   // Panel visibility
-  const [commentsOpen, setCommentsOpen] = useState(false);
   const [viewersOpen, setViewersOpen] = useState(false);
   const [authGateOpen, setAuthGateOpen] = useState(false);
   const [authLoginOpen, setAuthLoginOpen] = useState(false);
 
   // Interactions
-  const [localLiked, setLocalLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(0);
+  const [isFollowing, setIsFollowing] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
 
   // Comments local state (independent of the sharer's stream store)
@@ -511,12 +441,9 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const commentListRef = useRef<HTMLDivElement>(null);
   const commentInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const mountedAtRef = useRef(Date.now());
   const socketRef = useRef<Socket | null>(null);
-  const pendingScrollIdRef = useRef<string | null>(null);
+  const playerContainerRef = useRef<HTMLDivElement>(null);
 
-  const [unreadCount, setUnreadCount] = useState(0);
-  const prevCommentLenRef = useRef(0);
   const [videoState, setVideoState] = useState<ViewerVideoState | null>(null);
 
   // Volume and controls visibility
@@ -524,21 +451,6 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const [isMuted, setIsMuted] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [floatingComments, setFloatingComments] = useState<Array<{ comment: Comment; key: string }>>([]);
-  const floatingRemoveTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-
-  useEffect(() => {
-    const curr = comments.length;
-    const prev = prevCommentLenRef.current;
-    prevCommentLenRef.current = curr;
-    if (commentsOpen) {
-      setUnreadCount(0);
-      return;
-    }
-    if (curr > prev) {
-      setUnreadCount((n) => n + curr - prev);
-    }
-  }, [comments, commentsOpen]);
 
   const isLive = session.status === 'live';
   const isPaused = session.status === 'paused';
@@ -654,13 +566,6 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
         if (prev.some((c) => c.id === comment.id)) return prev;
         return [comment, ...prev].slice(0, 100);
       });
-      const key = crypto.randomUUID();
-      setFloatingComments((prev) => [...prev, { comment, key }].slice(-MAX_FLOATING));
-      const timer = setTimeout(() => {
-        setFloatingComments((prev) => prev.filter((f) => f.key !== key));
-        floatingRemoveTimersRef.current.delete(key);
-      }, 5200);
-      floatingRemoveTimersRef.current.set(key, timer);
     });
 
     socket.on('reaction', (data: { emoji: string }) => {
@@ -684,8 +589,6 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
       setMyVideoControlAllowed(false);
       setSocketViewerCount(0);
       setPublicViewerNames([]);
-      floatingRemoveTimersRef.current.forEach(clearTimeout);
-      floatingRemoveTimersRef.current.clear();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id, isLive]);
@@ -704,35 +607,45 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     setLiveReactions((prev) => prev.filter((r) => r.id !== id));
   }, []);
 
-  const handleLike = useCallback(() => {
+  // Quick reaction — one socket emit per tap; server-side per-socket +
+  // per-session rate limits stay authoritative.
+  const handleQuickReaction = useCallback((emoji: string) => {
     if (!isAuthenticated) {
       setAuthGateOpen(true);
       return;
     }
-    const wasLiked = localLiked;
-    setLocalLiked(!wasLiked);
-    setLikeCount((prev) => prev + (wasLiked ? -1 : 1));
-    if (!wasLiked) {
-      const emoji = REACTION_EMOJIS[Math.floor(Math.random() * REACTION_EMOJIS.length)] ?? '❤️';
-      // Show local animation immediately; broadcast to all other viewers via socket
-      setLiveReactions((prev) =>
-        [
-          ...prev,
-          { id: crypto.randomUUID(), emoji, left: Math.floor(Math.random() * 36) },
-        ].slice(-MAX_REACTIONS),
-      );
-      socketRef.current?.emit('emit_reaction', { emoji });
-    }
-  }, [isAuthenticated, localLiked]);
+    // Show local animation immediately; broadcast to all other viewers via socket
+    setLiveReactions((prev) =>
+      [
+        ...prev,
+        { id: crypto.randomUUID(), emoji, left: Math.floor(Math.random() * 36) },
+      ].slice(-MAX_REACTIONS),
+    );
+    socketRef.current?.emit('emit_reaction', { emoji });
+  }, [isAuthenticated]);
 
-  const handleCommentToggle = useCallback(() => {
-    setCommentsOpen((prev) => !prev);
-    setViewersOpen(false);
+  // Follow is client-local until a follow API exists — the gradient CTA
+  // matches the mockup and gates unauthenticated viewers to sign-in.
+  const handleFollow = useCallback(() => {
+    if (!isAuthenticated) {
+      setAuthGateOpen(true);
+      return;
+    }
+    setIsFollowing((f) => !f);
+  }, [isAuthenticated]);
+
+  const handleFullscreen = useCallback(() => {
+    const el = playerContainerRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else {
+      void el.requestFullscreen();
+    }
   }, []);
 
   const handleViewersToggle = useCallback(() => {
     setViewersOpen((prev) => !prev);
-    setCommentsOpen(false);
   }, []);
 
   const handleShare = useCallback(async () => {
@@ -764,13 +677,13 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     scheduleHide();
   }, [scheduleHide]);
 
-  // Keep controls visible while a panel is open
+  // Keep controls visible while the viewers panel is open
   useEffect(() => {
-    if (commentsOpen || viewersOpen) {
+    if (viewersOpen) {
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
       setControlsVisible(true);
     }
-  }, [commentsOpen, viewersOpen]);
+  }, [viewersOpen]);
 
   function handleControlAreaMouseMove(e: ReactMouseEvent<HTMLDivElement>): void {
     if (!isLive) return;
@@ -954,23 +867,11 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [videoState, sendVideoControl, showControls]);
 
-  // Auto-scroll comment list to top when new comment arrives
+  // Auto-scroll chat to the newest message (list renders oldest → newest)
   useEffect(() => {
-    if (commentListRef.current) {
-      commentListRef.current.scrollTop = 0;
-    }
+    const el = commentListRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [comments.length]);
-
-  // Scroll to a specific comment after the panel finishes opening
-  useEffect(() => {
-    if (!commentsOpen || !pendingScrollIdRef.current) return;
-    const id = pendingScrollIdRef.current;
-    const timer = setTimeout(() => {
-      document.getElementById(`comment-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      pendingScrollIdRef.current = null;
-    }, 520);
-    return () => clearTimeout(timer);
-  }, [commentsOpen]);
 
 
   const anyPanelOpen = viewersOpen;
@@ -1007,497 +908,288 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const hasVideo = (isLive || isPaused) && !!session.platformHlsUrl;
 
   return (
-    <div className="fixed inset-0 flex overflow-hidden bg-black">
+    <div className="dark flex min-h-svh flex-col bg-surface-0 text-foreground lg:h-svh">
+      <WatchTopBar />
 
-      {/* ── Main video area ── */}
-      <div
-        className="relative flex-1 min-w-0"
-        onMouseMove={handleControlAreaMouseMove}
-        onMouseLeave={handleControlAreaMouseLeave}
-        onClick={handleVideoAreaClick}
-      >
-      {/* ── Video background ── */}
-      {hasVideo && renderVideo()}
-      {!hasVideo && <div className="absolute inset-0 bg-[#0a0b0f]" />}
-
-      {/* ── Video loading overlay ── */}
-      {hasVideo && isVideoLoading && isLive && (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/15 bg-black/70 px-6 py-5 backdrop-blur-xl">
-            <svg
-              className="h-6 w-6 animate-spin text-white/70"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              aria-hidden="true"
-            >
-              <path d="M21 12a9 9 0 11-6.219-8.56" />
-            </svg>
-            <p className="text-xs text-white/50">{t('loading')}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Ambient glow when live */}
-      {isLive && (
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(ellipse 80% 40% at 50% 0%, hsl(4 82% 55% / 0.12) 0%, transparent 70%)',
-          }}
-        />
-      )}
-
-      {/* Gradients */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/70 to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-52 bg-gradient-to-t from-black/80 to-transparent" />
-
-      {/* ── Top bar ── */}
-      <header
-        className="absolute inset-x-0 top-0 z-20 flex items-center gap-3"
-        style={{
-          paddingTop: 'max(16px, env(safe-area-inset-top, 16px))',
-          paddingLeft: 'max(16px, env(safe-area-inset-left, 16px))',
-          paddingRight: 'max(16px, env(safe-area-inset-right, 16px))',
-        }}
-      >
-        {/* Logo */}
-        <Link
-          href="/auth/login"
-          className="flex shrink-0 items-center gap-1.5 text-white/80 transition-colors hover:text-white"
-        >
-          <img src="/logo.png" alt="TikLivePro" className="h-6 w-6 object-contain" />
-          <span className="hidden text-sm font-bold tracking-tight sm:inline">TikLivePro</span>
-        </Link>
-
-        {/* Title */}
-        <h1 className="min-w-0 flex-1 truncate text-sm font-semibold text-white/90 sm:text-base">
-          {session.title}
-        </h1>
-
-        {/* Status + viewer count */}
-        <div className="flex shrink-0 items-center gap-2">
-          {isLive && (
-            <span className="flex items-center gap-1.5 rounded-full border border-red-300/30 bg-red-600/90 px-2.5 py-1 text-xs font-bold text-white backdrop-blur-xl">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
-              LIVE
-            </span>
-          )}
-          {isPaused && (
-            <span className="rounded-full border border-yellow-300/30 bg-yellow-600/80 px-2.5 py-1 text-xs font-bold text-white backdrop-blur-xl">
-              {tStream('status.paused')}
-            </span>
-          )}
-          {isStarting && (
-            <span className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 backdrop-blur-xl">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/60" />
-              {tStream('status.starting')}
-            </span>
-          )}
-
-          {/* Viewer count — clickable if viewersVisible */}
-          <button
-            type="button"
-            onClick={() => session.viewersVisible && handleViewersToggle()}
-            className={cn(
-              'flex items-center gap-1.5 rounded-full border border-white/20 bg-black/40 px-2.5 py-1 text-xs font-semibold text-white/70 backdrop-blur-xl transition-colors',
-              session.viewersVisible
-                ? 'cursor-pointer hover:bg-white/10 hover:text-white'
-                : 'cursor-default',
-            )}
-          >
-            <svg
-              className="h-3.5 w-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
-            </svg>
-            {socketViewerCount}
-          </button>
-
-          {/* Quality picker — always shown when live */}
-          {isLive && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setQualityPickerOpen((o) => !o)}
-                aria-label={t('quality.open')}
-                className={cn(
-                  'flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold backdrop-blur-xl transition-colors',
-                  qualityPickerOpen
-                    ? 'border-brand/50 bg-brand/40 text-white'
-                    : 'border-white/20 bg-black/40 text-white/70 hover:bg-white/10 hover:text-white',
-                )}
-              >
-                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <rect x="2" y="3" width="20" height="14" rx="2" />
-                  <line x1="8" y1="21" x2="16" y2="21" />
-                  <line x1="12" y1="17" x2="12" y2="21" />
-                </svg>
-                {!forceLowBandwidth && !whepFailed
-                  ? t('quality.hd')
-                  : hlsQualityLevel === -1
-                    ? t('quality.auto')
-                    : `${hlsLevels.find((l) => l.index === hlsQualityLevel)?.height ?? '?'}p`}
-              </button>
-
-              {qualityPickerOpen && (
-                <div className="absolute right-0 top-full mt-1.5 z-30 min-w-[140px] rounded-xl border border-white/15 bg-black/90 p-1 shadow-2xl backdrop-blur-2xl">
-                  {/* HD / WebRTC option */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setForceLowBandwidth(false);
-                      setWhepFailed(false);
-                      setWhepKey((k) => k + 1);
-                      setQualityPickerOpen(false);
-                    }}
-                    className={cn(
-                      'flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
-                      !forceLowBandwidth && !whepFailed
-                        ? 'bg-brand/30 text-brand'
-                        : 'text-white/70 hover:bg-white/10 hover:text-white',
-                    )}
-                  >
-                    {t('quality.hd')}
-                    {!forceLowBandwidth && !whepFailed && (
-                      <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    )}
-                  </button>
-
-                  <div className="my-1 h-px bg-white/10" />
-
-                  {/* Auto HLS — saves bandwidth */}
-                  <button
-                    type="button"
-                    onClick={() => { setForceLowBandwidth(true); setHlsQualityLevel(-1); setQualityPickerOpen(false); }}
-                    className={cn(
-                      'flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
-                      (forceLowBandwidth || whepFailed) && hlsQualityLevel === -1
-                        ? 'bg-brand/30 text-brand'
-                        : 'text-white/70 hover:bg-white/10 hover:text-white',
-                    )}
-                  >
-                    <span className="flex flex-col items-start gap-0.5">
-                      {t('quality.auto')}
-                      <span className="text-[9px] font-normal opacity-60">{t('quality.saveData')}</span>
-                    </span>
-                    {(forceLowBandwidth || whepFailed) && hlsQualityLevel === -1 && (
-                      <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    )}
-                  </button>
-
-                  {/* Specific HLS levels, sorted highest first */}
-                  {hlsLevels.length > 0 && [...hlsLevels].sort((a, b) => b.height - a.height).map((level) => (
-                    <button
-                      key={level.index}
-                      type="button"
-                      onClick={() => { setForceLowBandwidth(true); setHlsQualityLevel(level.index); setQualityPickerOpen(false); }}
-                      className={cn(
-                        'flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
-                        (forceLowBandwidth || whepFailed) && hlsQualityLevel === level.index
-                          ? 'bg-brand/30 text-brand'
-                          : 'text-white/70 hover:bg-white/10 hover:text-white',
-                      )}
-                    >
-                      {level.height}p
-                      {(forceLowBandwidth || whepFailed) && hlsQualityLevel === level.index && (
-                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </header>
-
-      {/* ── Non-live centered state ── */}
-      {!isLive && !isPaused && (
-        <div
-          className={cn(
-            'absolute inset-0 z-10 flex flex-col items-center gap-5 px-6 text-center',
-            isEnded ? 'overflow-y-auto py-16 sm:py-20' : 'justify-center',
-          )}
-        >
+      <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
+        {/* ── Main column: player + stream info ── */}
+        <section className="flex flex-col gap-4 p-4 sm:p-6 lg:min-w-0 lg:flex-1 lg:overflow-y-auto">
+          {/* ── Player shell — sticky on mobile so the video stays visible while chat scrolls ── */}
           <div
-            className={cn(
-              'flex h-20 w-20 items-center justify-center rounded-2xl border transition-all',
-              isEnded
-                ? 'border-white/10 bg-white/5 text-white/30'
-                : 'border-white/10 bg-white/5 text-white/40',
-            )}
+            ref={playerContainerRef}
+            className="sticky top-14 z-30 -mx-4 shrink-0 overflow-hidden bg-black shadow-2xl shadow-black/50 sm:-mx-6 lg:static lg:mx-0 lg:rounded-card lg:border lg:border-[var(--card-border-color)]"
+            onMouseMove={handleControlAreaMouseMove}
+            onMouseLeave={handleControlAreaMouseLeave}
+            onClick={handleVideoAreaClick}
           >
-            {isStarting && (
-              <svg
-                className="h-7 w-7 animate-spin"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                <path d="M21 12a9 9 0 11-6.219-8.56" />
-              </svg>
-            )}
-            {isEnded && (
-              <svg
-                className="h-8 w-8"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-              </svg>
-            )}
-          </div>
+            <div className="relative aspect-video">
+              {hasVideo && renderVideo()}
+              {!hasVideo && <div className="absolute inset-0 bg-black" />}
 
-          <div className="space-y-1.5">
-            <h2 className="text-xl font-bold text-white sm:text-2xl">{session.title}</h2>
-            {isStarting && (
-              <p className="text-sm text-white/50">{t('startingDesc')}</p>
-            )}
-            {isEnded && (
-              <p className="text-sm text-white/50">{t('endedDesc')}</p>
-            )}
-          </div>
-
-          {/* Platform badges */}
-          {session.platforms.length > 0 && (
-            <div className="flex items-center gap-2">
-              {session.platforms.includes('tiktok') && (
-                <span className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-white/60">
-                  <TikTokIcon />
-                  TikTok
-                </span>
-              )}
-              {session.platforms.includes('facebook') && (
-                <span className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-white/60">
-                  <FacebookIcon />
-                  Facebook
-                </span>
-              )}
-            </div>
-          )}
-
-          <Link
-            href="/auth/login"
-            className="mt-1 inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-semibold text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-          >
-            <img src="/logo.png" alt="" className="h-4 w-4 object-contain" />
-            {t('goToApp')}
-          </Link>
-
-          {/* Chat replay — full comment + reaction history with exact send times */}
-          {isEnded && <ReplayTimeline sessionId={session.id} />}
-        </div>
-      )}
-
-      {/* ── Paused overlay ── */}
-      {isPaused && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center">
-          <span className="rounded-2xl border border-yellow-300/30 bg-black/60 px-5 py-3 text-sm font-bold text-yellow-200 backdrop-blur-xl">
-            {tStream('status.paused')}
-          </span>
-        </div>
-      )}
-
-      {/* ── Unmute CTA — pops above the combined pill when autoplay is muted ── */}
-      {isLive && hasVideo && isMuted && !anyPanelOpen && !controlsVisible && (
-        <button
-          type="button"
-          onClick={() => { setIsMuted(false); showControls(); }}
-          className="absolute left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/25 bg-black/60 px-4 py-2.5 text-xs font-semibold text-white backdrop-blur-xl transition-all hover:bg-black/80 animate-pulse"
-          style={{ bottom: 'max(6rem, calc(env(safe-area-inset-bottom, 0px) + 5rem))' }}
-        >
-          <svg
-            className="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-            <line x1="23" y1="9" x2="17" y2="15" />
-            <line x1="17" y1="9" x2="23" y2="15" />
-          </svg>
-          {t('volume.unmute')}
-        </button>
-      )}
-
-      {/* ── Live interaction layer ── */}
-      {isLive && (
-        <>
-          {/* Combined video + volume + share controls pill — centred, slides left to hide */}
-          {videoState && !anyPanelOpen && (
-            <ViewerVideoControls
-              videoState={{ ...videoState, allowViewerControl: myVideoControlAllowed }}
-              volume={volume}
-              isMuted={isMuted}
-              visible={controlsVisible}
-              onPlay={() => sendVideoControl('play')}
-              onPause={() => sendVideoControl('pause')}
-              onSeek={(time) => sendVideoControl('seek', time)}
-              onVolumeChange={handleVolumeChange}
-              onToggleMute={toggleMute}
-              onShare={() => { void handleShare(); showControls(); }}
-              shareCopied={shareCopied}
-            />
-          )}
-
-          {/* Standalone volume + share pill when no video is shared */}
-          {!videoState && !anyPanelOpen && (
-            <div
-              className={cn(
-                'absolute z-20 w-[min(320px,calc(100%-5rem))] sm:w-[min(360px,90vw)]',
-                'left-1/2 -translate-x-1/2',
-                'transition-opacity duration-300 ease-out',
-                controlsVisible
-                  ? 'opacity-100 pointer-events-auto'
-                  : 'opacity-0 pointer-events-none',
-              )}
-              style={{ bottom: 'max(2rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))' }}
-            >
-              <div className="flex items-center gap-3 rounded-2xl border border-white/15 bg-black/72 px-4 py-3 shadow-2xl shadow-black/50 backdrop-blur-2xl">
-                {/* Mute toggle */}
-                <button
-                  type="button"
-                  onClick={toggleMute}
-                  aria-label={isMuted ? t('volume.unmute') : t('volume.mute')}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/60 transition-all duration-150 hover:bg-white/10 hover:text-white active:scale-90"
-                >
-                  {isMuted || volume === 0 ? (
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                      <line x1="23" y1="9" x2="17" y2="15" />
-                      <line x1="17" y1="9" x2="23" y2="15" />
-                    </svg>
-                  ) : (
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-                      <path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07" />
-                    </svg>
-                  )}
-                </button>
-
-                {/* Volume slider */}
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.02}
-                  value={isMuted ? 0 : volume}
-                  onChange={(e) => handleVolumeChange(Number(e.target.value))}
-                  onPointerDown={() => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }}
-                  onPointerUp={scheduleHide}
-                  aria-label={t('volume.label')}
-                  className="h-1 flex-1 cursor-pointer accent-white"
-                />
-
-                <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-white/40">
-                  {Math.round((isMuted ? 0 : volume) * 100)}%
-                </span>
-
-                <div className="h-4 w-px shrink-0 rounded-full bg-white/15" />
-
-                {/* Share */}
-                <button
-                  type="button"
-                  onClick={() => { void handleShare(); showControls(); }}
-                  aria-label={t('share')}
-                  className={cn(
-                    'flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[10px] font-semibold transition-all duration-200 active:scale-95',
-                    shareCopied
-                      ? 'border-green-400/30 bg-green-900/40 text-green-300'
-                      : 'border-white/18 bg-white/8 text-white/75 hover:border-white/30 hover:bg-white/15 hover:text-white',
-                  )}
-                >
-                  {shareCopied ? (
-                    <svg className="h-3 w-3 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  ) : (
-                    <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                    </svg>
-                  )}
-                  {t('share')}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Floating comments — auto-disappear via animate-float-comment */}
-          {!commentsOpen && !anyPanelOpen && (
-            <div
-              className="absolute z-20 flex flex-col-reverse gap-1.5"
-              style={{
-                bottom: 'max(9rem, calc(env(safe-area-inset-bottom, 0px) + 8rem))',
-                left: 'max(0.75rem, env(safe-area-inset-left, 0.75rem))',
-              }}
-            >
-              {floatingComments.map(({ comment, key }) => (
-                <CommentBubble
-                  key={key}
-                  comment={comment}
-                  animate
-                  onClick={() => {
-                    if (commentsOpen) {
-                      document.getElementById(`comment-${comment.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    } else {
-                      pendingScrollIdRef.current = comment.id;
-                      setCommentsOpen(true);
-                      setViewersOpen(false);
-                    }
+              {/* Ambient glow when live */}
+              {isLive && (
+                <div
+                  className="pointer-events-none absolute inset-0"
+                  style={{
+                    background:
+                      'radial-gradient(ellipse 80% 40% at 50% 0%, hsl(4 82% 55% / 0.12) 0%, transparent 70%)',
                   }}
                 />
-              ))}
-            </div>
-          )}
-
-          {/* ── Right action rail — hover/tap to show ── */}
-          {!anyPanelOpen && (
-            <div
-              className={cn(
-                'absolute z-20 flex flex-col items-center gap-2.5 transition-opacity duration-300 ease-out',
-                controlsVisible
-                  ? 'opacity-100 pointer-events-auto'
-                  : 'opacity-0 pointer-events-none',
               )}
-              style={{
-                bottom: 'max(8rem, calc(env(safe-area-inset-bottom, 0px) + 7rem))',
-                right: 'max(0.75rem, env(safe-area-inset-right, 0.75rem))',
-              }}
-            >
-              {/* Reaction floats */}
-              <div className="pointer-events-none relative h-28 w-12 overflow-visible sm:h-44">
+
+              {/* Legibility gradients behind the overlays */}
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/60 to-transparent" />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black/70 to-transparent" />
+
+              {/* ── Video loading overlay ── */}
+              {hasVideo && isVideoLoading && isLive && (
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-3 rounded-2xl border border-white/15 bg-black/70 px-6 py-5 backdrop-blur-xl">
+                    <svg
+                      className="h-6 w-6 animate-spin text-white/70"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M21 12a9 9 0 11-6.219-8.56" />
+                    </svg>
+                    <p className="text-xs text-white/50">{t('loading')}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Top-left overlay: LIVE pill + viewer chip ── */}
+              <div className="absolute left-3 top-3 z-20 flex items-center gap-2">
+                {isLive && (
+                  <span className="badge-live px-2.5 py-1 text-[11px]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                    LIVE
+                  </span>
+                )}
+                {isPaused && (
+                  <span className="rounded-full border border-yellow-300/30 bg-yellow-600/80 px-2.5 py-1 text-xs font-bold text-white backdrop-blur-xl">
+                    {tStream('status.paused')}
+                  </span>
+                )}
+                {isStarting && (
+                  <span className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 backdrop-blur-xl">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white/60" />
+                    {tStream('status.starting')}
+                  </span>
+                )}
+
+                {/* Viewer count — clickable if viewersVisible */}
+                <button
+                  type="button"
+                  onClick={() => session.viewersVisible && handleViewersToggle()}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-full border border-white/20 bg-black/40 px-2.5 py-1 text-xs font-semibold text-white/80 backdrop-blur-xl transition-colors',
+                    session.viewersVisible
+                      ? 'cursor-pointer hover:bg-white/10 hover:text-white'
+                      : 'cursor-default',
+                  )}
+                >
+                  <svg
+                    className="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
+                  </svg>
+                  {socketViewerCount.toLocaleString()}
+                </button>
+              </div>
+
+              {/* ── Top-right overlay: quality picker ── */}
+              {isLive && (
+                <div className="absolute right-3 top-3 z-20">
+                  <button
+                    type="button"
+                    onClick={() => setQualityPickerOpen((o) => !o)}
+                    aria-label={t('quality.open')}
+                    className={cn(
+                      'flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold backdrop-blur-xl transition-colors',
+                      qualityPickerOpen
+                        ? 'border-brand/50 bg-brand/40 text-white'
+                        : 'border-white/20 bg-black/40 text-white/70 hover:bg-white/10 hover:text-white',
+                    )}
+                  >
+                    <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="2" y="3" width="20" height="14" rx="2" />
+                      <line x1="8" y1="21" x2="16" y2="21" />
+                      <line x1="12" y1="17" x2="12" y2="21" />
+                    </svg>
+                    {!forceLowBandwidth && !whepFailed
+                      ? t('quality.hd')
+                      : hlsQualityLevel === -1
+                        ? t('quality.auto')
+                        : `${hlsLevels.find((l) => l.index === hlsQualityLevel)?.height ?? '?'}p`}
+                  </button>
+
+                  {qualityPickerOpen && (
+                    <div className="absolute right-0 top-full mt-1.5 z-30 min-w-[140px] rounded-xl border border-white/15 bg-black/90 p-1 shadow-2xl backdrop-blur-2xl">
+                      {/* HD / WebRTC option */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForceLowBandwidth(false);
+                          setWhepFailed(false);
+                          setWhepKey((k) => k + 1);
+                          setQualityPickerOpen(false);
+                        }}
+                        className={cn(
+                          'flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                          !forceLowBandwidth && !whepFailed
+                            ? 'bg-brand/30 text-brand'
+                            : 'text-white/70 hover:bg-white/10 hover:text-white',
+                        )}
+                      >
+                        {t('quality.hd')}
+                        {!forceLowBandwidth && !whepFailed && (
+                          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </button>
+
+                      <div className="my-1 h-px bg-white/10" />
+
+                      {/* Auto HLS — saves bandwidth */}
+                      <button
+                        type="button"
+                        onClick={() => { setForceLowBandwidth(true); setHlsQualityLevel(-1); setQualityPickerOpen(false); }}
+                        className={cn(
+                          'flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                          (forceLowBandwidth || whepFailed) && hlsQualityLevel === -1
+                            ? 'bg-brand/30 text-brand'
+                            : 'text-white/70 hover:bg-white/10 hover:text-white',
+                        )}
+                      >
+                        <span className="flex flex-col items-start gap-0.5">
+                          {t('quality.auto')}
+                          <span className="text-[9px] font-normal opacity-60">{t('quality.saveData')}</span>
+                        </span>
+                        {(forceLowBandwidth || whepFailed) && hlsQualityLevel === -1 && (
+                          <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </button>
+
+                      {/* Specific HLS levels, sorted highest first */}
+                      {hlsLevels.length > 0 && [...hlsLevels].sort((a, b) => b.height - a.height).map((level) => (
+                        <button
+                          key={level.index}
+                          type="button"
+                          onClick={() => { setForceLowBandwidth(true); setHlsQualityLevel(level.index); setQualityPickerOpen(false); }}
+                          className={cn(
+                            'flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                            (forceLowBandwidth || whepFailed) && hlsQualityLevel === level.index
+                              ? 'bg-brand/30 text-brand'
+                              : 'text-white/70 hover:bg-white/10 hover:text-white',
+                          )}
+                        >
+                          {level.height}p
+                          {(forceLowBandwidth || whepFailed) && hlsQualityLevel === level.index && (
+                            <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Non-live centered state inside the dimmed player ── */}
+              {!isLive && !isPaused && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/60 px-6 text-center backdrop-blur-sm">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/35">
+                    {isStarting ? (
+                      <svg
+                        className="h-6 w-6 animate-spin"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M21 12a9 9 0 11-6.219-8.56" />
+                      </svg>
+                    ) : (
+                      <svg
+                        className="h-7 w-7"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                      </svg>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-base font-bold text-white sm:text-lg">
+                      {isEnded ? t('endedTitle') : session.title}
+                    </p>
+                    <p className="text-sm text-white/50">
+                      {isEnded ? t('endedDesc') : t('startingDesc')}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Paused overlay ── */}
+              {isPaused && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center">
+                  <span className="rounded-2xl border border-yellow-300/30 bg-black/60 px-5 py-3 text-sm font-bold text-yellow-200 backdrop-blur-xl">
+                    {tStream('status.paused')}
+                  </span>
+                </div>
+              )}
+
+              {/* ── Unmute CTA — autoplay starts muted ── */}
+              {isLive && hasVideo && isMuted && !controlsVisible && (
+                <button
+                  type="button"
+                  onClick={() => { setIsMuted(false); showControls(); }}
+                  className="absolute bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/25 bg-black/60 px-4 py-2.5 text-xs font-semibold text-white backdrop-blur-xl transition-all hover:bg-black/80 animate-pulse"
+                >
+                  <svg
+                    className="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                    <line x1="23" y1="9" x2="17" y2="15" />
+                    <line x1="17" y1="9" x2="23" y2="15" />
+                  </svg>
+                  {t('volume.unmute')}
+                </button>
+              )}
+
+              {/* ── Floating emoji reactions rising over the video (fan-out caps kept) ── */}
+              <div className="pointer-events-none absolute bottom-4 right-4 z-20 h-32 w-12 overflow-visible sm:h-44">
                 {liveReactions.map((r) => (
                   <LiveReactionFloat
                     key={r.id}
@@ -1509,168 +1201,206 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                 ))}
               </div>
 
-              {/* Like */}
-              <button
-                type="button"
-                onClick={handleLike}
-                aria-label={t('like')}
-                className={cn(
-                  'group flex h-13 w-13 flex-col items-center justify-center gap-1 rounded-2xl border shadow-xl backdrop-blur-xl transition-all duration-200 active:scale-90',
-                  localLiked
-                    ? 'border-pink-400/50 bg-gradient-to-b from-pink-900/70 to-pink-950/70 text-pink-300 shadow-pink-900/30'
-                    : 'border-white/15 bg-gradient-to-b from-black/50 to-black/60 text-white shadow-black/30 hover:border-white/25 hover:from-white/10 hover:to-white/5',
-                )}
-              >
-                <svg
-                  className={cn('h-[22px] w-[22px] transition-transform duration-200', localLiked && 'scale-110')}
-                  viewBox="0 0 24 24"
-                  fill={localLiked ? 'currentColor' : 'none'}
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
-                </svg>
-                <span className={cn('text-[10px] font-bold leading-none tracking-tight', localLiked ? 'text-pink-300' : 'text-white/70')}>
-                  {likeCount > 0 ? likeCount.toLocaleString() : t('like')}
-                </span>
-              </button>
-
-              {/* Comment */}
-              <button
-                type="button"
-                onClick={handleCommentToggle}
-                aria-label={t('comment')}
-                className={cn(
-                  'relative flex h-13 w-13 flex-col items-center justify-center gap-1 rounded-2xl border shadow-xl backdrop-blur-xl transition-all duration-200 active:scale-90',
-                  commentsOpen
-                    ? 'border-brand/50 bg-gradient-to-b from-brand/60 to-brand/40 text-white shadow-brand/20'
-                    : 'border-white/15 bg-gradient-to-b from-black/50 to-black/60 text-white shadow-black/30 hover:border-white/25 hover:from-white/10 hover:to-white/5',
-                )}
-              >
-                <svg className="h-[22px] w-[22px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
-                </svg>
-                <span className="text-[10px] font-bold leading-none tracking-tight text-white/70">
-                  {comments.length > 0 ? comments.length.toLocaleString() : t('comment')}
-                </span>
-                {unreadCount > 0 && !commentsOpen && (
-                  <span className="absolute -top-1.5 -right-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[8px] font-bold leading-none text-white shadow-md">
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
-                )}
-              </button>
-
-              {/* Viewers — only if sharer allows */}
-              {session.viewersVisible && (
-                <button
-                  type="button"
-                  onClick={handleViewersToggle}
-                  aria-label={t('viewers')}
-                  className={cn(
-                    'flex h-13 w-13 flex-col items-center justify-center gap-1 rounded-2xl border shadow-xl backdrop-blur-xl transition-all duration-200 active:scale-90',
-                    viewersOpen
-                      ? 'border-blue-400/40 bg-gradient-to-b from-blue-900/60 to-blue-950/60 text-blue-300 shadow-blue-900/20'
-                      : 'border-white/15 bg-gradient-to-b from-black/50 to-black/60 text-white shadow-black/30 hover:border-white/25 hover:from-white/10 hover:to-white/5',
+              {/* ── Live controls ── */}
+              {isLive && (
+                <>
+                  {/* Shared-video controls pill (play/seek/volume/share) — only when a video source is shared */}
+                  {videoState && !anyPanelOpen && (
+                    <ViewerVideoControls
+                      videoState={{ ...videoState, allowViewerControl: myVideoControlAllowed }}
+                      volume={volume}
+                      isMuted={isMuted}
+                      visible={controlsVisible}
+                      onPlay={() => sendVideoControl('play')}
+                      onPause={() => sendVideoControl('pause')}
+                      onSeek={(time) => sendVideoControl('seek', time)}
+                      onVolumeChange={handleVolumeChange}
+                      onToggleMute={toggleMute}
+                      onShare={() => { void handleShare(); showControls(); }}
+                      shareCopied={shareCopied}
+                    />
                   )}
-                >
-                  <svg className="h-[22px] w-[22px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-                    <circle cx="9" cy="7" r="4" />
-                    <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
-                  </svg>
-                  <span className="text-[10px] font-bold leading-none tracking-tight text-white/70">{t('viewers')}</span>
-                </button>
+
+                  {/* Camera-stream bottom control bar: mute, volume, elapsed, share */}
+                  {!videoState && !anyPanelOpen && (
+                    <div
+                      className={cn(
+                        'absolute inset-x-3 bottom-3 z-20 flex items-center gap-3 rounded-2xl border border-white/15 bg-black/72 px-4 py-2.5 shadow-2xl shadow-black/50 backdrop-blur-2xl transition-opacity duration-300 ease-out',
+                        controlsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={toggleMute}
+                        aria-label={isMuted ? t('volume.unmute') : t('volume.mute')}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/60 transition-all duration-150 hover:bg-white/10 hover:text-white active:scale-90"
+                      >
+                        {isMuted || volume === 0 ? (
+                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                            <line x1="23" y1="9" x2="17" y2="15" />
+                            <line x1="17" y1="9" x2="23" y2="15" />
+                          </svg>
+                        ) : (
+                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                            <path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07" />
+                          </svg>
+                        )}
+                      </button>
+
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.02}
+                        value={isMuted ? 0 : volume}
+                        onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                        onPointerDown={() => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }}
+                        onPointerUp={scheduleHide}
+                        aria-label={t('volume.label')}
+                        className="h-1 w-24 cursor-pointer accent-white sm:w-32"
+                      />
+
+                      <span className="shrink-0 text-[11px] tabular-nums text-white/40">
+                        {Math.round((isMuted ? 0 : volume) * 100)}%
+                      </span>
+
+                      <div className="flex-1" />
+
+                      <span className="hidden shrink-0 text-[11px] font-semibold tabular-nums text-white/60 sm:inline">
+                        {elapsed}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => { void handleShare(); showControls(); }}
+                        aria-label={t('share')}
+                        className={cn(
+                          'flex shrink-0 items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[10px] font-semibold transition-all duration-200 active:scale-95',
+                          shareCopied
+                            ? 'border-green-400/30 bg-green-900/40 text-green-300'
+                            : 'border-white/18 bg-white/8 text-white/75 hover:border-white/30 hover:bg-white/15 hover:text-white',
+                        )}
+                      >
+                        {shareCopied ? (
+                          <svg className="h-3 w-3 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        ) : (
+                          <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                          </svg>
+                        )}
+                        {t('share')}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleFullscreen}
+                        aria-label={t('fullscreen')}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+                      >
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* ── Viewers side panel (overlay within the player) ── */}
+              {isLive && viewersOpen && session.viewersVisible && (
+                <ViewersPanel
+                  sessionId={session.id}
+                  apiBase={apiBase}
+                  onClose={() => setViewersOpen(false)}
+                  publicViewerNames={publicViewerNames}
+                />
               )}
             </div>
-          )}
-
-
-
-          {/* ── Viewers side panel ── */}
-          {viewersOpen && session.viewersVisible && (
-            <ViewersPanel
-              sessionId={session.id}
-              apiBase={apiBase}
-              onClose={() => setViewersOpen(false)}
-              publicViewerNames={publicViewerNames}
-            />
-          )}
-        </>
-      )}
-
-      {/* Auth gate modal */}
-      {authGateOpen && (
-        <AuthGateModal
-          onClose={() => setAuthGateOpen(false)}
-          onSignIn={() => { setAuthGateOpen(false); setAuthLoginOpen(true); }}
-        />
-      )}
-      {authLoginOpen && (
-        <InlineAuthModal
-          onClose={() => setAuthLoginOpen(false)}
-          callbackUrl={pathname}
-        />
-      )}
-
-      {/* Powered-by footer (non-live only) */}
-      {!isLive && (
-        <footer
-          className="absolute inset-x-0 bottom-0 flex justify-center"
-          style={{
-            paddingBottom: 'max(20px, env(safe-area-inset-bottom, 20px))',
-            paddingLeft: 'env(safe-area-inset-left, 0px)',
-            paddingRight: 'env(safe-area-inset-right, 0px)',
-          }}
-        >
-          <p className="text-[11px] text-white/20">{t('poweredBy')}</p>
-        </footer>
-      )}
-      </div>
-
-      {/* Mobile backdrop — dims the video when the comment sheet is open */}
-      {commentsOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm sm:hidden"
-          onClick={() => setCommentsOpen(false)}
-          aria-hidden="true"
-        />
-      )}
-
-      {/* ── Comment panel ──
-          Mobile  : fixed bottom sheet that slides up from the bottom edge
-          Desktop : flex sibling side panel that pushes the video left      ── */}
-      <div
-        className={cn(
-          'bg-[#0a0b0f] overflow-hidden transition-all duration-500 ease-out',
-          // Mobile: full-width fixed bottom sheet
-          'fixed inset-x-0 bottom-0 z-40 rounded-t-2xl border-t border-white/10',
-          commentsOpen ? 'h-[82vh]' : 'h-0',
-          // Desktop: side panel in the flex row
-          'sm:relative sm:inset-auto sm:z-auto sm:rounded-none sm:border-t-0 sm:border-l sm:border-white/8 sm:flex-shrink-0 sm:h-full',
-          commentsOpen ? 'sm:w-80' : 'sm:w-0',
-        )}
-      >
-        <div
-          className={cn(
-            'absolute inset-0 flex w-full flex-col sm:w-80 transition-all duration-500 ease-out',
-            commentsOpen
-              ? 'opacity-100 translate-y-0 sm:translate-x-0'
-              : 'opacity-0 translate-y-4 sm:translate-y-0 sm:translate-x-6',
-          )}
-        >
-          {/* Drag handle — mobile bottom sheet only */}
-          <div className="flex shrink-0 justify-center pt-3 pb-1 sm:hidden">
-            <div className="h-1 w-10 rounded-full bg-white/25" />
           </div>
 
-          {/* Panel header */}
-          <div className="flex shrink-0 items-center gap-3 border-b border-white/8 px-5 py-4">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5">
+          {/* ── Title + destination chips ── */}
+          <div className="flex shrink-0 flex-col gap-2.5">
+            <h1 className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
+              {session.title}
+            </h1>
+            {session.platforms.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                {session.platforms.includes('tiktok') && (
+                  <span
+                    className="chip-platform px-2.5 py-1 text-xs font-semibold"
+                    style={{ color: PLATFORM_IDENTITY_COLORS.tiktok }}
+                  >
+                    <TikTokIcon />
+                    TikTok
+                  </span>
+                )}
+                {session.platforms.includes('facebook') && (
+                  <span
+                    className="chip-platform px-2.5 py-1 text-xs font-semibold"
+                    style={{ color: PLATFORM_IDENTITY_COLORS.facebook }}
+                  >
+                    <FacebookIcon />
+                    Facebook
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── Creator row ── */}
+          <div className="card-surface flex shrink-0 items-center gap-3 px-4 py-3">
+            <div className="bg-gradient-brand shrink-0 rounded-full p-px">
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-surface-2 text-sm font-bold text-foreground">
+                {getInitials(session.title)}
+              </div>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-foreground">{t('creator.host')}</p>
+              <p className="text-xs text-muted-foreground">
+                {t('creator.watching', { count: socketViewerCount })}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleFollow}
+              className={cn(
+                isFollowing
+                  ? 'btn-ghost px-4 py-1.5 text-sm font-semibold'
+                  : 'btn-gradient px-4 py-1.5 text-sm font-semibold',
+              )}
+            >
+              {isFollowing ? t('creator.following') : t('creator.follow')}
+            </button>
+          </div>
+
+          {/* ── Stat tiles ── */}
+          <WatchStatTiles
+            viewerCount={socketViewerCount}
+            elapsedLabel={isLive ? elapsed : null}
+            status={session.status}
+            className="shrink-0"
+          />
+
+          {/* ── Ended: chat replay timeline ── */}
+          {isEnded && <ReplayTimeline sessionId={session.id} />}
+
+          <p className="mt-auto pt-2 text-center text-[11px] text-muted-foreground/60">
+            {t('poweredBy')}
+          </p>
+        </section>
+
+        {/* ── Chat rail ── */}
+        <aside className="flex min-h-[55vh] flex-1 flex-col border-t border-[var(--card-border-color)] bg-surface-1 lg:min-h-0 lg:w-[380px] lg:flex-none lg:border-l lg:border-t-0">
+          {/* Header */}
+          <div className="flex shrink-0 items-center gap-3 border-b border-[var(--card-border-color)] px-5 py-3.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[var(--card-border-color)] bg-surface-2">
               <svg
-                className="h-4 w-4 text-white/60"
+                className="h-4 w-4 text-muted-foreground"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -1683,42 +1413,22 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
               </svg>
             </div>
             <div className="min-w-0 flex-1">
-              <h3 className="text-sm font-semibold text-white">{t('comments')}</h3>
+              <h2 className="text-sm font-semibold text-foreground">{t('liveChat')}</h2>
               {comments.length > 0 && (
-                <p className="text-[10px] text-white/35">
-                  {comments.length.toLocaleString()}&nbsp;messages
+                <p className="text-[10px] text-muted-foreground">
+                  {t('messagesCount', { count: comments.length })}
                 </p>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => setCommentsOpen(false)}
-              aria-label="Close comments"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white/35 transition-all hover:bg-white/8 hover:text-white"
-            >
-              <svg
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
           </div>
 
-          {/* Comment list */}
+          {/* Message list — oldest → newest, composer at the bottom (chat convention) */}
           <div ref={commentListRef} className="flex-1 overflow-y-auto">
             {comments.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/8 bg-white/4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--card-border-color)] bg-surface-2">
                   <svg
-                    className="h-5 w-5 text-white/25"
+                    className="h-5 w-5 text-muted-foreground/50"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -1730,46 +1440,55 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                     <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
                   </svg>
                 </div>
-                <p className="text-xs text-white/30">{t('noComments')}</p>
+                <p className="text-xs text-muted-foreground">{t('noComments')}</p>
               </div>
             ) : (
               <div className="py-2">
-                {comments.map((c) => {
+                {[...comments].reverse().map((c) => {
                   const cReactions = commentReactions[c.id];
                   const myReaction = myCommentReactions[c.id] ?? null;
                   const reactionEntries = cReactions
                     ? Object.entries(cReactions).filter(([, n]) => n > 0)
                     : [];
                   const isReply = !!c.replyToCommentId;
+                  const identityColor = getPlatformIdentityColor(c.platform);
                   return (
                     <div
                       id={`comment-${c.id}`}
                       key={c.id}
                       className={cn(
-                        'group flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.03]',
+                        'group flex items-start gap-3 px-4 py-2.5 transition-colors hover:bg-muted/40',
                         isReply && 'pl-8',
                       )}
                     >
                       <div className="relative mt-0.5 shrink-0">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-[9px] font-bold text-white">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-2 text-[9px] font-bold text-foreground">
                           {getInitials(c.authorName)}
                         </div>
                         <span
                           className={cn(
-                            'absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-[#0a0b0f]',
-                            PLATFORM_DOT[c.platform] ?? 'bg-white/30',
+                            'absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-surface-1',
+                            PLATFORM_DOT[c.platform] ?? 'bg-muted-foreground/40',
                           )}
                         />
                       </div>
                       <div className="min-w-0 flex-1 pt-0.5">
-                        <p className="mb-0.5 text-[11px] font-semibold text-white/50">
-                          {c.authorName}
+                        <p className="mb-0.5 flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+                          <span className="truncate">{c.authorName}</span>
+                          {identityColor && (
+                            <span
+                              className="shrink-0 text-[9px] font-bold uppercase tracking-wide"
+                              style={{ color: identityColor }}
+                            >
+                              {c.platform === 'tiktok' ? 'TikTok' : 'Facebook'}
+                            </span>
+                          )}
                         </p>
                         {isReply && (
-                          <p className="text-[9px] text-white/35 leading-tight mb-0.5">↩ reply</p>
+                          <p className="text-[9px] text-muted-foreground/70 leading-tight mb-0.5">↩ {t('reply')}</p>
                         )}
                         {c.content && (
-                          <p className="break-words text-xs leading-relaxed text-white/85">
+                          <p className="break-words text-xs leading-relaxed text-foreground/90">
                             {c.content}
                           </p>
                         )}
@@ -1784,7 +1503,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                                   key={i}
                                   src={url}
                                   alt={`attachment ${i + 1}`}
-                                  className="max-h-32 max-w-full rounded-lg border border-white/10 object-cover"
+                                  className="max-h-32 max-w-full rounded-lg border border-[var(--card-border-color)] object-cover"
                                   loading="lazy"
                                 />
                               ) : (
@@ -1813,7 +1532,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                                   'inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-xs transition-colors',
                                   myReaction === emoji
                                     ? 'border-brand/40 bg-brand/20 text-brand'
-                                    : 'border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/80',
+                                    : 'border-[var(--card-border-color)] bg-surface-2 text-muted-foreground hover:bg-muted hover:text-foreground',
                                 )}
                               >
                                 <span>{emoji}</span>
@@ -1837,7 +1556,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                               setReplyingTo(c);
                               commentInputRef.current?.focus();
                             }}
-                            className="text-[10px] text-white/30 opacity-100 transition-colors hover:text-white/70 sm:opacity-0 sm:group-hover:opacity-100"
+                            className="text-[10px] text-muted-foreground/70 opacity-100 transition-colors hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100"
                           >
                             {t('reply')}
                           </button>
@@ -1850,21 +1569,32 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
             )}
           </div>
 
-          {/* Input area */}
+          {/* Quick-reaction bar — server-side rate limits stay authoritative */}
+          {isLive && (
+            <div className="shrink-0 border-t border-[var(--card-border-color)]">
+              <WatchQuickReactions onReact={handleQuickReaction} />
+            </div>
+          )}
+
+          {/* Composer — hidden once the stream has ended (replay timeline covers history) */}
+          {!isEnded && (
           <div
-            className="shrink-0 border-t border-white/8"
+            className="shrink-0 border-t border-[var(--card-border-color)]"
             style={{ paddingBottom: 'max(0px, env(safe-area-inset-bottom, 0px))' }}
           >
             {isAuthenticated ? (
               <div>
                 {/* Reply context */}
                 {replyingTo && (
-                  <div className="flex items-center justify-between px-4 py-1.5 bg-white/5 border-b border-white/8 text-[11px] text-white/40">
-                    <span>Replying to <span className="text-white/70 font-medium">{replyingTo.authorName}</span></span>
+                  <div className="flex items-center justify-between border-b border-[var(--card-border-color)] bg-surface-2 px-4 py-1.5 text-[11px] text-muted-foreground">
+                    <span>
+                      {t('replyingTo')}{' '}
+                      <span className="font-medium text-foreground">{replyingTo.authorName}</span>
+                    </span>
                     <button
                       type="button"
                       onClick={() => setReplyingTo(null)}
-                      className="text-white/30 hover:text-white/60 ml-2 transition-colors"
+                      className="ml-2 text-muted-foreground/70 transition-colors hover:text-foreground"
                     >
                       ✕
                     </button>
@@ -1885,23 +1615,23 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                           <img
                             src={att.url}
                             alt={att.name ?? 'attachment'}
-                            className="h-14 w-14 rounded-lg object-cover border border-white/10"
+                            className="h-14 w-14 rounded-lg border border-[var(--card-border-color)] object-cover"
                           />
                           <button
                             type="button"
                             onClick={() => setAttachments((p) => p.filter((_, j) => j !== i))}
-                            className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/80 text-white/70 text-[9px] hover:text-white"
+                            className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/80 text-[9px] text-white/70 hover:text-white"
                           >
                             ✕
                           </button>
                         </div>
                       ) : (
-                        <div key={i} className="relative flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/60">
-                          <span className="truncate max-w-[80px]">{att.name ?? 'file'}</span>
+                        <div key={i} className="relative flex items-center gap-1 rounded-lg border border-[var(--card-border-color)] bg-surface-2 px-2 py-1 text-[11px] text-muted-foreground">
+                          <span className="max-w-[80px] truncate">{att.name ?? 'file'}</span>
                           <button
                             type="button"
                             onClick={() => setAttachments((p) => p.filter((_, j) => j !== i))}
-                            className="text-white/30 hover:text-white/70"
+                            className="text-muted-foreground/60 hover:text-foreground"
                           >
                             ✕
                           </button>
@@ -1926,8 +1656,8 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                         void handleSendComment();
                       }
                     }}
-                    placeholder={replyingTo ? `Reply to ${replyingTo.authorName}…` : t('commentPlaceholder')}
-                    className="flex-1 min-w-0 rounded-xl border border-white/15 bg-white/8 px-3 py-2 text-sm text-white placeholder-white/30 outline-none transition-colors focus:border-white/30 focus:bg-white/12"
+                    placeholder={replyingTo ? t('replyPlaceholder', { name: replyingTo.authorName }) : t('commentPlaceholder')}
+                    className="min-w-0 flex-1 rounded-xl border border-[var(--input-border-color)] bg-surface-2 px-3 py-2 text-sm text-foreground placeholder-muted-foreground/60 outline-none transition-colors focus:border-brand/60"
                   />
                 </div>
 
@@ -1938,9 +1668,9 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="p-1.5 rounded-full text-white/40 hover:text-white/80 hover:bg-white/8 transition-colors"
-                    title="Attach file"
-                    aria-label="Attach file"
+                    className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    title={t('attachFile')}
+                    aria-label={t('attachFile')}
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
@@ -1961,7 +1691,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                     onClick={() => void handleSendComment()}
                     disabled={!commentText.trim() && attachments.length === 0}
                     aria-label={t('send')}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-brand/40 bg-brand/70 text-white backdrop-blur-xl transition-opacity disabled:opacity-40"
+                    className="btn-gradient flex h-8 items-center gap-1.5 px-3.5 text-xs font-semibold disabled:opacity-40"
                   >
                     {isSending ? (
                       <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
@@ -1973,6 +1703,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                         <polygon points="22 2 15 22 11 13 2 9 22 2" />
                       </svg>
                     )}
+                    {t('send')}
                   </button>
                 </div>
               </div>
@@ -1981,15 +1712,30 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
                 <button
                   type="button"
                   onClick={() => setAuthLoginOpen(true)}
-                  className="w-full rounded-xl border border-white/10 bg-white/6 py-3 text-sm font-medium text-white/55 transition-colors hover:bg-white/10 hover:text-white"
+                  className="btn-gradient w-full py-3 text-sm font-semibold"
                 >
-                  {t('signInToInteract')}
+                  {t('logInToChat')}
                 </button>
               </div>
             )}
           </div>
-        </div>
+          )}
+        </aside>
       </div>
+
+      {/* Auth gate modal */}
+      {authGateOpen && (
+        <AuthGateModal
+          onClose={() => setAuthGateOpen(false)}
+          onSignIn={() => { setAuthGateOpen(false); setAuthLoginOpen(true); }}
+        />
+      )}
+      {authLoginOpen && (
+        <InlineAuthModal
+          onClose={() => setAuthLoginOpen(false)}
+          callbackUrl={pathname}
+        />
+      )}
     </div>
   );
 }

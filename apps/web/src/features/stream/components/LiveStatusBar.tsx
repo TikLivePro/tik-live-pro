@@ -54,6 +54,7 @@ export function LiveStatusBar({
   isVideoSharing = false,
 }: Props): React.ReactElement {
   const t = useTranslations('stream');
+  const tCommon = useTranslations('common');
   const { toggleCollapse, toggleOpen } = useSidebar();
 
   return (
@@ -69,7 +70,7 @@ export function LiveStatusBar({
           }
         }}
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        aria-label="Toggle sidebar"
+        aria-label={tCommon('toggleSidebar')}
       >
         <svg
           className="h-5 w-5"

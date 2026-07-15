@@ -19,7 +19,7 @@ export function AccountList(): React.ReactElement {
     <div className="card-surface space-y-3 p-4 sm:p-5">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold tracking-tight">{t('title')}</h2>
-        <Link href="/settings" className="text-xs font-semibold text-brand hover:underline">
+        <Link href="/accounts" className="text-xs font-semibold text-brand hover:underline">
           {t('manage')}
         </Link>
       </div>
@@ -59,7 +59,7 @@ export function AccountList(): React.ReactElement {
             </svg>
             {t('limit.freemiumShort')}
           </span>
-          <Link href="/settings" className="shrink-0 text-xs font-semibold text-brand hover:underline">
+          <Link href="/settings#subscription" className="shrink-0 text-xs font-semibold text-brand hover:underline">
             {t('limit.upgradeCta')}
           </Link>
         </div>
