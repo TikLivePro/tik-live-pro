@@ -6,12 +6,19 @@ export type WhipState = 'idle' | 'connecting' | 'connected' | 'failed';
 
 export interface WhipStreamResult {
   state: WhipState;
-  connect: (whipUrl: string, stream: MediaStream, bitrate?: number) => Promise<void>;
+  connect: (
+    whipUrl: string,
+    stream: MediaStream,
+    bitrate?: number,
+    iceServers?: RTCIceServer[],
+  ) => Promise<void>;
   disconnect: () => void;
   replaceVideoTrack: (track: MediaStreamTrack) => Promise<void>;
   replaceAudioTrack: (track: MediaStreamTrack) => Promise<void>;
   setVideoBitrate: (bitrate: number) => Promise<void>;
 }
+
+const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
 
 export function useWhipStream(): WhipStreamResult {
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -25,13 +32,18 @@ export function useWhipStream(): WhipStreamResult {
     setState('idle');
   }, []);
 
-  const connect = useCallback(async (whipUrl: string, stream: MediaStream, bitrate?: number) => {
+  const connect = useCallback(async (
+    whipUrl: string,
+    stream: MediaStream,
+    bitrate?: number,
+    iceServers?: RTCIceServer[],
+  ) => {
     disconnect();
     setState('connecting');
 
     try {
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+        iceServers: iceServers && iceServers.length > 0 ? iceServers : DEFAULT_ICE_SERVERS,
       });
       pcRef.current = pc;
 

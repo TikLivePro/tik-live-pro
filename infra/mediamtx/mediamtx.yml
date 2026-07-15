@@ -48,6 +48,14 @@ webrtcLocalUDPAddress: :8189
 # behind NAT. No effect in purely local dev but harmless and required in prod.
 webrtcICEServers2:
   - url: stun:stun.l.google.com:19302
+# Defaults (10s / 5s) are tuned for good connections. A publisher/viewer on a
+# lossy or high-latency link (mobile, poor wifi) needs more time for STUN
+# binding requests and DTLS to round-trip before MediaMTX gives up and closes
+# the session with "deadline exceeded while waiting connection" — this alone
+# does not fix a connection that can NEVER complete ICE (see docs/infra.md,
+# "WebRTC ICE candidates" section, for when a TURN relay is required instead).
+webrtcHandshakeTimeout: 20s
+webrtcSTUNGatherTimeout: 10s
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 # Accept any username/password — dev only

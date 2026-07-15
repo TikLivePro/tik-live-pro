@@ -1,6 +1,6 @@
 # TikLivePro — Architecture Overview
 
-> **Last updated:** 2026-07-06 (comments/WS hardening: platform comments persisted from comment.received; streamer socket events JWT-gated; OAuth auto-link backfills avatar/display name; auth_users gains avatar_url)
+> **Last updated:** 2026-07-15 (added coturn — self-hosted TURN relay for WebRTC clients behind a NAT/firewall that STUN alone can't traverse; ephemeral HMAC credentials minted by stream-orchestrator, no long-lived secret shipped to the client) · 2026-07-06 (comments/WS hardening: platform comments persisted from comment.received; streamer socket events JWT-gated; OAuth auto-link backfills avatar/display name; auth_users gains avatar_url)
 > Keep this file up-to-date whenever services, ports, infrastructure, or data flows change.
 
 ## Table of Contents
@@ -87,6 +87,7 @@
 | PostgreSQL 16 | 5432 | Primary datastore — one database per service |
 | Redis 7 | 6379 | Session cache, rate-limiting counters, idempotency keys |
 | MediaMTX | 1936 (RTMP in), 8888 (HLS out), 8889 (WebRTC HTTP), 8189/udp (WebRTC ICE), 9997 (REST API) | Platform-native streaming relay — Go binary, ~5 MB RAM. Receives RTMP relay from ffmpeg workers; serves HLS and WebRTC to browser viewers. Records streams to `/recordings` volume (fmp4, 1h segments). Open auth (`user: any`) in both dev and prod. Config: `infra/mediamtx/mediamtx.yml` (dev) / `mediamtx.prod.yml` (prod) |
+| coturn | 3478/tcp, 3478/udp (TURN signalling), 49160-49200/udp (relayed media) | TURN relay for WebRTC (WHIP/WHEP) clients whose ICE connection can never complete via STUN alone — carrier-grade NAT, restrictive corporate/public wifi firewalls. Ephemeral (1h, HMAC-based) credentials are minted per-request by `stream-orchestrator` (`GET /sessions/:id/ingest`, `GET /ice-servers`) — no long-lived static credential ships to the client. Optional: without `TURN_SECRET` configured, WebRTC falls back to STUN-only. Config: `infra/coturn/turnserver.conf` |
 | Object Storage | — (external) | Video recording archive. Option A: DigitalOcean Spaces (S3-compat, $5/mo, covered by $200 credit). Option B: Cloudflare R2 (10 GB/mo free, no egress fees). `RecordingUploader` in `stream-orchestrator` watches the `mediamtx_recordings` Docker volume and uploads completed `.fmp4` files. See `docs/recording.md`. |
 | OTel Collector | 4317 (gRPC), 4318 (HTTP), 8888 (self-metrics), 8889 (prom export) | Receives OTLP traces/metrics/logs from all services; exports to Jaeger + Prometheus |
 | Jaeger | 16686 (UI), 14268 (HTTP), 4317 (OTLP) | Distributed trace visualization |

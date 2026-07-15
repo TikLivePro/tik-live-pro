@@ -205,6 +205,24 @@ services:
     # The container inherits the host value; no sysctls block needed here.
     restart: unless-stopped
 
+  # coturn — TURN relay for WebRTC clients that can't complete a direct/STUN
+  # connection (see docs/infra.md, "WebRTC ICE candidates"). Optional in dev:
+  # only takes effect once stream-orchestrator's TURN_SECRET/TURN_URLS env vars
+  # are set to point at it (commented out by default in .env.example).
+  coturn:
+    image: coturn/coturn:latest
+    volumes:
+      - ./infra/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: >
+      -c /etc/coturn/turnserver.conf
+      --static-auth-secret=${TURN_SECRET:-dev-turn-secret-change-me}
+      --external-ip=127.0.0.1
+    ports:
+      - "3478:3478"       # TURN signalling — TCP (coturn falls back to this when UDP is blocked/throttled)
+      - "3478:3478/udp"   # TURN signalling — UDP (preferred path)
+      - "49160-49200:49160-49200/udp" # relayed media — must match min-port/max-port in turnserver.conf
+    restart: unless-stopped
+
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"

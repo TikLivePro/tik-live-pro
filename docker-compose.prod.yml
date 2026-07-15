@@ -209,6 +209,28 @@ services:
         limits:
           memory: 64m
 
+  # coturn — TURN relay for WebRTC clients that can't complete a direct/STUN
+  # connection (see docs/infra.md, "WebRTC ICE candidates"). Local-E2E defaults
+  # below; a real deploy (docker-compose.prod.managed.yml) requires TURN_SECRET
+  # and SERVER_PUBLIC_IP with no fallback.
+  coturn:
+    <<: *service-defaults
+    image: coturn/coturn:latest
+    volumes:
+      - ./infra/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: >
+      -c /etc/coturn/turnserver.conf
+      --static-auth-secret=${TURN_SECRET:-changeme-local-e2e-secret}
+      --external-ip=${SERVER_PUBLIC_IP:-127.0.0.1}
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49160-49200:49160-49200/udp"
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+
   # ── Microservices ───────────────────────────────────────────────────────────
 
   api-gateway:
@@ -483,6 +505,10 @@ services:
       FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:?FACEBOOK_APP_SECRET is required}
       MEDIAMTX_RTMP_URL: rtmp://mediamtx:1936
       MEDIAMTX_HLS_URL: ${MEDIAMTX_HLS_URL:-http://localhost:8888}
+      # See the coturn service above — matching secret/URLs, or TURN is skipped
+      # and WebRTC falls back to STUN-only (fine for local E2E testing).
+      TURN_SECRET: ${TURN_SECRET:-changeme-local-e2e-secret}
+      TURN_URLS: turn:${SERVER_PUBLIC_IP:-127.0.0.1}:3478?transport=udp,turn:${SERVER_PUBLIC_IP:-127.0.0.1}:3478?transport=tcp
       # Set to "true" to run `yt-dlp -U` at startup (bails gracefully on failure).
       # Prefer rebuilding with a newer YTDLP_VERSION over enabling this in prod.
       YTDLP_AUTO_UPDATE: ${YTDLP_AUTO_UPDATE:-false}

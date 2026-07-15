@@ -1,6 +1,6 @@
 # TikLivePro — Setup Guide
 
-> **Last updated:** 2026-06-13 (add YouTube cookies setup for bot-detection bypass)
+> **Last updated:** 2026-07-15 (add `TURN_SECRET`/`TURN_URLS` env vars for the new coturn TURN relay; document the "always `deadline exceeded`, never a successful ICE connection" symptom in the `starting`-status troubleshooting section) · 2026-06-13 (add YouTube cookies setup for bot-detection bypass)
 > Update this file whenever prerequisites, ports, environment variables, or workflow steps change.
 
 ## Prerequisites
@@ -114,7 +114,9 @@ Update values as needed — critical variables:
 | `RECORDING_STORAGE_ENDPOINT` | stream-orchestrator | Full S3 endpoint URL. R2: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`. DO Spaces: `https://fra1.digitaloceanspaces.com`. MinIO (dev): `http://localhost:9000`. |
 | `RECORDING_STORAGE_ACCESS_KEY_ID` / `SECRET_ACCESS_KEY` | stream-orchestrator | S3 access credentials for the chosen provider. |
 | `RECORDING_STORAGE_CDN_URL` | stream-orchestrator | Optional CDN base URL prepended to the stored file key (e.g. `https://recordings.tiklivepro.me`). If omitted, the raw endpoint URL is used. |
-| `SERVER_PUBLIC_IP` | mediamtx (prod only) | The server's public IPv4 address (`curl -s ifconfig.me`). Passed to MediaMTX as `MTX_WEBRTCADDITIONALHOSTS` so ICE candidates advertise the public IP and browsers can reach UDP port 8189. In the deploy workflow this is set to `DROPLET_IP` — no separate secret needed if deploying via GitHub Actions. |
+| `SERVER_PUBLIC_IP` | mediamtx (prod only) | The server's public IPv4 address (`curl -s ifconfig.me`). Passed to MediaMTX as `MTX_WEBRTCADDITIONALHOSTS` so ICE candidates advertise the public IP and browsers can reach UDP port 8189. Also used to build `TURN_URLS` for coturn. In the deploy workflow this is set to `DROPLET_IP` — no separate secret needed if deploying via GitHub Actions. |
+| `TURN_SECRET` | coturn, stream-orchestrator | Shared secret for ephemeral TURN credentials (coturn's `--static-auth-secret`, matched by `stream-orchestrator`'s HMAC credential generator). Optional in dev — unset means WebRTC falls back to STUN-only. Generate: `openssl rand -hex 32`. See `docs/infra.md`, "WebRTC ICE candidates". |
+| `TURN_URLS` | stream-orchestrator | Comma-separated `turn:` URIs handed to the browser, e.g. `turn:<ip>:3478?transport=udp,turn:<ip>:3478?transport=tcp`. Built from `SERVER_PUBLIC_IP` in the prod compose files — not set directly. |
 | `NEXTAUTH_SECRET` | apps/web | Generate: `openssl rand -base64 32` |
 | `GOOGLE_CLIENT_ID` / `SECRET` | apps/web | From Google Cloud Console → Credentials |
 | `STREAM_ORCHESTRATOR_SERVICE_URL` | api-gateway | URL of the stream-orchestrator service. Default: `http://localhost:3009` (dev) · `http://stream-orchestrator:3009` (Docker/prod) |
@@ -382,7 +384,8 @@ If no paths appear, the stream hasn't arrived at MediaMTX yet. Common causes:
 1. A streaming client (browser WHIP or OBS) is actively pushing to the ingest endpoint.
 2. In production: `MEDIAMTX_API_URL=http://mediamtx:9997` (the watcher must reach the mediamtx container, not its own localhost).
 3. `SERVER_PUBLIC_IP` is set and MediaMTX is advertising the correct public IP in ICE candidates (see above).
-4. Retrieve the ingest URLs from `GET /stream-orchestrator/sessions/<id>/ingest` — the response includes `ingestUrl` (RTMP/OBS), `whipUrl` (browser WHIP endpoint), `hlsUrl` (viewer), and `status`.
+4. Retrieve the ingest URLs from `GET /stream-orchestrator/sessions/<id>/ingest` — the response includes `ingestUrl` (RTMP/OBS), `whipUrl` (browser WHIP endpoint), `hlsUrl` (viewer), `iceServers`, and `status`.
+5. Check the mediamtx container logs for that session's WHIP publish attempts. `session created` → `closed: deadline exceeded while waiting connection` **repeated with no successful `peer connection established`, ever** means the broadcaster's connection can never complete ICE — usually a NAT/firewall that blocks direct UDP entirely (mobile carrier NAT, restrictive corporate/public wifi). See `docs/infra.md`, "WebRTC ICE candidates": this needs `TURN_SECRET`/coturn configured, not a longer timeout — STUN alone cannot help a client with no direct path at all. A session that reconnects within a few seconds of a drop (not a hard NAT block) is instead absorbed by `MediaMtxStreamWatcher`'s grace period and should recover on its own without ever showing this symptom.
 
 ---
 

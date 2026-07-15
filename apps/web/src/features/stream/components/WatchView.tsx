@@ -203,6 +203,8 @@ function HlsPlayer({
   );
 }
 
+const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
+
 function WhepPlayer({
   src,
   title,
@@ -210,6 +212,7 @@ function WhepPlayer({
   onLoadingChange,
   volume,
   isMuted,
+  iceServers,
 }: {
   src: string;
   title: string;
@@ -217,6 +220,7 @@ function WhepPlayer({
   onLoadingChange?: (loading: boolean) => void;
   volume: number;
   isMuted: boolean;
+  iceServers?: RTCIceServer[] | undefined;
 }): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null);
   const onErrorRef = useRef(onError);
@@ -240,7 +244,7 @@ function WhepPlayer({
     video.addEventListener('waiting', onWaiting);
 
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      iceServers: iceServers && iceServers.length > 0 ? iceServers : DEFAULT_ICE_SERVERS,
     });
     pc.addTransceiver('video', { direction: 'recvonly' });
     pc.addTransceiver('audio', { direction: 'recvonly' });
@@ -400,6 +404,19 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
   const [whepFailed, setWhepFailed] = useState(false);
   const [whepKey, setWhepKey] = useState(0);
   const whepRetryCountRef = useRef(0);
+  // STUN-only until this loads — TURN is a graceful upgrade, never a blocker.
+  const [iceServers, setIceServers] = useState<RTCIceServer[] | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    void fetch(`${API_BASE}/stream-orchestrator/ice-servers`)
+      .then(async (res) => {
+        if (!res.ok || cancelled) return;
+        const body = (await res.json()) as { iceServers: RTCIceServer[] };
+        if (!cancelled) setIceServers(body.iceServers);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // Viewer quality selection
   const [hlsLevels, setHlsLevels] = useState<HlsQualityLevel[]>([]);
@@ -900,6 +917,7 @@ export function WatchView({ initialSession, apiBase }: Props): React.ReactElemen
         key={whepKey}
         src={whepUrl}
         title={session.title}
+        iceServers={iceServers}
         onError={() => setWhepFailed(true)}
         onLoadingChange={(loading) => {
           setIsVideoLoading(loading);

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import type { FastifyInstance } from 'fastify';
 import type { IStreamSessionRepository } from '../../domain/repositories/stream-session.repository.js';
@@ -12,6 +13,7 @@ import {
   stopVideoPush,
   unregisterVideoPush,
 } from '../../infrastructure/ffmpeg/video-push-registry.js';
+import { generateTurnCredential } from '../../infrastructure/turn/turn-credentials.js';
 import ffmpeg from 'fluent-ffmpeg';
 
 // Crude SSRF guard shared with the merge-stream endpoint.
@@ -41,6 +43,42 @@ const errorSchema = (description: string) => ({
 });
 
 const bearerAuth = [{ BearerAuth: [] }];
+
+interface IceServerEntry {
+  urls: string[];
+  username?: string;
+  credential?: string;
+}
+
+const iceServersSchema = {
+  type: 'array',
+  description:
+    'STUN is always included. A TURN entry with a short-lived (1h) HMAC credential is appended when TURN_SECRET/TURN_URLS are configured — required for browsers behind a NAT/firewall that a direct or STUN-reflexive path cannot traverse.',
+  items: {
+    type: 'object',
+    required: ['urls'],
+    properties: {
+      urls: { type: 'array', items: { type: 'string' }, example: ['turn:webrtc.tiklivepro.me:3478?transport=udp'] },
+      username: { type: 'string', description: 'Present only on the TURN entry.' },
+      credential: { type: 'string', description: 'Present only on the TURN entry. Base64 HMAC-SHA1, valid for 1 hour.' },
+    },
+  },
+};
+
+// STUN always ships; TURN is appended only when the deployment has a coturn relay
+// configured. `label` becomes part of the HMAC-signed username — pass a random UUID
+// rather than anything session-identifying, since this response is not authenticated.
+function buildIceServers(
+  deps: { turnSecret: string | null; turnUrls: string[] },
+  label: string,
+): IceServerEntry[] {
+  const servers: IceServerEntry[] = [{ urls: ['stun:stun.l.google.com:19302'] }];
+  if (deps.turnSecret && deps.turnUrls.length > 0) {
+    const { username, credential } = generateTurnCredential(deps.turnSecret, label);
+    servers.push({ urls: deps.turnUrls, username, credential });
+  }
+  return servers;
+}
 
 // ---------------------------------------------------------------------------
 
@@ -93,6 +131,8 @@ export function registerRoutes(
     mediaMtxWebrtcUrl: string;
     mediaMtxApiUrl: string;
     mediaMtxApiAuthHeader: string | undefined;
+    turnSecret: string | null;
+    turnUrls: string[];
     logger: Logger;
   },
 ): void {
@@ -385,8 +425,9 @@ rtmp://<host>:<port>/live/<ingestKey>
           200: {
             description: 'Ingest endpoint is ready.',
             type: 'object',
-            required: ['ingestUrl', 'ingestKey', 'hlsUrl', 'whipUrl', 'status'],
+            required: ['ingestUrl', 'ingestKey', 'hlsUrl', 'whipUrl', 'status', 'iceServers'],
             properties: {
+              iceServers: iceServersSchema,
               ingestUrl: {
                 type: 'string',
                 description:
@@ -451,8 +492,38 @@ rtmp://<host>:<port>/live/<ingestKey>
         ingestKey: session.ingestKey,
         hlsUrl: `${deps.mediaMtxHlsUrl}/live/${session.ingestKey}/index.m3u8`,
         whipUrl: `${deps.mediaMtxWebrtcUrl}/live/${session.ingestKey}/whip`,
+        iceServers: buildIceServers(deps, randomUUID()),
         status: session.status,
       });
+    },
+  );
+
+  // GET /ice-servers ------------------------------------------------------------
+  app.get(
+    '/ice-servers',
+    {
+      schema: {
+        tags: ['Streaming'],
+        summary: 'Get WebRTC ICE servers',
+        description: `
+Returns the STUN/TURN server list a browser should pass to \`RTCPeerConnection\` when publishing (WHIP) or watching (WHEP) a stream.
+
+Public — no authentication required. Unauthenticated viewers watching a public stream over WebRTC also need TURN credentials, since anyone behind a NAT/firewall that a direct or STUN-reflexive path can't traverse needs a relay to connect at all.
+
+TURN credentials are short-lived (1 hour) and only checked once, at the moment the browser allocates a relay — an already-established connection keeps working past expiry. Fetch a fresh set for every new connection attempt rather than caching it.
+        `.trim(),
+        response: {
+          200: {
+            description: 'ICE server list.',
+            type: 'object',
+            required: ['iceServers'],
+            properties: { iceServers: iceServersSchema },
+          },
+        },
+      },
+    },
+    async (_req, reply) => {
+      await reply.status(200).send({ iceServers: buildIceServers(deps, randomUUID()) });
     },
   );
 

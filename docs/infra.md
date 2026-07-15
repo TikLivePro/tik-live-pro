@@ -1,6 +1,6 @@
 # TikLivePro — Infrastructure Guide
 
-> **Last updated:** 2026-07-15 (documented the `net.core.rmem_max`/`wmem_max` host sysctl required for WebRTC viewer WHEP sessions to complete — without it, viewers loop `deadline exceeded while waiting connection` in mediamtx logs) · 2026-07-06 (hardening: internal ports bound to 127.0.0.1 in both prod compose files — only RTMP 1935 and ICE 8189/udp stay public; Caddy blocks /stream-orchestrator/docs and /metrics; CI now runs drizzle migrations for all 9 services before every deploy)
+> **Last updated:** 2026-07-15 (added coturn — self-hosted TURN relay for WebRTC clients whose ICE handshake can never complete via STUN alone; new `coturn` service in all three compose files, ephemeral HMAC credentials from `stream-orchestrator`, new public ports 3478/tcp+udp and 49160-49200/udp) · 2026-07-15 (set `webrtcHandshakeTimeout: 20s` / `webrtcSTUNGatherTimeout: 10s` in both mediamtx configs — previously at MediaMTX's 10s/5s defaults — to give lossy/high-latency connections more room before `deadline exceeded while waiting connection`; documented that a connection which *never* completes ICE needs a TURN relay, not a longer timeout) · 2026-07-15 (documented the `net.core.rmem_max`/`wmem_max` host sysctl required for WebRTC viewer WHEP sessions to complete — without it, viewers loop `deadline exceeded while waiting connection` in mediamtx logs) · 2026-07-06 (hardening: internal ports bound to 127.0.0.1 in both prod compose files — only RTMP 1935 and ICE 8189/udp stay public; Caddy blocks /stream-orchestrator/docs and /metrics; CI now runs drizzle migrations for all 9 services before every deploy)
 > Update whenever a Dockerfile, compose file, Kubernetes manifest, or build script changes.
 
 ## Table of Contents
@@ -227,6 +227,11 @@ environment:
 ```
 The deploy workflow sets `SERVER_PUBLIC_IP` from `secrets.DROPLET_IP` — no separate secret is needed. For manual deploys, add `SERVER_PUBLIC_IP=<your-server-ip>` to `.env` (run `curl -s ifconfig.me` on the server to find it).
 
+**WebRTC timeouts (`webrtcHandshakeTimeout` / `webrtcSTUNGatherTimeout`):**
+Both configs set `webrtcHandshakeTimeout: 20s` and `webrtcSTUNGatherTimeout: 10s` (MediaMTX defaults are 10s / 5s). A publisher/viewer on a lossy or high-latency connection (mobile data, poor wifi) needs more time for STUN binding requests and the DTLS handshake to round-trip; the default 10s handshake window is what produces `deadline exceeded while waiting connection` in the MediaMTX logs for a marginal-but-recoverable connection.
+
+**When raising the timeout isn't enough — TURN is required:** STUN only helps two peers discover a *direct* path to each other. If a client is behind a NAT/firewall that blocks direct UDP entirely (common on carrier-grade NAT, some corporate/public wifi), there is no direct path to find regardless of how long MediaMTX waits — every session will hit `deadline exceeded` with zero successful connections, not just occasional flakiness. The symptom to look for in the logs: repeated `session created` → `closed: deadline exceeded while waiting connection` with **no** `peer connection established` ever appearing for that client, across many attempts. This stack ships a self-hosted TURN relay (coturn) for exactly this case — see the next section.
+
 **Linux `host.docker.internal` fix:**
 Prometheus needs to scrape microservices running on the host. On Docker Desktop this resolves automatically; on Linux we add:
 ```yaml
@@ -238,6 +243,36 @@ This aliases `host.docker.internal` to the Docker bridge gateway IP.
 **Prometheus alert rules** are mounted from `infra/observability/alerts/` into the container so rules are loaded without rebuilding the image.
 
 **Grafana datasources** are auto-provisioned from `infra/observability/grafana/provisioning/` — Prometheus and Jaeger are configured on first boot.
+
+### coturn — TURN relay for WebRTC clients STUN can't reach
+
+MediaMTX's `webrtcICEServers2` only lists a public STUN server, and `apps/web`'s WHIP/WHEP clients build their own `RTCPeerConnection({ iceServers })` in-browser rather than reading MediaMTX's WHIP Link-header ICE-server hints — so a STUN-only deployment leaves no path at all for clients behind carrier-grade NAT or a firewall that blocks direct UDP (the "always `deadline exceeded`, zero successful connections" symptom documented above). `coturn/coturn` (`infra/coturn/turnserver.conf`) fixes this by relaying media through a public server both peers can always reach.
+
+| Port | Role |
+|------|------|
+| **3478/tcp**, **3478/udp** | TURN signalling — UDP preferred, TCP is the fallback for networks that block/throttle UDP entirely (the primary failure mode this exists to fix) |
+| **49160-49200/udp** | Relayed media (`min-port`/`max-port` in `turnserver.conf`) — one port per active TURN-relayed connection. Narrow by design: TURN is a fallback path for a minority of poor-connection clients, not the default transport. Widen both the compose port range and the conf file together if allocations run out. |
+
+**Credentials are never long-lived.** coturn runs in `use-auth-secret` mode (RFC 5766 / TURN REST API convention): `stream-orchestrator` mints a short-lived (1h) HMAC-SHA1 credential per request (`services/stream-orchestrator/src/infrastructure/turn/turn-credentials.ts`) — nothing static ships in client JS that could be scraped and abused as an open relay. The credential is only checked once, at the moment a client allocates a relay, so it never needs mid-session renewal even for multi-hour streams. Two routes hand it out alongside STUN:
+- `GET /sessions/:id/ingest` (authenticated) — broadcaster's WHIP `iceServers`.
+- `GET /ice-servers` (public, no auth — unauthenticated viewers watching a public stream need it too) — viewer's WHEP `iceServers`.
+
+Both fall back to STUN-only (`buildIceServers` returns just the STUN entry) when `TURN_SECRET`/`TURN_URLS` aren't configured — TURN is an additive upgrade, never a hard dependency for WebRTC to function at all.
+
+**Secrets can't go in `turnserver.conf`** — same problem as MediaMTX's `$VAR`-in-YAML caveat above: coturn's config file has no environment-variable interpolation either. `--static-auth-secret` and `--external-ip` are passed via the `command:` override in each compose file instead, so **docker-compose's own** `${VAR}` interpolation injects them before the container ever sees the file:
+```yaml
+coturn:
+  image: coturn/coturn:latest
+  volumes:
+    - ./infra/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+  command: >
+    -c /etc/coturn/turnserver.conf
+    --static-auth-secret=${TURN_SECRET:?TURN_SECRET is required}
+    --external-ip=${SERVER_PUBLIC_IP:?SERVER_PUBLIC_IP is required}
+```
+`TURN_SECRET` must be identical between the `coturn` service and `stream-orchestrator` (which uses it to sign credentials coturn will later validate). `TURN_URLS` is built from the same `SERVER_PUBLIC_IP` already used for MediaMTX's ICE candidates — no separate DNS name is needed since TURN isn't HTTP and can't be routed through Caddy. `docker-compose.dev.yml` and `docker-compose.prod.yml` (local E2E) default both to dev-only placeholder values so the stack still boots without them configured; `docker-compose.prod.managed.yml` (the real deploy target) requires both with no fallback.
+
+`turnserver.conf` also denies relaying to loopback/private/link-local IP ranges (`denied-peer-ip`) — without this, a TURN server can be abused to reach internal services on its own host or Docker network.
 
 ---
 
@@ -287,7 +322,7 @@ Features:
 - `condition: service_healthy` on all `depends_on` blocks — services wait for infra to be ready
 - `restart: unless-stopped` on all containers
 - MediaMTX allocated 64 MB RAM limit (typical runtime: ~10 MB)
-- **Loopback port bindings** — every host port that Caddy proxies (or that is internal-only: NATS, MediaMTX API, observability stack) is bound `127.0.0.1:<port>:<port>` so it is unreachable from the internet. Only two ports are public by design: `1935` (OBS pushes RTMP directly) and `8189/udp` (WebRTC ICE — browsers connect to it directly). Any new service port must follow the same rule.
+- **Loopback port bindings** — every host port that Caddy proxies (or that is internal-only: NATS, MediaMTX API, observability stack) is bound `127.0.0.1:<port>:<port>` so it is unreachable from the internet. Ports public by design: `1935` (OBS pushes RTMP directly), `8189/udp` (WebRTC ICE — browsers connect to it directly), and `3478/tcp`+`3478/udp`+`49160-49200/udp` (coturn TURN relay — see "coturn" above). Any new service port must follow the same rule.
 
 **Required env vars for MediaMTX in production:**
 ```

@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-07-15 (connection strings Neon : `sslmode=require` → `sslmode=verify-full` — `pg`/`pg-connection-string` traite `require` comme un mode ambigu qui perdra sa vérification stricte du certificat dans `pg` v9 ; `verify-full` fige le comportement actuel et supprime le warning au démarrage) · 2026-07-15 (ajout de `net.core.rmem_max`/`wmem_max=7500000` aux sysctls hôte de l'étape 6a — requis pour que le handshake WebRTC/ICE des viewers aboutisse, sinon boucle `deadline exceeded while waiting connection` dans mediamtx) · 2026-07-15 (fix disque plein en prod : `docker image prune -f` → `-af` dans le workflow de déploiement, les anciennes images taguées n'étaient jamais nettoyées) · 2026-07-06 (hardening + migrations : job CI `migrate` — les migrations drizzle des 9 services sont jouées sur Neon avant chaque deploy ; ports internes bindés sur 127.0.0.1 — seuls 1935/tcp (RTMP OBS) et 8189/udp (ICE WebRTC) restent publics ; Caddy bloque /stream-orchestrator/docs et /metrics)
+> Dernière mise à jour : 2026-07-15 (ajout d'un relais TURN self-hosted (coturn) — nouveau service, secret `TURN_SECRET`, ports publics `3478/tcp+udp` et `49160-49200/udp` — pour les viewers/broadcasters dont le WebRTC ne peut jamais aboutir derrière un NAT/firewall restrictif ; voir `docs/infra.md`, "WebRTC ICE candidates") · 2026-07-15 (connection strings Neon : `sslmode=require` → `sslmode=verify-full` — `pg`/`pg-connection-string` traite `require` comme un mode ambigu qui perdra sa vérification stricte du certificat dans `pg` v9 ; `verify-full` fige le comportement actuel et supprime le warning au démarrage) · 2026-07-15 (ajout de `net.core.rmem_max`/`wmem_max=7500000` aux sysctls hôte de l'étape 6a — requis pour que le handshake WebRTC/ICE des viewers aboutisse, sinon boucle `deadline exceeded while waiting connection` dans mediamtx) · 2026-07-15 (fix disque plein en prod : `docker image prune -f` → `-af` dans le workflow de déploiement, les anciennes images taguées n'étaient jamais nettoyées) · 2026-07-06 (hardening + migrations : job CI `migrate` — les migrations drizzle des 9 services sont jouées sur Neon avant chaque deploy ; ports internes bindés sur 127.0.0.1 — seuls 1935/tcp (RTMP OBS) et 8189/udp (ICE WebRTC) restent publics ; Caddy bloque /stream-orchestrator/docs et /metrics)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -424,6 +424,7 @@ Ces valeurs sont écrites dans `/opt/tiklivepro/.env` sur le serveur à chaque d
 |--------|------------------|
 | `JWT_SECRET` | `openssl rand -hex 64` |
 | `TOKEN_ENCRYPTION_KEY` | `openssl rand -hex 32` |
+| `TURN_SECRET` | `openssl rand -hex 32` — shared secret for the coturn TURN relay (WebRTC fallback for viewers/broadcasters behind a NAT/firewall STUN can't traverse). Must match between the `coturn` and `stream-orchestrator` containers; the deploy workflow wires the same secret to both from this one value. See `docs/infra.md`, "WebRTC ICE candidates". |
 
 **Neon (PostgreSQL)** — récupérez la connection string depuis **Dashboard > Connection Details**, changez uniquement le nom de la base en fin d'URL :
 
@@ -699,6 +700,8 @@ Tous les ports HTTP passent par Caddy (TLS). Dans `docker-compose.prod.managed.y
 | `80/443` | Caddy (TLS Let's Encrypt) |
 | `1935/tcp` | Ingest RTMP — OBS pousse directement dessus |
 | `8189/udp` | WebRTC ICE — les navigateurs s'y connectent directement |
+| `3478/tcp`, `3478/udp` | coturn — signalisation TURN (UDP préféré, TCP en repli quand l'UDP est bloqué/throttlé par le réseau du client) |
+| `49160-49200/udp` | coturn — plage de ports relayés (media TURN) |
 
 Tout nouveau port de service doit suivre la même règle (`127.0.0.1:<port>:<port>`).
 

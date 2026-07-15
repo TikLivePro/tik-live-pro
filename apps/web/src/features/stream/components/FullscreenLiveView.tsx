@@ -180,14 +180,20 @@ export function FullscreenLiveView(): React.ReactElement {
 
       // 1. Poll stream-orchestrator directly until the ingest slot is ready (status = waiting_for_stream).
       let whipUrl: string | null = null;
+      let iceServers: RTCIceServer[] | undefined;
       while (!cancelled && !whipUrl) {
         try {
           const res = await apiFetch(
             `${API_BASE}/stream-orchestrator/sessions/${sessionId}/ingest`,
           );
           if (res.ok) {
-            const data = (await res.json()) as { ingestKey: string; whipUrl: string };
+            const data = (await res.json()) as {
+              ingestKey: string;
+              whipUrl: string;
+              iceServers?: RTCIceServer[];
+            };
             whipUrl = data.whipUrl;
+            iceServers = data.iceServers;
           }
         } catch {
           // stream-orchestrator not yet ready — keep polling
@@ -222,7 +228,7 @@ export function FullscreenLiveView(): React.ReactElement {
       whipStartedRef.current = true;
       try {
         const bitrate = getVideoQualityPreset(useStreamStore.getState().videoQualityId).bitrate;
-        await connectWhip(whipUrl, stream, bitrate);
+        await connectWhip(whipUrl, stream, bitrate, iceServers);
         // If a video share source was already selected before the WHIP connected, switch both tracks.
         const shareVideoTrack = videoShare.getVideoTrack();
         if (shareVideoTrack) await replaceVideoTrack(shareVideoTrack);

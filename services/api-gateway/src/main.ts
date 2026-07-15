@@ -50,6 +50,10 @@ const PUBLIC_PREFIXES = new Set(['/auth']);
 const PUBLIC_PATHS = new Set([
   '/billing/plans',
   '/stream-orchestrator/video-proxy/merge-stream',
+  // Unauthenticated viewers watching a public stream over WebRTC also need
+  // TURN credentials to connect — this only hands out short-lived (1h) HMAC
+  // creds, never a long-lived secret.
+  '/stream-orchestrator/ice-servers',
 ]);
 // Pattern-matched public paths (e.g. /sessions/:id/public — shared watch pages).
 const PUBLIC_PATH_PATTERNS = [
@@ -816,16 +820,26 @@ All error responses follow a consistent envelope:
           get: {
             tags: ['Streaming'],
             summary: 'Get ingest endpoint',
-            description: 'Returns the RTMP ingest URL, WHIP URL, HLS URL, and stream key for a session that is ready to receive a video stream. Poll until status is `waiting_for_stream` before starting WHIP/RTMP.',
+            description: 'Returns the RTMP ingest URL, WHIP URL, HLS URL, ICE servers, and stream key for a session that is ready to receive a video stream. Poll until status is `waiting_for_stream` before starting WHIP/RTMP.',
             security: [{ BearerAuth: [] }],
             parameters: [
               { in: 'path', name: 'sessionId', required: true, schema: { type: 'string', format: 'uuid' }, description: 'Live session ID.' },
             ],
             responses: {
-              200: { description: 'Ingest endpoint ready.', content: { 'application/json': { schema: { type: 'object', required: ['ingestUrl', 'ingestKey', 'hlsUrl', 'whipUrl', 'status'], properties: { ingestUrl: { type: 'string' }, ingestKey: { type: 'string' }, hlsUrl: { type: 'string' }, whipUrl: { type: 'string' }, status: { type: 'string', enum: ['waiting_for_stream', 'live', 'ending', 'ended', 'error'] } } } } } },
+              200: { description: 'Ingest endpoint ready.', content: { 'application/json': { schema: { type: 'object', required: ['ingestUrl', 'ingestKey', 'hlsUrl', 'whipUrl', 'status', 'iceServers'], properties: { ingestUrl: { type: 'string' }, ingestKey: { type: 'string' }, hlsUrl: { type: 'string' }, whipUrl: { type: 'string' }, status: { type: 'string', enum: ['waiting_for_stream', 'live', 'ending', 'ended', 'error'] }, iceServers: { type: 'array', description: 'STUN always included; TURN included with a short-lived (1h) credential when the deployment has coturn configured. Pass directly as RTCPeerConnection({ iceServers }).', items: { type: 'object', properties: { urls: { type: 'array', items: { type: 'string' } }, username: { type: 'string' }, credential: { type: 'string' } } } } } } } } },
               401: { description: 'Unauthorized.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
               404: { description: 'Session not found.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
               409: { description: 'Ingest not ready yet (session is idle or starting). Retry after a short delay.', content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' } } } },
+            },
+          },
+        },
+        '/stream-orchestrator/ice-servers': {
+          get: {
+            tags: ['Streaming'],
+            summary: 'Get WebRTC ICE servers',
+            description: 'Returns the STUN/TURN server list for viewers watching a stream over WHEP. Public — no authentication required. TURN credentials are short-lived (1h); fetch a fresh set per connection attempt rather than caching.',
+            responses: {
+              200: { description: 'ICE server list.', content: { 'application/json': { schema: { type: 'object', required: ['iceServers'], properties: { iceServers: { type: 'array', items: { type: 'object', properties: { urls: { type: 'array', items: { type: 'string' } }, username: { type: 'string' }, credential: { type: 'string' } } } } } } } } },
             },
           },
         },

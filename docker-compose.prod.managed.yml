@@ -246,6 +246,32 @@ services:
     healthcheck:
       disable: true
 
+  # coturn — TURN relay for WebRTC clients that can't complete a direct/STUN
+  # connection (carrier-grade NAT, restrictive firewalls). See docs/infra.md,
+  # "WebRTC ICE candidates", for when this is needed vs. STUN alone.
+  coturn:
+    <<: *service-defaults
+    image: coturn/coturn:latest
+    volumes:
+      - ./infra/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: >
+      -c /etc/coturn/turnserver.conf
+      --static-auth-secret=${TURN_SECRET:?TURN_SECRET is required}
+      --external-ip=${SERVER_PUBLIC_IP:?SERVER_PUBLIC_IP is required}
+    ports:
+      # Public by design — this is the whole point of a TURN relay, exactly
+      # like 8189/udp above. TCP is included alongside UDP because carrier/
+      # firewall UDP blocking is the primary failure mode this exists to fix.
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49160-49200:49160-49200/udp" # relayed media — must match min-port/max-port in turnserver.conf
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+    healthcheck:
+      disable: true
+
   # ── Microservices ─────────────────────────────────────────────────────────────
 
   api-gateway:
@@ -512,6 +538,11 @@ services:
       MEDIAMTX_API_URL: http://mediamtx:9997
       MEDIAMTX_API_USER: ${MEDIAMTX_API_USER:-}
       MEDIAMTX_API_PASS: ${MEDIAMTX_API_PASS:-}
+      # See the coturn service above — TURN_SECRET must match its --static-auth-secret.
+      # TURN_URLS reuses SERVER_PUBLIC_IP (already the droplet's public IPv4, no DNS
+      # name needed — TURN isn't HTTP, it can't go through Caddy).
+      TURN_SECRET: ${TURN_SECRET:?TURN_SECRET is required}
+      TURN_URLS: turn:${SERVER_PUBLIC_IP}:3478?transport=udp,turn:${SERVER_PUBLIC_IP}:3478?transport=tcp
       # Recording upload — optional. Omit RECORDING_STORAGE_PROVIDER to disable.
       # See docs/recording.md for setup instructions (DO Spaces or Cloudflare R2).
       # yt-dlp auto-update: fetches latest extractor on every container start.

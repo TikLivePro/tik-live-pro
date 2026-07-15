@@ -50,6 +50,14 @@ const envSchema = baseEnvSchema.extend({
   MEDIAMTX_API_URL: z.string().default('http://localhost:9997'),
   MEDIAMTX_API_USER: z.string().default(''),
   MEDIAMTX_API_PASS: z.string().default(''),
+  // TURN relay (coturn) — optional. Unset in dev by default: WebRTC falls back to
+  // STUN-only, which works for most local/direct connections. Required in production
+  // for viewers/broadcasters behind a NAT or firewall that blocks direct UDP (see
+  // docs/infra.md, "WebRTC ICE candidates"). TURN_SECRET must match coturn's
+  // static-auth-secret; TURN_URLS is a comma-separated list of turn: URIs handed to
+  // the browser (e.g. one for transport=udp, one for transport=tcp).
+  TURN_SECRET: z.string().optional(),
+  TURN_URLS: z.string().optional(),
   // Recording upload — all optional. Leave RECORDING_STORAGE_PROVIDER unset to disable.
   // z.preprocess coerces empty strings (from compose ${VAR:-} expansion) to undefined.
   RECORDINGS_DIR: z.string().default('/recordings'),
@@ -346,6 +354,8 @@ This service is primarily driven by NATS JetStream events from the \`live-sessio
     mediaMtxWebrtcUrl: env.MEDIAMTX_WEBRTC_URL,
     mediaMtxApiUrl: env.MEDIAMTX_API_URL,
     mediaMtxApiAuthHeader,
+    turnSecret: env.TURN_SECRET ?? null,
+    turnUrls: env.TURN_URLS ? env.TURN_URLS.split(',').map((s) => s.trim()).filter(Boolean) : [],
     logger,
   });
 
