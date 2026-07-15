@@ -408,7 +408,7 @@ jobs:
 
             docker compose -f docker-compose.prod.managed.yml up -d --remove-orphans
 
-            docker image prune -f
+            docker image prune -af
             docker system prune -f
 
             echo "==> Stack status"

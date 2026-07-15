@@ -1,6 +1,6 @@
 # Déploiement via GitHub Student Developer Pack
 
-> Dernière mise à jour : 2026-07-06 (hardening + migrations : job CI `migrate` — les migrations drizzle des 9 services sont jouées sur Neon avant chaque deploy ; ports internes bindés sur 127.0.0.1 — seuls 1935/tcp (RTMP OBS) et 8189/udp (ICE WebRTC) restent publics ; Caddy bloque /stream-orchestrator/docs et /metrics)
+> Dernière mise à jour : 2026-07-15 (fix disque plein en prod : `docker image prune -f` → `-af` dans le workflow de déploiement, les anciennes images taguées n'étaient jamais nettoyées) · 2026-07-06 (hardening + migrations : job CI `migrate` — les migrations drizzle des 9 services sont jouées sur Neon avant chaque deploy ; ports internes bindés sur 127.0.0.1 — seuls 1935/tcp (RTMP OBS) et 8189/udp (ICE WebRTC) restent publics ; Caddy bloque /stream-orchestrator/docs et /metrics)
 
 Ce guide couvre le déploiement de TikLivePro en production avec les ressources du GitHub Student Pack.
 
@@ -668,7 +668,7 @@ GitHub Actions                       GitHub Actions
                                      écriture de .env depuis GitHub Secrets
                                      docker compose pull
                                      docker compose up -d
-                                     docker image prune -f
+                                     docker image prune -af
 ```
 
 Le fichier `.env` est **recréé à chaque déploiement** depuis les secrets GitHub — le serveur ne stocke jamais de secrets de façon permanente. `IMAGE_TAG` et `REGISTRY` sont calculés depuis le tag git et injectés directement.
@@ -836,8 +836,11 @@ Si saturé : redémarrez les services non critiques ou passez au Droplet 8 GB.
 ```bash
 df -h
 docker system df
-docker system prune -f   # nettoie les images inutilisées
+docker image prune -af   # -a supprime aussi les anciennes images taguées (1.0.0, 1.0, 1, …), pas seulement les dangling
+docker system prune -f
 ```
+
+> **Piège** : `docker image prune -f` (sans `-a`) ne supprime que les images *dangling* (sans tag). Comme chaque déploiement pousse des tags immuables (`1.2.3`, `1.2`, `1`, `latest`), les images des déploiements précédents restent taguées et ne sont jamais nettoyées — le disque de 80 GB peut se remplir en quelques dizaines de déploiements (`containerd`: `no space left on device` à l'extraction d'un layer). Le workflow (`deploy.yml`) utilise `docker image prune -af` après chaque déploiement pour éviter ce problème.
 
 ### La résolution YouTube échoue avec `RESOLVE_FAILED` ou "Sign in to confirm you're not a bot"
 
